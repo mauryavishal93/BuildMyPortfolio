@@ -14,7 +14,7 @@ app.get('/api/health', (_request, response) => {
 });
 
 app.get('/', (_request, response) => {
-  response.sendFile(path.join(distDir, 'buildymyportfolio.html'));
+  response.sendFile(path.join(distDir, 'editor.html'));
 });
 
 app.use(express.static(distDir));

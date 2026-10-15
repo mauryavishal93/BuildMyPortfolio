@@ -18,7 +18,7 @@
 | Production build | PASS | `npm run build` completed successfully. |
 | Dependency audit | PASS | `npm audit --audit-level=moderate` reported zero vulnerabilities. |
 | Source diagnostics | PASS | No errors reported for active frontend, backend, package, or Vite files. |
-| Backend routes | PASS | `/`, `/buildymyportfolio.html`, `/api/health`, built JS/CSS assets returned 200; unknown route returned 404. |
+| Backend routes | PASS | `/`, `/editor.html`, `/api/health`, built JS/CSS assets returned 200; unknown route returned 404. |
 | About page | PASS | `/about.html` serves product/privacy details and all three developer/company contact links; layout checked at 320, 390, and 1280px; navigation to and from the editor works. |
 | Starter profile and links | PASS | Name, email, and LinkedIn render correctly; email and website links use `mailto:` and `https:`. Unsafe `javascript:` website input was not linked. |
 | Template selection | PASS | All 17 templates could be selected. |

@@ -121,6 +121,20 @@
 @media(max-width:800px){.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"left right" "center center";align-items:start}#leftPanel{grid-area:left}#rightPanel{grid-area:right}.center{grid-area:center;width:100%}.left,.right{width:100%;max-height:45vh;overflow:hidden;align-self:stretch}.layout.collapsed-l .left{width:36px!important;max-height:none;align-self:flex-start;justify-self:start}.layout.collapsed-r .right{width:36px!important;max-height:none;align-self:flex-start;justify-self:end}}
 @media(max-width:520px){.templates{grid-template-columns:1fr}.field-row{grid-template-columns:1fr}.inspector-head{flex-wrap:wrap}.inspector-head h2{flex:1 1 100%;font-size:12px}.inspector-head [data-panel-size]{display:none}}
 @media print{.center,.sheets{background:#fff;background-image:none}}
+/* Studio polish: teal brand accents, quieter selected states, and a framed editing toolbar. */
+:root{--purple:#14766f;--focus:#8ecfc6;--brand-soft:#e7f3f1}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline-color:var(--focus)}
+.primary:hover{background:#0d5e58}
+.template.active{border-color:var(--purple);background:var(--brand-soft);box-shadow:0 3px 10px rgba(20,118,111,.12)}
+.template:hover,.section-row.active{border-color:var(--focus)}
+.section-row.active{background:var(--brand-soft)}
+.resume-section.selected{outline-color:var(--purple)}
+.panel-grip:hover:after{background:var(--purple)}
+.toolbar{padding:10px 11px;background:rgba(255,255,255,.82);border:1px solid #d9e2e6;border-radius:10px;box-shadow:0 5px 16px rgba(27,36,52,.06)}
+.btn,.size-btn,.template,.tab,.seg button,.add{transition:transform .16s ease,border-color .16s ease,color .16s ease,background-color .16s ease,box-shadow .16s ease}
+.btn:hover:not(:disabled){transform:translateY(-1px)}
+@media screen and (min-width:1281px) and (max-width:1410px){:root{--lw:200px;--rw:235px}}
+@media screen and (max-width:1280px){.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"left right" "center center";align-items:start}#leftPanel{grid-area:left}#rightPanel{grid-area:right}.center{grid-area:center;width:100%;min-width:0}.left,.right{position:static;width:100%;height:auto;max-height:45vh;overflow:hidden;align-self:stretch}.layout.collapsed-l .left{width:36px!important;max-height:none;align-self:flex-start;justify-self:start}.layout.collapsed-r .right{width:36px!important;max-height:none;align-self:flex-start;justify-self:end}}
 /* Print uses the same margin variables as the preview, so print == preview == PDF */
 @media print{body{background:white}.topbar,.left,.right,.toolbar,.hint,.toast{display:none!important}.layout{display:block;min-height:0}.center{padding:0;overflow:visible}.sheets{display:block;min-height:0}.sheet{width:210mm!important;height:297mm!important;flex:none!important;box-shadow:none;transform:none!important;margin:0!important;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto}.resume-section.selected{outline:0!important}@page{size:A4 portrait;margin:0}}
 

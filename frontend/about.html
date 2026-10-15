@@ -20,19 +20,36 @@
     </header>
     <main class="about-main">
       <section class="about-intro">
-        <p class="about-eyebrow">ABOUT THE PRODUCT</p>
+        <p class="about-eyebrow">FREE RESUME BUILDER</p>
         <h1>BuildMyPortfolio</h1>
-        <p class="about-lead">A focused workspace for building, arranging, and exporting a polished resume.</p>
+        <p class="about-lead">A free workspace for building, arranging, and exporting a polished resume.</p>
       </section>
       <div class="about-grid">
         <section class="about-section">
-          <h2>What you can do</h2>
-          <p>Choose from 17 resume templates, edit profile details and sections, adjust typography and spacing, and arrange content in structured or free-position mode.</p>
-          <p>Export a searchable, selectable-text PDF, or save and load a portable JSON project. Email and website links remain clickable in the resume and PDF.</p>
+          <h2>Tools for your next resume</h2>
+          <p>Start with one of 17 layouts, from ATS-friendly and compact formats to two-column and photo templates. Then shape the content to fit your experience.</p>
+          <ul class="about-feature-list">
+            <li>Edit your profile, experience, education, skills, projects, and custom sections.</li>
+            <li>Reorder sections, add entries, and choose structured flow or free positioning.</li>
+            <li>Adjust fonts, colors, spacing, alignment, margins, photos, and page numbers.</li>
+            <li>Preview A4 pages and export a PDF with selectable text and clickable contact links.</li>
+          </ul>
+          <p>Save a portable JSON project to back up or move your resume to another browser.</p>
         </section>
         <section class="about-section">
-          <h2>Your resume data</h2>
-          <p>Your draft is autosaved in this browser. It is not uploaded to a user account or synchronized between devices. Use JSON export when you need a portable backup.</p>
+          <h2>Private by default</h2>
+          <p>Your draft is autosaved in this browser's local storage. Resume data is not uploaded to an account or synchronized between devices. Use JSON export for a portable backup.</p>
+        </section>
+        <section class="about-section about-feedback" hidden>
+          <p class="about-eyebrow">FEEDBACK</p>
+          <h2>Help improve BuildMyPortfolio</h2>
+          <p>Share a suggestion, report a problem, or tell us what would make your resume workflow better.</p>
+          <form class="feedback-form" id="feedbackForm">
+            <div class="feedback-field"><label for="feedbackName">Name <span>(optional)</span></label><input id="feedbackName" name="name" autocomplete="name" maxlength="80"></div>
+            <div class="feedback-field"><label for="feedbackEmail">Your email <span>(optional)</span></label><input id="feedbackEmail" name="email" type="email" autocomplete="email" maxlength="160"></div>
+            <div class="feedback-field feedback-message"><label for="feedbackMessage">Feedback</label><textarea id="feedbackMessage" name="message" rows="5" maxlength="4000" required placeholder="Write your feedback"></textarea></div>
+            <div class="feedback-actions"><button class="feedback-button" type="submit">Send feedback</button><p class="feedback-note">Your email app will open with the message addressed to mauryavishal93@gmail.com. Review and send it there.</p></div>
+          </form>
         </section>
         <section class="about-section about-contact">
           <p class="about-eyebrow">DEVELOPER</p>
@@ -45,5 +62,6 @@
         </section>
       </div>
     </main>
+    <script type="module" src="/src/about.js"></script>
   </body>
 </html>

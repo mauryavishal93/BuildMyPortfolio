@@ -1,0 +1,6 @@
+node_modules/
+dist/
+/src/
+/resume-studio-working-model-v2.html
+.DS_Store
+npm-debug.log*

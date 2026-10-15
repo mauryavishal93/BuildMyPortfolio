@@ -1,0 +1,23 @@
+{
+  "name": "buildmyportfolio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite --open /buildymyportfolio.html",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "start": "node backend/server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}

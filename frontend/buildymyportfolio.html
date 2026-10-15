@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BuildMyPortfolio</title>
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<header class="topbar">
+ <div class="brand"><span class="logo">B</span><span>BuildMyPortfolio</span></div>
+ <input id="docName" class="docname" aria-label="Project name" value="Untitled resume">
+ <div class="spacer"></div><span class="save-state"><span class="dot"></span><span id="saveState">Saved in this browser</span></span>
+ <button class="btn soft" id="undoBtn" title="Undo">↶ Undo</button>
+ <button class="btn outline" id="loadBtn">Load JSON</button>
+ <button class="btn outline" id="saveBtn">Save JSON</button>
+ <a class="btn outline" id="aboutLink" href="/about.html">About</a>
+ <button class="btn primary" id="pdfBtn">Export PDF</button>
+ <input id="jsonInput" class="hidden" type="file" accept=".json,application/json">
+</header>
+<div class="layout" id="layout">
+ <aside class="left" id="leftPanel"><div class="panel-grip left-grip" id="leftGrip" title="Drag to resize panel"></div>
+  <button class="size-btn strip-btn" id="expandLeft" title="Expand sidebar" aria-label="Expand sidebar">⇥</button>
+  <div class="left-scroll"><div class="left-head"><div class="tabs" role="tablist" aria-label="Sidebar"><button class="tab active" id="tabTemplates" role="tab" aria-selected="true" aria-controls="paneTemplates" data-tab="templates">Templates</button><button class="tab" id="tabSections" role="tab" aria-selected="false" aria-controls="paneSections" data-tab="sections">Sections</button></div><button class="size-btn" id="collapseLeft" title="Collapse / expand" aria-label="Collapse sidebar">⇤</button></div>
+  <div class="tabpanel" id="paneTemplates" role="tabpanel" aria-labelledby="tabTemplates"><div class="eyebrow">Choose a template</div><div id="templates" class="templates"></div></div>
+  <div class="tabpanel" id="paneSections" role="tabpanel" aria-labelledby="tabSections" hidden>
+   <div class="eyebrow">Resume sections · drag to reorder</div><div id="sectionList" class="section-list"></div>
+   <div class="add-grid">
+    <button class="add" data-add="summary">＋ Summary</button><button class="add" data-add="experience">＋ Experience</button>
+    <button class="add" data-add="education">＋ Education</button><button class="add" data-add="skills">＋ Skills</button>
+    <button class="add" data-add="projects">＋ Projects</button><button class="add" data-add="certifications">＋ Certifications</button>
+    <button class="add" data-add="custom">＋ Custom</button>
+   </div>
+   <div class="rule"></div><div class="small-note">Select a section to edit it. Switch to Free position to drag sections directly on the page. Use JSON to keep a portable copy.</div>
+  </div>
+ </div></aside>
+ <main class="center">
+  <div class="toolbar">
+   <label for="pageLayout">Layout</label><select id="pageLayout"><option value="single">Single column</option><option value="two">Two columns</option></select>
+   <label for="editMode">Editor</label><select id="editMode"><option value="flow">Structured</option><option value="free">Free position</option></select>
+   <div class="spacer"></div><button class="btn soft small" id="zoomOut">−</button><span id="zoomLabel" style="font-size:11px;color:var(--muted)">100%</span><button class="btn soft small" id="zoomIn">＋</button>
+  </div>
+  <div class="hint" id="hint">A4 preview · Select a section to edit it</div>
+  <div class="sheets" id="sheets"></div>
+ </main>
+ <aside class="right" id="rightPanel"><div class="panel-grip" id="panelGrip" title="Drag to resize panel"></div><div id="inspector"></div><button class="size-btn strip-btn" id="expandRight" title="Expand properties" aria-label="Expand properties">⇤</button></aside>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<div class="modal-bg" id="modalBg"><div class="modal"><h2>Add custom section</h2><div class="field"><label for="customTitle">Section title</label><input id="customTitle" value="Additional information"></div><div class="field"><label for="customContent">Content</label><textarea id="customContent" placeholder="Write the section content"></textarea></div><div class="modal-actions"><button class="btn soft" id="cancelCustom">Cancel</button><button class="btn primary" id="confirmCustom">Add section</button></div></div></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

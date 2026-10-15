@@ -14,6 +14,7 @@
  <button class="btn soft" id="undoBtn" title="Undo">↶ Undo</button>
  <button class="btn outline" id="loadBtn">Load JSON</button>
  <button class="btn outline" id="saveBtn">Save JSON</button>
+ <button class="btn outline" id="atsBtn">ATS Check</button>
  <a class="btn outline" id="aboutLink" href="/about.html">About</a>
  <button class="btn primary" id="pdfBtn">Export PDF</button>
  <input id="jsonInput" class="hidden" type="file" accept=".json,application/json">
@@ -47,6 +48,31 @@
 </div>
 <div class="toast" id="toast" role="status"></div>
 <div class="modal-bg" id="modalBg"><div class="modal"><h2>Add custom section</h2><div class="field"><label for="customTitle">Section title</label><input id="customTitle" value="Additional information"></div><div class="field"><label for="customContent">Content</label><textarea id="customContent" placeholder="Write the section content"></textarea></div><div class="modal-actions"><button class="btn soft" id="cancelCustom">Cancel</button><button class="btn primary" id="confirmCustom">Add section</button></div></div></div>
+<div class="modal-bg" id="atsModalBg" aria-hidden="true">
+  <section class="modal ats-modal" role="dialog" aria-modal="true" aria-labelledby="atsTitle">
+    <div class="ats-modal-head">
+      <div>
+        <h2 id="atsTitle">ATS Resume Check</h2>
+        <p class="ats-subtitle">Local analysis · No AI API key · Resume data stays in this browser</p>
+      </div>
+      <button class="size-btn" id="closeAts" aria-label="Close ATS checker">✕</button>
+    </div>
+    <div class="field">
+      <label for="jobDescription">Job description</label>
+      <textarea id="jobDescription" placeholder="Paste a job description to compare relevant skills and requirements…"></textarea>
+      <div class="small-note">Keyword matching is a transparent local comparison, not a prediction of an employer's ATS decision.</div>
+    </div>
+    <div class="modal-actions ats-actions">
+      <button class="btn soft" id="atsFriendlyBtn">Apply ATS-friendly layout</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" id="runAtsBtn">Run checks</button>
+      </div>
+    </div>
+    <div id="atsResults" aria-live="polite">
+      <div class="ats-empty">Run checks to review resume completeness, formatting risks, and optional job-description relevance.</div>
+    </div>
+  </section>
+</div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

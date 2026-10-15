@@ -5,9 +5,14 @@ body.about-page{margin:0;min-height:100vh;color:var(--about-ink);background-colo
 .about-brand{display:inline-flex;align-items:center;gap:10px;color:var(--about-ink);font-size:15px;font-weight:800;text-decoration:none;white-space:nowrap}
 .about-logo{width:32px;height:32px;display:grid;place-items:center;border-radius:9px;background:var(--about-accent);color:#fff;font-weight:900}
 .about-nav{display:flex;align-items:center;gap:18px}
-.about-nav a{color:var(--about-muted);font-size:13px;font-weight:700;text-decoration:none}
-.about-nav a:hover,.about-nav a:focus-visible,.contact-list a:hover{text-decoration:underline}
-.about-nav .about-editor{padding:8px 12px;border:1px solid var(--about-line);border-radius:7px;background:#fff;color:var(--about-ink)}
+.about-nav .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 12px;border-radius:8px;border:1px solid var(--about-line);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;transition:transform .16s ease,border-color .16s ease,background-color .16s ease,box-shadow .16s ease}
+.about-nav .btn:hover,.about-nav .btn:focus-visible{transform:translateY(-1px)}
+.about-nav .btn:focus-visible{outline:3px solid #8ecfc6;outline-offset:2px}
+.about-nav .outline{background:#fff;color:var(--about-ink)}
+.about-nav .soft{background:#f0f2f7;color:#344054}
+.about-nav .outline:hover{background:#fff;border-color:#cdd6e3}
+.about-nav .soft:hover{background:#e7ebf3}
+.about-nav a:hover,.contact-list a:hover{text-decoration:none}
 .about-main{width:min(100%,1000px);margin:0 auto;padding:48px 28px 64px}
 .about-intro{padding:24px 0 36px;border-bottom:1px solid var(--about-line)}
 .about-eyebrow{margin:0 0 10px;color:#717b8d;font-size:10px;font-weight:800;letter-spacing:.12em}

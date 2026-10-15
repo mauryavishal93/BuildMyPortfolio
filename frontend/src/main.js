@@ -1,3 +1,5 @@
+import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
+
 (()=>{'use strict';
 const $=id=>document.getElementById(id),deep=x=>JSON.parse(JSON.stringify(x)),uid=()=>Math.random().toString(36).slice(2,10);
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
@@ -30,7 +32,7 @@ const makeSections=()=>[
 {id:uid(),type:'projects',title:'Selected Projects',visible:true,entries:[{role:'Automation Framework Modernization',company:'Personal / Professional Project',date:'2024',details:'Created reusable automation components and reporting workflows.\nIntegrated test execution into a repeatable CI process.'}]},
 {id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
 ];
-const fresh=()=>({version:3,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Vishal Maurya',headline:'QA Automation Engineer',email:'mauryavishal93@gmail.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/vimaurya/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
+const fresh=()=>({version:3,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
 function normalizeState(d){
@@ -80,7 +82,7 @@ function sheetHTML(index,cols){
  const p=state.profile,tmpl=activeTemplate();
  const hasPhoto=!!(p.photo&&tmpl.photo),photoPos=['left','center','right'].includes(state.design.photoAlign)?state.design.photoAlign:(tmpl.photoPos||'right');
  const contact=[p.email?`<a href="mailto:${$esc(p.email)}">${$esc(p.email)}</a>`:'',p.phone,p.location,p.website?(websiteHref(p.website)?`<a href="${$esc(websiteHref(p.website))}" target="_blank" rel="noopener noreferrer">${$esc(p.website)}</a>`:$esc(p.website)):''].filter(Boolean).join(' · ');
- const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:''}<div class="header-text"><h1 class="name">${$esc(p.name||'Your Name')}</h1><div class="headline">${$esc(p.headline||'Professional Title')}</div><div class="contact">${contact}</div></div></header>`:`<div class="continuation">${$esc(p.name||'Resume')} · Continued</div>`;
+ const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:''}<div class="header-text"><h1 class="name">${$esc(p.name||'Your Name')}</h1><div class="headline">${$esc(p.headline||'Professional Title')}</div><div class="contact">${contact}</div></div></header>`:'';
  return `<div class="sheet-inner">${head}<div class="sections-area">${cols?'<div class="section-columns"><div class="section-column"></div><div class="section-column"></div></div>':''}</div></div><div class="page-number"></div>`;
 }
 function createSheet(index,tmpl,cols){
@@ -89,7 +91,7 @@ function createSheet(index,tmpl,cols){
  set('--resume-accent',d.accent||tmpl.accent);set('--resume-font',d.font||'Arial');
  set('--resume-size',clamp(d.fontSize,8,24,12)+'px');set('--resume-heading',clamp(d.headingSize,10,28,15)+'px');
  set('--mx',clamp(d.margin,0,100,DEFAULT_MARGIN)+'px');set('--mt',clamp(d.marginY,0,100,DEFAULT_MARGIN)+'px');set('--mb',clamp(d.marginY,0,100,DEFAULT_MARGIN)+'px');
- el.dataset.halign=['left','center','right'].includes(d.headerAlign)?d.headerAlign:'';set('--page-no-h',d.pageNumbers?'26px':'0px');set('--area-pt',(tmpl.banner&&index===0)?'16px':'0px');
+ el.dataset.halign=['left','center','right'].includes(d.headerAlign)?d.headerAlign:'';set('--page-no-h',d.pageNumbers?'26px':'0px');set('--area-pt',index>0?clamp(d.marginY,0,100,DEFAULT_MARGIN)+'px':(tmpl.banner?'16px':'0px'));
  el.innerHTML=sheetHTML(index,cols);return el;
 }
 
@@ -116,14 +118,14 @@ function sectionAtoms(s){
 }
 function makeShell(s,cont){
  const sec=document.createElement('section');sec.className='resume-section'+(selectedId===s.id?' selected':'');sec.dataset.resumeSection=s.id;
- sec.innerHTML=`<h2 class="section-heading">${$esc(s.title)}${cont?' <span class="cont-tag">(continued)</span>':''}</h2><div class="section-body"></div>`;return sec;
+ sec.innerHTML=`${cont?'':`<h2 class="section-heading">${$esc(s.title)}</h2>`}<div class="section-body"></div>`;return sec;
 }
 /* Appends one atom and returns the element it created (so a failed fit can be undone). */
 function appendAtom(shell,a,st){
  const body=shell.lastElementChild;let el;
  if(a.k==='entry'){
   el=document.createElement('div');el.className='entry';
-  el.innerHTML=`<div class="entry-top"><span class="entry-title">${$esc(a.cont?a.e.role+' (continued)':a.e.role)}</span>${a.cont?'':`<span class="entry-date">${$esc(a.e.date)}</span>`}</div>${!a.cont&&a.e.company?`<div class="entry-sub">${$esc(a.e.company)}</div>`:''}${a.first?`<ul><li>${$esc(a.first)}</li></ul>`:''}`;
+  el.innerHTML=`<div class="entry-top"><span class="entry-title">${$esc(a.e.role)}</span><span class="entry-date">${$esc(a.e.date)}</span></div>${a.e.company?`<div class="entry-sub">${$esc(a.e.company)}</div>`:''}${a.first?`<ul><li>${$esc(a.first)}</li></ul>`:''}`;
   body.appendChild(el);st.ul=el.querySelector('ul');
  }else if(a.k==='li'){
   if(!st.ul){const last=body.lastElementChild;st.ul=document.createElement('ul');(last||body).appendChild(st.ul)}
@@ -272,6 +274,7 @@ function addSection(type,title,content){const s={id:uid(),type,title:title||type
 function download(filename,blob){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
 function exportJSON(){download((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.json',new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));toast('JSON project saved')}
 function importJSON(file){const r=new FileReader();r.onload=()=>{try{const next=normalizeState(JSON.parse(r.result));transact(()=>{state=next;selectedId=null});toast('Project loaded')}catch(e){alert('Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message))}};r.onerror=()=>alert('Could not read that file.');r.readAsText(file)}
+
 function addSelectableText(doc,sheet){
  const bounds=sheet.getBoundingClientRect(),scale=210/bounds.width,range=document.createRange(),walker=document.createTreeWalker(sheet,NodeFilter.SHOW_TEXT);
  for(let node=walker.nextNode();node;node=walker.nextNode()){
@@ -333,6 +336,302 @@ async function exportPDF(){
  }catch(e){console.error(e);alert('PDF export failed. Please use Print → Save as PDF.')}
  finally{$('sheets').classList.remove('exporting');btn.disabled=false;btn.textContent='Export PDF';renderSheets()}
 }
+
+const ATS_STOPWORDS=new Set('a an the and or but if then than with without for from into onto to of in on at by as is are was were be been being this that these those it its your you we our they their will can may must should have has had not no do does did about across after before during over under between per each all any more most other such use using used work working role job team company experience skills skill required preferred plus including strong excellent good knowledge ability able responsibilities qualifications requirement requirements candidate position'.split(/\s+/));
+const ATS_ALIASES={
+ python:['python'],java:['java'],javascript:['javascript','js'],typescript:['typescript','ts'],cpp:['c++','cpp'],csharp:['c#','c sharp'],go:['golang','go language'],ruby:['ruby'],php:['php'],swift:['swift'],kotlin:['kotlin'],rust:['rust'],
+ react:['react','react.js','reactjs'],angular:['angular'],vue:['vue','vue.js','vuejs'],node:['node.js','nodejs'],express:['express','express.js'],next:['next.js','nextjs'],html:['html','html5'],css:['css','css3'],dotnet:['.net','dotnet','asp.net'],spring:['spring','spring boot'],django:['django'],flask:['flask'],
+ sql:['sql','structured query language'],postgresql:['postgresql','postgres'],mysql:['mysql'],mongodb:['mongodb','mongo db'],redis:['redis'],oracle:['oracle database'],snowflake:['snowflake'],bigquery:['bigquery','big query'],data_analysis:['data analysis','data analytics'],excel:['excel','microsoft excel'],tableau:['tableau'],power_bi:['power bi','powerbi'],
+ api:['api','apis','rest api','rest apis'],graphql:['graphql'],automation:['automation','automated testing','test automation'],playwright:['playwright'],selenium:['selenium'],cypress:['cypress'],jest:['jest'],junit:['junit'],pytest:['pytest'],quality_assurance:['quality assurance','qa'],performance_testing:['performance testing','load testing'],
+ git:['git','github','gitlab'],ci_cd:['ci/cd','continuous integration','continuous delivery','continuous deployment'],jenkins:['jenkins'],github_actions:['github actions'],docker:['docker'],kubernetes:['kubernetes','k8s'],terraform:['terraform'],aws:['aws','amazon web services'],azure:['azure','microsoft azure'],gcp:['gcp','google cloud platform','google cloud'],linux:['linux'],
+ agile:['agile','scrum'],project_management:['project management','project manager'],communication:['communication','communicate'],leadership:['leadership','led','mentor','mentoring'],stakeholder_management:['stakeholder management','stakeholders'],problem_solving:['problem solving','analytical skills'],jira:['jira'],salesforce:['salesforce'],sap:['sap'],figma:['figma']
+};
+const ATS_WEIGHTING={keyword:50,jobTitle:25,requiredSkills:15,format:2,sections:2,experience:2,education:1,certifications:1,impact:2};
+function sanitizeAtsText(value){return String(value||'').toLowerCase().replace(/[^a-z0-9+#\s]/g,' ').replace(/\s+/g,' ').trim()}
+function getTechnicalSkillsText(){
+ return state.sections.filter(s=>s.visible && s.type==='skills').map(s=>s.content||'').join('\n');
+}
+function getExperienceYears(){
+ const entries=[].concat(...state.sections.filter(s=>s.visible && s.type==='experience').map(s=>s.entries||[]));
+ return estimateExperienceYears(entries);
+}
+function extractJobTitle(description){
+ const lines=String(description||'').split(/\n|\r/).map(line=>line.trim()).filter(Boolean);
+ const explicit=lines.map(line=>line.match(/(?:job\s*title|position|role)\s*[:\-]\s*([^,;|]+)/i)?.[1]).find(Boolean);
+ if(explicit)return explicit.replace(/\s+(?:at|with|for)\s+.*$/i,'').trim();
+ const titlePattern=/\b((?:senior|sr\.?|junior|jr\.?|lead|principal|staff|associate|assistant|chief|head of)\s+)?((?:[A-Za-z][A-Za-z0-9.+#&/-]*\s+){0,3}(?:engineer|developer|manager|analyst|specialist|architect|consultant|coordinator|director|scientist|designer|tester|recruiter|administrator|technician|accountant|nurse|teacher|sales representative|product owner))\b/i;
+ for(const line of lines){
+  const match=line.match(titlePattern);
+  if(match){
+   const title=`${match[1]||''}${match[2]}`.replace(/\s+/g,' ').trim();
+   if(title.split(/\s+/).length<=6)return title;
+  }
+ }
+ return '';
+}
+function normalizeAtsTitle(value){
+ return sanitizeAtsText(value).replace(/\b(qa|quality assurance|quality engineer|software engineer|automation engineer|test engineer|manual qa)\b/g,'qa engineer').replace(/\s+/g,' ');
+}
+function jobTermMatches(text,term){const clean=sanitizeAtsText(term);if(!clean)return false;return new RegExp(`(^|[^a-z0-9])${clean.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+')}(?=$|[^a-z0-9])`,'i').test(sanitizeAtsText(text));}
+function collectAtsJobTerms(description){
+ const text=sanitizeAtsText(description||'');
+ const found=new Set();
+ for(const [key,aliases] of Object.entries(ATS_ALIASES)){
+  for(const alias of aliases){const clean=sanitizeAtsText(alias);if(!clean)continue; if(jobTermMatches(text,clean))found.add(key);}
+ }
+ return Array.from(found);
+}
+function getAtsKeywordTokens(text){
+ const cleaned=sanitizeAtsText(text).split(/\s+/).filter(word=>word.length>2 && !ATS_STOPWORDS.has(word));
+ return [...new Set(cleaned)];
+}
+function getAtsEducationText(){
+ return state.sections.filter(s=>s.visible && s.type==='education').map(s=>s.entries||[]).flat().map(e=>`${e.role} ${e.company} ${e.date} ${e.details}`).join(' ');
+}
+function getAtsCertText(){
+ return [...state.sections.filter(s=>s.visible && (s.type==='certifications' || s.type==='custom')).map(s=>s.content||'')].join(' ');
+}
+function scoreJobTitleAlignment(jobText){
+ const target=extractJobTitle(jobText);
+ if(!target) return {score:85,detail:'Could not reliably identify a target title; a small neutral adjustment was applied.'};
+ const targetNorm=normalizeAtsTitle(target);
+ const resumeTitles=[state.profile.headline, ...state.sections.filter(s=>s.visible && s.type==='experience').flatMap(s=> (s.entries||[]).map(e=>e.role))].map(normalizeAtsTitle);
+ let best=0;
+ for(const title of resumeTitles){
+   if(!title) continue;
+   const titleTokens=new Set(title.split(' '));
+   const targetTokens=new Set(targetNorm.split(' '));
+   const overlap=[...titleTokens].filter(t=>targetTokens.has(t)).length;
+  const ratio=targetTokens.size ? overlap/targetTokens.size : 0;
+   best=Math.max(best, Math.round(ratio*100));
+   if(title.includes(targetNorm) || targetNorm.includes(title)) { best=Math.max(best, 100); break; }
+ }
+ return {score:best, detail: target ? `Target role: ${target}` : 'No target title detected'};
+}
+function scoreEducationMatch(jobText){
+ const required=String(jobText||'').toLowerCase();
+ const educationText=getAtsEducationText().toLowerCase();
+ const degreeTerms=['bachelor','master','phd','mba','diploma','associate','degree','certification'];
+ const demands=degreeTerms.filter(term => required.includes(term));
+ if(!demands.length) return {score:100, detail:'No education requirement was specified in the job description.'};
+ const matches=demands.filter(term => educationText.includes(term));
+ return {score: matches.length===demands.length ? 100 : Math.round((matches.length / demands.length) * 100), detail: `Degree terms found: ${matches.length}/${demands.length}`};
+}
+function scoreCertMatch(jobText){
+ const text=sanitizeAtsText(jobText||'');
+ const certTerms=['pmp','aws','azure','scrum','ccna','security+','cissp','salesforce','google analytics','professional engineer','certified'];
+ const required=certTerms.filter(term => text.includes(term));
+ if(!required.length) return {score:100, detail:'No certification requirement was specified in the job description.'};
+ const certText=sanitizeAtsText(getAtsCertText());
+ const matched=required.filter(term => certText.includes(term));
+ return {score: required.length ? Math.round((matched.length / required.length) * 100) : 100, detail:`Matched ${matched.length}/${required.length} requested credentials.`};
+}
+function scoreFormatCompatibility(){
+ const single=state.layout==='single';
+ const fontOk=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'].includes(state.design.font);
+ const weighted = (single ? 65 : 35) + (fontOk ? 25 : 10) + (state.design.pageNumbers ? 10 : 8);
+ return {score: Math.min(100, weighted), detail: single ? 'Single-column, ATS-friendly structure detected.' : 'Two-column layout may reduce ATS compatibility.'};
+}
+function scoreSectionStructure(){
+ const sections=state.sections.filter(s=>s.visible);
+ const checks=[
+  {type:'summary',complete:s=>String(s.content||'').trim().length>=50},
+  {type:'experience',complete:s=>(s.entries||[]).some(e=>!isPlaceholderText(e.role)&&String(e.details||'').trim().length>=30)},
+  {type:'skills',complete:s=>String(s.content||'').split(/[,;\n|]/).filter(x=>x.trim()).length>=3},
+  {type:'education',complete:s=>(s.entries||[]).some(e=>!isPlaceholderText(e.role)&&[e.company,e.date].filter(value=>!isPlaceholderText(value)).length>=1)}
+ ];
+ const points=checks.reduce((sum,check)=>{
+  const section=sections.find(s=>s.type===check.type);
+  return sum+(section?(check.complete(section)?100:50):0);
+ },0);
+ const score=Math.round(points/checks.length);
+ const complete=checks.filter(check=>{const section=sections.find(s=>s.type===check.type);return section&&check.complete(section)}).length;
+ return {score, detail:`${complete}/${checks.length} standard sections contain substantive content.`};
+}
+function scoreExperienceDepth(jobText=''){
+ const resume = getExperienceYears();
+ const years=resume.years;
+ const requiredYears=String(jobText||'').match(/\b(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b/i);
+ if(requiredYears){
+  const required=Number(requiredYears[1]);
+  const score=required>0?Math.min(100,Math.round(years/required*100)):0;
+  return {score,detail:`Estimated ${years} years of experience against ${required} years requested.`};
+ }
+ const recencyBoost = resume.hasCurrent ? 15 : 0;
+ const score=Math.min(100, Math.round((years / 8) * 70 + recencyBoost + (years > 0 ? 15 : 0)));
+ return {score, detail: `Estimated experience depth: ${years} years, ${resume.hasCurrent ? 'current role included' : 'no current role detected'}.`};
+}
+function scoreImpactQuality(){
+ const details=[].concat(...state.sections.filter(s=>s.visible).map(s => s.entries ? s.entries.map(e=>`${e.role} ${e.company} ${e.details}`) : [s.content||'']));
+ const numericHits=details.join(' ').match(/\b\d+(?:%|k|m|\+)?\b|\$\d[\d,]*(?:k|m)?/gi)?.length || 0;
+ const verbs=['led','built','improved','increased','reduced','designed','automated','delivered','optimized','developed'];
+ const verbHits=details.join(' ').toLowerCase().match(new RegExp(verbs.join('|'),'g'))?.length || 0;
+ const score=Math.min(100, Math.round(((Math.min(6, numericHits) / 6) * 60) + (Math.min(6, verbHits) / 6) * 40));
+ return {score, detail: `Quantified impact found: ${numericHits} figures, ${verbHits} strong action verbs.`};
+}
+function isPlaceholderText(value){
+ const text=String(value||'').trim();
+ return !text||/^(?:name surname|name and surname|xxxxx yyyyy|your name|professional title|university name|example(?:\s+.*)?|previous company|organization|add\b.*|degree\s*\/.*|job title|skill one|skill two)$/i.test(text);
+}
+function scoreGenericSkills(){
+ const skills=getTechnicalSkillsText().split(/[,;\n|]/).map(skill=>skill.trim()).filter((skill,index,list)=>skill&&!isPlaceholderText(skill)&&list.findIndex(item=>item.toLowerCase()===skill.toLowerCase())===index);
+ const experienceDetails=state.sections.filter(s=>s.visible&&s.type==='experience').flatMap(s=>(s.entries||[]).map(e=>e.details)).join('\n');
+ const contextual=skills.filter(skill=>{
+  const group=collectAtsJobTerms(skill);
+  const aliases=group.flatMap(term=>ATS_ALIASES[term]||[]);
+  return jobTermMatchesAny(experienceDetails,aliases.length?aliases:[skill]);
+ }).length;
+ const listQuality=Math.min(100,Math.round(skills.length/6*100));
+ const contextQuality=skills.length?Math.round(contextual/skills.length*100):0;
+ return {score:Math.round(listQuality*.5+contextQuality*.5),detail:`${skills.length} distinct skills listed; ${contextual} are also evidenced in experience details.`};
+}
+function scoreGenericTitleClarity(){
+ const title=String(state.profile.headline||'').trim();
+ if(isPlaceholderText(title))return {score:0,detail:'Add a clear professional headline.'};
+ const words=title.split(/\s+/).filter(Boolean);
+ const score=words.length===1?65:Math.min(100,70+words.length*10);
+ return {score,detail:words.length===1?`“${title}” is broad; use a specific role title.`:`Professional headline is present: ${title}.`};
+}
+function scoreGenericEducation(){
+ const entries=state.sections.filter(s=>s.visible&&s.type==='education').flatMap(s=>s.entries||[]);
+ if(!entries.length)return {score:40,detail:'No education entry found; education can be role-dependent.'};
+ const fields=entries.reduce((sum,e)=>sum+[e.role,e.company,e.date].filter(value=>!isPlaceholderText(value)).length,0);
+ const possible=entries.length*3;
+ return {score:Math.round(fields/possible*100),detail:`${fields}/${possible} degree, institution, and date fields are filled.`};
+}
+function scoreGenericCertifications(){
+ const text=state.sections.filter(s=>s.visible&&s.type==='certifications').map(s=>s.content||'').join(' ').trim();
+ if(isPlaceholderText(text)||/^add relevant certifications/i.test(text))return {score:70,detail:'No certification is listed; this is treated as optional without a job description.'};
+ return {score:90,detail:'Certification information is present; its relevance requires a job description.'};
+}
+function scoreGenericContact(){
+ const profile=state.profile;
+ const nameValid=!isPlaceholderText(profile.name);
+ const email=String(profile.email||'').trim();
+ const emailValid=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)&&!/(?:example|xyz|test)\.(?:com|org|net)$/i.test(email);
+ const phoneDigits=String(profile.phone||'').replace(/\D/g,'').length;
+ const phoneValid=phoneDigits>=7;
+ const locationValid=!isPlaceholderText(profile.location);
+ const score=(nameValid?30:0)+(emailValid?40:0)+(phoneValid?20:0)+(locationValid?10:0);
+ return {score,detail:`Name ${nameValid?'present':'missing'}, email ${emailValid?'valid':'missing or placeholder'}, phone ${phoneValid?'valid':'missing'}, location ${locationValid?'present':'missing'}.`};
+}
+function jobTermMatchesAny(text, aliases){ return aliases.some(alias => jobTermMatches(text, alias)); }
+function computeAtsChecks(jobTextOverride=''){
+ const technicalSkillsText=getTechnicalSkillsText();
+ const jobText=jobTextOverride || $('jobDescription')?.value || '';
+ if(!String(jobText).trim()){
+  const formatScore=scoreFormatCompatibility();
+  const titleScore=scoreGenericTitleClarity();
+  const sectionScore=scoreSectionStructure();
+  const experienceScore=scoreExperienceDepth();
+  const skillsScore=scoreGenericSkills();
+  const educationScore=scoreGenericEducation();
+  const certificationScore=scoreGenericCertifications();
+  const impactScore=scoreImpactQuality();
+  const contactScore=scoreGenericContact();
+  const resumeKeywords=collectAtsJobTerms(technicalSkillsText);
+  const criteria=[
+   {label:'ATS-friendly Formatting',weight:GENERIC_ATS_WEIGHTING.formatting,score:formatScore.score,detail:formatScore.detail},
+   {label:'Professional Title Clarity',weight:GENERIC_ATS_WEIGHTING.titleClarity,score:titleScore.score,detail:titleScore.detail},
+   {label:'Standard Section Structure',weight:GENERIC_ATS_WEIGHTING.sections,score:sectionScore.score,detail:sectionScore.detail},
+   {label:'Experience & Dates',weight:GENERIC_ATS_WEIGHTING.experience,score:experienceScore.score,detail:experienceScore.detail},
+   {label:'Technical Skills & Context',weight:GENERIC_ATS_WEIGHTING.skills,score:skillsScore.score,detail:skillsScore.detail},
+   {label:'Education Completeness',weight:GENERIC_ATS_WEIGHTING.education,score:educationScore.score,detail:educationScore.detail},
+   {label:'Certifications & Licenses',weight:GENERIC_ATS_WEIGHTING.certifications,score:certificationScore.score,detail:certificationScore.detail},
+   {label:'Quantified Impact',weight:GENERIC_ATS_WEIGHTING.impact,score:impactScore.score,detail:impactScore.detail},
+  {label:'Contact Information',weight:GENERIC_ATS_WEIGHTING.contact,score:contactScore.score,detail:contactScore.detail}
+  ];
+  const score=weightedScore(criteria,95);
+  const findings=criteria.filter(item=>item.score<70).map(item=>({title:item.label,detail:item.detail,severity:item.score<50?'high':'medium'}));
+  if(!findings.length)findings.push({title:'Good general ATS readiness',detail:'Your resume has a solid structure and readable content. Add a job description for role-specific matching.',severity:'good'});
+  return {score,generic:true,keywordCoverage:skillsScore,matchedKeywords:resumeKeywords,missingKeywords:[],findings,criteria,resumeText:technicalSkillsText};
+ }
+ const jobTerms=collectAtsJobTerms(jobText);
+ const matchedTerms=jobTerms.filter(term => {
+  const aliases=ATS_ALIASES[term]||[term];
+  return jobTermMatchesAny(technicalSkillsText, aliases);
+ });
+ const missingTerms=jobTerms.filter(term => !matchedTerms.includes(term));
+ const keywordCoverage=jobTerms.length ? Math.round((matchedTerms.length / jobTerms.length) * 100) : 70;
+ const keywordScore = {score: keywordCoverage, detail: jobTerms.length ? `Matched ${matchedTerms.length}/${jobTerms.length} recognized skill groups in the Technical Skills section.` : 'No mapped skills were found in the job description; partial neutral credit applied.'};
+ const jobTitleScore = scoreJobTitleAlignment(jobText);
+ const experienceDetails=state.sections.filter(s=>s.visible && s.type==='experience').flatMap(s=>(s.entries||[]).map(e=>e.details)).join('\n');
+ const contextualMatches=jobTerms.filter(term=>jobTermMatchesAny(experienceDetails,ATS_ALIASES[term]||[]));
+ const resumeSkillMatches=jobTerms.filter(term=>matchedTerms.includes(term)).length;
+ const requiredSkillsScore = {score: jobTerms.length ? Math.round((resumeSkillMatches / jobTerms.length * 50) + (contextualMatches.length / jobTerms.length * 50)) : 70, detail: jobTerms.length ? `${resumeSkillMatches}/${jobTerms.length} requirements appear in the resume; ${contextualMatches.length} are evidenced in experience.` : 'No recognized job requirements found; partial neutral credit applied.'};
+ const formatScore = scoreFormatCompatibility();
+ const sectionScore = scoreSectionStructure();
+ const experienceScore = scoreExperienceDepth(jobText);
+ const educationScore = scoreEducationMatch(jobText);
+ const certScore = scoreCertMatch(jobText);
+ const impactScore = scoreImpactQuality();
+
+ const criteria=[
+  {label:'1. Keyword Match', weight:ATS_WEIGHTING.keyword, score:keywordScore.score, ok:keywordScore.score>=70, detail:keywordScore.detail},
+  {label:'2. Job Title Alignment', weight:ATS_WEIGHTING.jobTitle, score:jobTitleScore.score, ok:jobTitleScore.score>=70, detail:jobTitleScore.detail},
+  {label:'3. Required Skills Coverage', weight:ATS_WEIGHTING.requiredSkills, score:requiredSkillsScore.score, ok:requiredSkillsScore.score>=70, detail:requiredSkillsScore.detail},
+  {label:'4. Formatting Compatibility', weight:ATS_WEIGHTING.format, score:formatScore.score, ok:formatScore.score>=75, detail:formatScore.detail},
+  {label:'5. Standard Section Structure', weight:ATS_WEIGHTING.sections, score:sectionScore.score, ok:sectionScore.score>=80, detail:sectionScore.detail},
+  {label:'6. Experience Recency & Depth', weight:ATS_WEIGHTING.experience, score:experienceScore.score, ok:experienceScore.score>=70, detail:experienceScore.detail},
+  {label:'7. Education Match', weight:ATS_WEIGHTING.education, score:educationScore.score, ok:educationScore.score>=80, detail:educationScore.detail},
+  {label:'8. Certifications & Licenses', weight:ATS_WEIGHTING.certifications, score:certScore.score, ok:certScore.score>=80, detail:certScore.detail},
+  {label:'9. Quantified Impact', weight:ATS_WEIGHTING.impact, score:impactScore.score, ok:impactScore.score>=70, detail:impactScore.detail}
+ ];
+ const score = weightedScore(criteria,95);
+ const findings=[];
+ criteria.forEach(item => {
+  if(item.score < 70){
+   findings.push({title:item.label, detail:item.detail, severity:item.score < 50 ? 'high' : 'medium'});
+  }
+ });
+ if(!findings.length){
+  findings.push({title:'Strong ATS fit', detail:'Your resume aligns well across the nine ATS criteria.', severity:'good'});
+ }
+ const matchedKeywords = [...new Set(jobTerms.filter(term => matchedTerms.includes(term)))];
+ return { score, keywordCoverage, matchedKeywords, missingKeywords: missingTerms, findings, criteria, resumeText:technicalSkillsText };
+}
+function renderAtsResults(report){
+ const container=$('atsResults');
+ if(!report){container.innerHTML='<div class="ats-empty">Run checks to review resume completeness, formatting risks, and optional job-description relevance.</div>';return;}
+ const matchedKeywords = report.matchedKeywords.length ? report.matchedKeywords.map(t=>`<span class="ats-keyword matched">${$esc(t)}</span>`).join('') : '<span class="ats-keyword missing">No keyword matches</span>';
+ const missingKeywords = report.missingKeywords.length ? report.missingKeywords.map(t=>`<span class="ats-keyword missing">${$esc(t)}</span>`).join('') : '<span class="ats-keyword matched">All key terms covered</span>';
+ const criteria = report.criteria.map(item => `<div class="ats-criterion"><div><b>${$esc(item.label)}</b><span>${Math.round(item.score)}%</span></div><div class="ats-criterion-bar"><span style="width:${Math.min(100, item.score)}%"></span></div><p>${$esc(item.detail)}</p></div>`).join('');
+ const findings = report.findings.map(item => `<div class="ats-finding ${item.severity}"><span class="ats-icon">${item.severity==='high'?'⚠':item.severity==='medium'?'!':'✓'}</span><div><h3>${$esc(item.title)}</h3><p>${$esc(item.detail)}</p></div><span class="ats-severity">${item.severity}</span></div>`).join('');
+ const hasScore=Number.isFinite(report.score);
+ const matchedDisplay=matchedKeywords||'<span class="ats-keyword missing">No recognized resume keywords detected</span>';
+ const missingDisplay=missingKeywords||'<span class="ats-keyword matched">All key terms covered</span>';
+ const comparisonDetails=report.generic?`<div class="ats-section-title">Recognized resume keywords</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Job-specific comparison</div><div class="ats-empty">Add a job description to compare required keywords, title alignment, and skill relevance.</div>`:`<div class="ats-section-title">Keyword match</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Missing terms</div><div class="ats-keywords">${missingDisplay}</div>`;
+ const criteriaTitle=report.generic?'General readiness factors':'ATS criteria';
+ const note=report.generic?'Generic readiness uses resume-verifiable factors only: format, title clarity, section quality, experience, technical skills, education, credentials, impact, and contact details. Job-description keyword, title, and required-skill matching are unavailable until a job description is added.':'Keyword match (50%) uses only the Technical Skills section; job title alignment (25%) and skills evidenced in experience (15%) make up the other primary factors. Formatting, structure, experience depth, education, certifications, and impact make up the remaining 10%. This heuristic score is capped at 95 because employer-specific ATS rules cannot be reproduced; scores around 75–80% or higher are generally considered strong.';
+ container.innerHTML=`<div class="ats-score-row"><div class="ats-score">${hasScore?report.score:'—'}<small>score</small></div><div class="ats-score-meta"><strong>${report.generic?'Generic ATS readiness':'ATS readiness'}</strong><div>${report.generic?'Resume-only estimate; not matched to a job description.':hasScore?'Weighted score based on the 9 ATS criteria':'Paste a target job description to calculate compatibility.'}</div><div class="ats-progress"><span style="width:${hasScore?report.score:0}%"></span></div></div></div>${comparisonDetails}<div class="ats-section-title">${criteriaTitle}</div><div class="ats-criteria-grid">${criteria}</div><div class="ats-section-title">Findings</div><div class="ats-findings">${findings}</div><div class="ats-note">${note}</div>`;
+}
+function openAts(){
+ $('atsModalBg').classList.add('show');
+ $('atsModalBg').setAttribute('aria-hidden','false');
+ $('jobDescription').focus();
+ runAtsChecks();
+}
+function closeAts(){
+ $('atsModalBg').classList.remove('show');
+ $('atsModalBg').setAttribute('aria-hidden','true');
+}
+function applyAtsFriendlyLayout(){
+ transact(()=>{
+  state.template='classic';
+  state.layout='single';
+  state.design.accent='#31547a';
+  state.design.font='Arial';
+  state.design.margin=32;
+  state.design.marginY=32;
+ });
+ toast('ATS-friendly layout applied');
+}
+async function runAtsChecks(){
+ const results=$('atsResults');
+ results.innerHTML='<div class="ats-processing"><div class="ats-spinner"></div><strong>Checking ATS readiness…</strong><div class="ats-processing-track"><span></span></div><p>Reviewing structure, keyword fit, and export readability.</p></div>';
+ await new Promise(resolve => setTimeout(resolve, 3200));
+ renderAtsResults(computeAtsChecks($('jobDescription').value || ''));
+}
 $('templates').addEventListener('click',e=>{const b=e.target.closest('[data-template]');if(!b)return;transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
 $('sectionList').addEventListener('click',e=>{const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
 $('sectionList').addEventListener('dragstart',e=>{const row=e.target.closest('[data-section-row]');if(!row)return;draggingId=row.dataset.sectionRow;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggingId);row.style.opacity='.5'});
@@ -356,7 +655,8 @@ $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.
 $('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
 $('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.1,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
-$('pdfBtn').addEventListener('click',exportPDF);$('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
+ $('pdfBtn').addEventListener('click',exportPDF);$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',runAtsChecks);$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(runAtsChecks,250)});
+$('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 let resizing=null;
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
 $('panelGrip').addEventListener('pointerdown',gripDown('r'));$('leftGrip').addEventListener('pointerdown',gripDown('l'));
@@ -365,7 +665,7 @@ document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs(
 $('collapseLeft').addEventListener('click',toggleLeft);$('expandLeft').addEventListener('click',toggleLeft);$('expandRight').addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape')$('modalBg').classList.remove('show')});
-try{const raw=localStorage.getItem('resumeStudioV2')||localStorage.getItem('resumeStudioProject');if(raw){state=normalizeState(JSON.parse(raw));let profileUpdated=false;if(state.profile.name==='Alex Morgan'){state.profile.name='Vishal Maurya';profileUpdated=true}if(state.profile.email==='alex.morgan@email.com'){state.profile.email='mauryavishal93@gmail.com';profileUpdated=true}if(state.profile.website==='linkedin.com/in/alexmorgan'){state.profile.website='linkedin.com/in/vimaurya/';profileUpdated=true}if(profileUpdated)saveLocal()}}catch(e){state=fresh()}
+try{const raw=localStorage.getItem('resumeStudioV2')||localStorage.getItem('resumeStudioProject');if(raw){state=normalizeState(JSON.parse(raw));let profileUpdated=false;if(state.profile.name==='Alex Morgan'||state.profile.name==='Vishal Maurya'||state.profile.name==='XXXXX YYYYY'||state.profile.name==='NAME and SURNAME'){state.profile.name='Name Surname';profileUpdated=true}if(state.profile.headline==='QA Automation Engineer'){state.profile.headline='Engineer';profileUpdated=true}if(state.profile.email==='alex.morgan@email.com'||state.profile.email==='mauryavishal93@gmail.com'){state.profile.email='abc@xyz.com';profileUpdated=true}if(state.profile.website==='linkedin.com/in/alexmorgan'||state.profile.website==='linkedin.com/in/vimaurya/'){state.profile.website='linkedin.com/in/abcxyz/';profileUpdated=true}if(profileUpdated)saveLocal()}}catch(e){state=fresh()}
 addEventListener('pagehide',()=>{try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(e){}});
 loadPrefs();render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}
 })();

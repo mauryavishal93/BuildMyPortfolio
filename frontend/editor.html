@@ -106,6 +106,22 @@
     </div>
   </section>
 </div>
+<div class="modal-bg" id="pdfPreviewModalBg" aria-hidden="true">
+  <section class="modal pdf-preview-modal" role="dialog" aria-modal="true" aria-labelledby="pdfPreviewTitle">
+    <div class="pdf-preview-head">
+      <div>
+        <h2 id="pdfPreviewTitle">Preview your resume PDF</h2>
+        <p class="ats-subtitle" id="pdfPreviewStatus" aria-live="polite">Preparing your PDF preview…</p>
+      </div>
+      <button class="size-btn" id="closePdfPreview" aria-label="Close PDF preview">✕</button>
+    </div>
+    <iframe id="pdfPreviewFrame" title="Resume PDF preview" class="pdf-preview-frame"></iframe>
+    <div class="modal-actions">
+      <button class="btn soft" id="cancelPdfPreview">Cancel</button>
+      <button class="btn primary" id="downloadPdfPreview" disabled>Download PDF</button>
+    </div>
+  </section>
+</div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

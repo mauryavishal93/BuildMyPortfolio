@@ -61,6 +61,7 @@ function normalizeState(d){
  return out;
 }
 let state=fresh(),selectedId=null,zoom=1,history=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false;
+let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
@@ -321,25 +322,66 @@ function addPDFLinks(doc,sheet){
 }
 async function exportPDF(){
  const sheets=[...$('sheets').querySelectorAll('.sheet')];if(!sheets.length)return;
- const btn=$('pdfBtn'),oldZoom=sheets.map(x=>x.style.transform);
+ const generation=++pdfPreviewGeneration;
+ const btn=$('pdfBtn'),status=$('pdfPreviewStatus'),frame=$('pdfPreviewFrame'),downloadBtn=$('downloadPdfPreview');
+ openPdfPreview();
+ $('pdfPreviewTitle').textContent='Preview your resume PDF';
+ status.textContent='Preparing your PDF preview…';
+ frame.hidden=true;
+ downloadBtn.disabled=true;
+ btn.disabled=true;btn.textContent='Creating preview…';
  try{
-  btn.disabled=true;btn.textContent='Creating PDF…';
   $('sheets').classList.add('exporting');sheets.forEach(sheet=>sheet.style.transform='none');
   if(document.fonts&&document.fonts.ready)await document.fonts.ready;
   const [{default:html2canvas},{jsPDF}]=await Promise.all([import('html2canvas'),import('jspdf')]);
-  {
-   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
-   for(let i=0;i<sheets.length;i++){
-    const canvas=await html2canvas(sheets[i],{scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
-    if(i>0)doc.addPage('a4','portrait');
-    doc.addImage(canvas.toDataURL('image/jpeg',.96),'JPEG',0,0,210,297,undefined,'FAST');
-    addSelectableText(doc,sheets[i]);
-    addPDFLinks(doc,sheets[i]);
-   }
-   doc.save((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.pdf');toast('PDF exported');
+  if(generation!==pdfPreviewGeneration)return;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+  for(let i=0;i<sheets.length;i++){
+   const canvas=await html2canvas(sheets[i],{scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
+   if(generation!==pdfPreviewGeneration)return;
+   if(i>0)doc.addPage('a4','portrait');
+   doc.addImage(canvas.toDataURL('image/jpeg',.96),'JPEG',0,0,210,297,undefined,'FAST');
+   addSelectableText(doc,sheets[i]);
+   addPDFLinks(doc,sheets[i]);
   }
- }catch(e){console.error(e);alert('PDF export failed. Please use Print → Save as PDF.')}
- finally{$('sheets').classList.remove('exporting');btn.disabled=false;btn.textContent='Export PDF';renderSheets()}
+  showPdfPreview(doc.output('blob'),`${(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')}.pdf`,doc.getNumberOfPages(),'Preview your resume PDF');
+ }catch(e){
+  console.error(e);
+  status.textContent='PDF preview could not be created. Close this window and try again.';
+ }finally{$('sheets').classList.remove('exporting');btn.disabled=false;btn.textContent='Export PDF';renderSheets()}
+}
+function openPdfPreview(){
+ $('pdfPreviewModalBg').classList.add('show');
+ $('pdfPreviewModalBg').setAttribute('aria-hidden','false');
+ $('closePdfPreview').focus();
+}
+function showPdfPreview(blob,filename,pageCount,title){
+ if(pdfPreviewUrl)URL.revokeObjectURL(pdfPreviewUrl);
+ pdfPreviewBlob=blob;
+ pdfPreviewFilename=filename;
+ pdfPreviewUrl=URL.createObjectURL(blob);
+ $('pdfPreviewTitle').textContent=title;
+ $('pdfPreviewFrame').src=pdfPreviewUrl;
+ $('pdfPreviewFrame').hidden=false;
+ $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'} · Review the PDF before downloading.`;
+ $('downloadPdfPreview').disabled=false;
+}
+function closePdfPreview(){
+ pdfPreviewGeneration++;
+ $('pdfPreviewModalBg').classList.remove('show');
+ $('pdfPreviewModalBg').setAttribute('aria-hidden','true');
+ $('pdfPreviewFrame').removeAttribute('src');
+ $('pdfPreviewFrame').hidden=true;
+ $('downloadPdfPreview').disabled=true;
+ pdfPreviewBlob=null;
+ pdfPreviewFilename='';
+ if(pdfPreviewUrl){URL.revokeObjectURL(pdfPreviewUrl);pdfPreviewUrl=null}
+}
+function downloadPreviewPdf(){
+ if(!pdfPreviewBlob)return;
+ download(pdfPreviewFilename,pdfPreviewBlob);
+ closePdfPreview();
+ toast('PDF downloaded');
 }
 
 const ATS_STOPWORDS=new Set('a an the and or but if then than with without for from into onto to of in on at by as is are was were be been being this that these those it its your you we our they their will can may must should have has had not no do does did about across after before during over under between per each all any more most other such use using used work working role job team company experience skills skill required preferred plus including strong excellent good knowledge ability able responsibilities qualifications requirement requirements candidate position'.split(/\s+/));
@@ -663,21 +705,29 @@ function downloadCoverLetter(){
 function coverLetterFilename(){
  return [$('coverJobTitle').value,$('coverCompany').value,'cover-letter'].filter(Boolean).join('-').replace(/[^a-z0-9-_]+/gi,'-').replace(/-+/g,'-').toLowerCase();
 }
-async function downloadCoverLetterPdf(){
+async function previewCoverLetterPdf(){
  const text=$('coverLetterDraft').value.trim();
  if(!text){toast('Generate a draft first');return}
  const button=$('downloadCoverLetterPdf');
+ const generation=++pdfPreviewGeneration;
+ openPdfPreview();
+ $('pdfPreviewTitle').textContent='Preview your cover letter PDF';
+ $('pdfPreviewStatus').textContent='Preparing your PDF preview…';
+ $('pdfPreviewFrame').hidden=true;
+ $('downloadPdfPreview').disabled=true;
  try{
   button.disabled=true;
+  button.textContent='Preparing preview…';
   const {jsPDF}=await import('jspdf');
+  if(generation!==pdfPreviewGeneration)return;
   const doc=buildCoverLetterPdf(jsPDF,text);
-  doc.save(`${coverLetterFilename()}.pdf`);
-  toast('Cover letter PDF downloaded');
+  showPdfPreview(doc.output('blob'),`${coverLetterFilename()}.pdf`,doc.getNumberOfPages(),'Preview your cover letter PDF');
  }catch(error){
   console.error(error);
-  alert('Cover letter PDF export failed. Please try Download .txt instead.');
+  if(generation===pdfPreviewGeneration)$('pdfPreviewStatus').textContent='Cover letter PDF preview could not be created. Close this window and try again.';
  }finally{
   button.disabled=false;
+  button.textContent='Download .pdf';
  }
 }
 function applyAtsFriendlyLayout(){
@@ -739,12 +789,12 @@ document.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click',()
 $('confirmCustom').addEventListener('click',()=>{transact(()=>addSection('custom',$('customTitle').value.trim()||'Additional information',$('customContent').value));$('modalBg').classList.remove('show')});
 $('cancelCustom').addEventListener('click',()=>$('modalBg').classList.remove('show'));
 $('modalBg').addEventListener('click',e=>{if(e.target===$('modalBg'))$('modalBg').classList.remove('show')});
-$('coverLetterBtn').addEventListener('click',openCoverLetter);$('closeCoverLetter').addEventListener('click',closeCoverLetter);$('coverLetterModalBg').addEventListener('click',e=>{if(e.target===$('coverLetterModalBg'))closeCoverLetter()});$('generateCoverLetter').addEventListener('click',generateCoverLetter);$('copyCoverLetter').addEventListener('click',copyCoverLetter);$('downloadCoverLetter').addEventListener('click',downloadCoverLetter);$('downloadCoverLetterPdf').addEventListener('click',downloadCoverLetterPdf);
+$('coverLetterBtn').addEventListener('click',openCoverLetter);$('closeCoverLetter').addEventListener('click',closeCoverLetter);$('coverLetterModalBg').addEventListener('click',e=>{if(e.target===$('coverLetterModalBg'))closeCoverLetter()});$('generateCoverLetter').addEventListener('click',generateCoverLetter);$('copyCoverLetter').addEventListener('click',copyCoverLetter);$('downloadCoverLetter').addEventListener('click',downloadCoverLetter);$('downloadCoverLetterPdf').addEventListener('click',previewCoverLetterPdf);
 $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.value==='two'?'two':'single'));
 $('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
 $('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
- $('pdfBtn').addEventListener('click',exportPDF);$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',runAtsChecks);$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(runAtsChecks,250)});
+ $('pdfBtn').addEventListener('click',exportPDF);$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',runAtsChecks);$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(runAtsChecks,250)});
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 let resizing=null;
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
@@ -753,7 +803,7 @@ document.addEventListener('pointermove',e=>{if(!resizing)return;if(resizing==='r
 document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs()}});
 $('collapseLeft').addEventListener('click',toggleLeft);$('expandLeft').addEventListener('click',toggleLeft);$('expandRight').addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
-document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter()}});
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter();closePdfPreview()}});
 try{const raw=localStorage.getItem('resumeStudioV2')||localStorage.getItem('resumeStudioProject');if(raw)state=normalizeState(JSON.parse(raw))}catch(e){state=fresh()}
 addEventListener('pagehide',()=>{try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(e){}});
 loadPrefs();if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()

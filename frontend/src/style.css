@@ -6,7 +6,7 @@
 /* ===== A4 sheet: ONE margin system =====
    --mx  left/right page margin, --mt/--mb top/bottom page margin.
    Header and body both take their horizontal inset from --mx only, so nothing stacks. */
-.sheets{display:flex;flex-direction:column;align-items:center;gap:24px;min-height:300px}
+.sheets{display:flex;flex-direction:column;align-items:center;gap:24px;min-height:300px;touch-action:pan-x pan-y}
 .sheet{width:794px;height:1122px;flex:0 0 1122px;position:relative;overflow:hidden;background:#fff;box-shadow:0 5px 24px #1b2b4617;color:#202a3a;transform-origin:top center;font-family:var(--resume-font);--resume-accent:var(--accent);--resume-font:Arial,sans-serif;--resume-size:12px;--resume-heading:15px;--mx:32px;--mt:32px;--mb:32px;--page-no-h:26px;--area-pt:0px;--col-gap:20px;--c1:1.2fr;--c2:.8fr}
 .sheet-inner{height:100%;width:100%;padding:0;display:flex;flex-direction:column;overflow:hidden}
 .resume-header{flex:none;margin:var(--mt) var(--mx) 16px;padding:0}
@@ -114,10 +114,12 @@
 @media(max-width:800px){.brand span:not(.logo){display:none}.brand .logo{display:grid}}
 @media(max-width:520px){.templates{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar .btn{font-size:10px}.docname{width:88px}.field-row{grid-template-columns:1fr 1fr}}
 @media(max-width:520px){.topbar{height:auto;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname docname" "undo load save pdf";gap:6px;padding:8px}.topbar .brand{grid-area:brand;justify-content:center}.topbar .brand .logo{display:grid}.topbar .docname{grid-area:docname;width:100%;min-width:0}.topbar .spacer,.topbar .save-state{display:none}#undoBtn{grid-area:undo}#loadBtn{grid-area:load}#saveBtn{grid-area:save}#pdfBtn{grid-area:pdf}.topbar .btn{width:100%;min-width:0;padding:7px 2px;font-size:10px}.layout{min-height:calc(100vh - 106px)}}
-@media(max-width:800px){.topbar{height:auto;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-areas:"brand docname docname docname docname" "undo load save pdf about";gap:6px;padding:8px}.topbar .brand{grid-area:brand;justify-content:center}.topbar .docname{grid-area:docname;width:100%;min-width:0}.topbar .spacer,.topbar .save-state{display:none}#undoBtn{grid-area:undo}#loadBtn{grid-area:load}#saveBtn{grid-area:save}#pdfBtn{grid-area:pdf}#aboutLink{grid-area:about}.topbar .btn{width:100%;min-width:0;padding:7px 2px;font-size:11px}}
+@media(max-width:800px){.topbar{height:auto;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-areas:"brand docname docname docname docname" "undo load save pdf about";gap:6px;padding:8px}.topbar .brand{grid-area:brand;justify-content:flex-start;margin-left:8px}.topbar .docname{grid-area:docname;width:100%;min-width:0}.topbar .spacer,.topbar .save-state{display:none}#undoBtn{grid-area:undo}#loadBtn{grid-area:load}#saveBtn{grid-area:save}#pdfBtn{grid-area:pdf}#aboutLink{grid-area:about}.topbar .btn{width:100%;min-width:0;padding:7px 2px;font-size:11px}}
 @media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname about" "undo load save pdf"}.topbar .btn{font-size:10px}}
 @media(max-width:800px){.left,.right{width:100%;max-height:45vh;overflow:hidden;align-self:stretch}.layout.collapsed-l .left,.layout.collapsed-r .right{width:36px!important;max-height:none;align-self:flex-start}}
 .left,.right{background:#f1f3f6}.center{background:#edf0f4}.sheets{background-color:#e8edf3;background-image:radial-gradient(circle,#cbd3df .7px,transparent .8px);background-size:18px 18px}
+@media(max-width:800px){.topbar{grid-template-areas:"brand docname docname docname docname" "cover cover about pdf pdf"}#coverLetterBtn{grid-area:cover}#aboutLink{grid-area:about}#pdfBtn{grid-area:pdf}}
+@media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname docname" "cover cover about pdf"}#coverLetterBtn{grid-area:cover}#aboutLink{grid-area:about}#pdfBtn{grid-area:pdf}}
 @media(max-width:800px){.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"left right" "center center";align-items:start}#leftPanel{grid-area:left}#rightPanel{grid-area:right}.center{grid-area:center;width:100%}.left,.right{width:100%;max-height:45vh;overflow:hidden;align-self:stretch}.layout.collapsed-l .left{width:36px!important;max-height:none;align-self:flex-start;justify-self:start}.layout.collapsed-r .right{width:36px!important;max-height:none;align-self:flex-start;justify-self:end}}
 @media(max-width:520px){.templates{grid-template-columns:1fr}.field-row{grid-template-columns:1fr}.inspector-head{flex-wrap:wrap}.inspector-head h2{flex:1 1 100%;font-size:12px}.inspector-head [data-panel-size]{display:none}}
 @media print{.center,.sheets{background:#fff;background-image:none}}
@@ -131,8 +133,15 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .resume-section.selected{outline-color:var(--purple)}
 .panel-grip:hover:after{background:var(--purple)}
 .toolbar{padding:10px 11px;background:rgba(255,255,255,.82);border:1px solid #d9e2e6;border-radius:10px;box-shadow:0 5px 16px rgba(27,36,52,.06)}
+.cover-letter-modal{width:min(760px,100%);max-height:min(90vh,900px);overflow:auto}
+.cover-letter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+.cover-letter-head h2{margin:0 0 4px;font-size:18px}
+.cover-letter-generate{margin:0 0 12px}
+#coverLetterDraft{min-height:280px;resize:vertical;font:13px/1.6 Georgia,serif}
+@media(max-width:600px){.cover-letter-fields{grid-template-columns:1fr}.cover-letter-modal{padding:16px}}
 .btn,.size-btn,.template,.tab,.seg button,.add{transition:transform .16s ease,border-color .16s ease,color .16s ease,background-color .16s ease,box-shadow .16s ease}
 .btn:hover:not(:disabled){transform:translateY(-1px)}
+.btn:disabled{opacity:.48;cursor:not-allowed;filter:grayscale(.4)}
 @media screen and (min-width:1281px) and (max-width:1410px){:root{--lw:200px;--rw:235px}}
 @media screen and (max-width:1280px){.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"left right" "center center";align-items:start}#leftPanel{grid-area:left}#rightPanel{grid-area:right}.center{grid-area:center;width:100%;min-width:0}.left,.right{position:static;width:100%;height:auto;max-height:45vh;overflow:hidden;align-self:stretch}.layout.collapsed-l .left{width:36px!important;max-height:none;align-self:flex-start;justify-self:start}.layout.collapsed-r .right{width:36px!important;max-height:none;align-self:flex-start;justify-self:end}}
 /* Print uses the same margin variables as the preview, so print == preview == PDF */

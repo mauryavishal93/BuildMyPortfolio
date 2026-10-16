@@ -11,10 +11,7 @@
  <div class="brand"><span class="logo">B</span><span>BuildMyPortfolio</span></div>
  <input id="docName" class="docname" aria-label="Project name" value="Untitled resume">
  <div class="spacer"></div><span class="save-state"><span class="dot"></span><span id="saveState">Saved in this browser</span></span>
- <button class="btn soft" id="undoBtn" title="Undo">↶ Undo</button>
- <button class="btn outline" id="loadBtn">Load JSON</button>
- <button class="btn outline" id="saveBtn">Save JSON</button>
- <button class="btn outline" id="atsBtn">ATS Check</button>
+ <button class="btn outline" id="coverLetterBtn">Cover letter</button>
  <a class="btn outline" id="aboutLink" href="/about.html">About</a>
  <button class="btn primary" id="pdfBtn">Export PDF</button>
  <input id="jsonInput" class="hidden" type="file" accept=".json,application/json">
@@ -39,6 +36,10 @@
   <div class="toolbar">
    <label for="pageLayout">Layout</label><select id="pageLayout"><option value="single">Single column</option><option value="two">Two columns</option></select>
    <label for="editMode">Editor</label><select id="editMode"><option value="flow">Structured</option><option value="free">Free position</option></select>
+  <button class="btn soft small" id="undoBtn" title="Undo" disabled>↶ Undo</button>
+  <button class="btn outline small" id="loadBtn">Load JSON</button>
+  <button class="btn outline small" id="saveBtn">Save JSON</button>
+  <button class="btn outline small" id="atsBtn">ATS Check</button>
    <div class="spacer"></div><button class="btn soft small" id="zoomOut">−</button><span id="zoomLabel" style="font-size:11px;color:var(--muted)">100%</span><button class="btn soft small" id="zoomIn">＋</button>
   </div>
   <div class="hint" id="hint">A4 preview · Select a section to edit it</div>
@@ -70,6 +71,38 @@
     </div>
     <div id="atsResults" aria-live="polite">
       <div class="ats-empty">Run checks to review resume completeness, formatting risks, and optional job-description relevance.</div>
+    </div>
+  </section>
+</div>
+<div class="modal-bg" id="coverLetterModalBg" aria-hidden="true">
+  <section class="modal cover-letter-modal" role="dialog" aria-modal="true" aria-labelledby="coverLetterTitle">
+    <div class="cover-letter-head">
+      <div>
+        <h2 id="coverLetterTitle">Cover Letter Studio</h2>
+        <p class="ats-subtitle">A first draft from your resume and target role. Review every detail before sending.</p>
+      </div>
+      <button class="size-btn" id="closeCoverLetter" aria-label="Close cover letter studio">✕</button>
+    </div>
+    <div class="field-row cover-letter-fields">
+      <div class="field"><label for="coverJobTitle">Job title</label><input id="coverJobTitle" placeholder="e.g. QA Engineer"></div>
+      <div class="field"><label for="coverCompany">Company</label><input id="coverCompany" placeholder="Company name"></div>
+    </div>
+    <div class="field">
+      <label for="coverJobDescription">Job description</label>
+      <textarea id="coverJobDescription" rows="5" placeholder="Paste the job description to identify relevant skills from your resume"></textarea>
+    </div>
+    <div class="modal-actions cover-letter-generate">
+      <button class="btn primary" id="generateCoverLetter">Generate draft</button>
+    </div>
+    <div class="field">
+      <label for="coverLetterDraft">Editable cover letter</label>
+      <textarea id="coverLetterDraft" rows="14" placeholder="Your draft will appear here"></textarea>
+      <div class="small-note">Generated locally from your resume. No account or AI service is used.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn soft" id="copyCoverLetter">Copy</button>
+      <button class="btn outline" id="downloadCoverLetter">Download .txt</button>
+      <button class="btn outline" id="downloadCoverLetterPdf">Download .pdf</button>
     </div>
   </section>
 </div>

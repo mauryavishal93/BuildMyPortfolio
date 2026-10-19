@@ -1,6 +1,6 @@
 # BuildMyPortfolio
 
-A browser-based resume editor with multiple templates, editable sections, JSON project import/export, local autosave, and PDF export.
+A browser-based resume editor with multiple templates, editable sections, JSON project import/export, local autosave, and high-resolution PDF export with selectable text.
 
 ## Requirements
 

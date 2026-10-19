@@ -6,7 +6,7 @@ import { zoomFromPinch } from './zoom.js';
 (()=>{'use strict';
 const $=id=>document.getElementById(id),deep=x=>JSON.parse(JSON.stringify(x)),uid=()=>Math.random().toString(36).slice(2,10);
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
-const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
+const PAGE_W=794,PAGE_H=1122,PDF_EXPORT_SCALE=8,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
 const templateDefs=[
 {id:'classic',name:'Classic',sub:'ATS-friendly',accent:'#31547a',cls:'layout-classic',layout:'single'},
@@ -337,7 +337,7 @@ async function exportPDF(){
   if(generation!==pdfPreviewGeneration)return;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
   for(let i=0;i<sheets.length;i++){
-   const canvas=await html2canvas(sheets[i],{scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
+   const canvas=await html2canvas(sheets[i],{scale:PDF_EXPORT_SCALE,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
    if(generation!==pdfPreviewGeneration)return;
    if(i>0)doc.addPage('a4','portrait');
    doc.addImage(canvas.toDataURL('image/jpeg',.96),'JPEG',0,0,210,297,undefined,'FAST');

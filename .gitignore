@@ -1,6 +1,7 @@
 node_modules/
 dist/
 /src/
+/frontend/.env.local
 /resume-studio-working-model-v2.html
 .DS_Store
 npm-debug.log*

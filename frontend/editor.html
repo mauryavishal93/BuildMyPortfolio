@@ -11,11 +11,34 @@
  <div class="brand"><span class="logo">B</span><span>BuildMyPortfolio</span></div>
  <input id="docName" class="docname" aria-label="Project name" value="Untitled resume">
  <div class="spacer"></div><span class="save-state"><span class="dot"></span><span id="saveState">Saved in this browser</span></span>
+ <div class="cloud-actions">
+  <button class="btn outline" id="googleSignInBtn" type="button">Sign in with Google</button>
+  <button class="btn outline" id="cloudResumesBtn" type="button" hidden>My cloud resumes</button>
+  <button class="btn outline" id="googleSignOutBtn" type="button" hidden>Sign out</button>
+ </div>
  <button class="btn outline" id="coverLetterBtn">Cover letter</button>
  <a class="btn outline" id="aboutLink" href="/about.html">About</a>
  <button class="btn primary" id="pdfBtn">Export PDF</button>
  <input id="jsonInput" class="hidden" type="file" accept=".json,application/json">
 </header>
+<div class="modal-bg" id="cloudModalBg" aria-hidden="true">
+  <section class="modal cloud-modal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle">
+    <div class="cloud-modal-head">
+      <div>
+        <h2 id="cloudTitle">My cloud resumes</h2>
+        <p class="ats-subtitle" id="cloudAccount" aria-live="polite">Sign in to access your resumes across devices.</p>
+      </div>
+      <button class="size-btn" id="closeCloudModal" type="button" aria-label="Close cloud resumes">✕</button>
+    </div>
+    <p class="cloud-notice">Cloud resumes contain the information you enter, including contact details and any profile photo. Keep JSON exports as a separate backup.</p>
+    <div id="cloudResumeList" class="cloud-resume-list" aria-live="polite"></div>
+    <div class="modal-actions">
+      <button class="btn soft" id="refreshCloudResumes" type="button">Refresh list</button>
+      <button class="btn outline" id="saveCloudCopy" type="button">Save current as new</button>
+      <button class="btn primary" id="closeCloudModalAction" type="button">Done</button>
+    </div>
+  </section>
+</div>
 <div class="layout" id="layout">
  <aside class="left" id="leftPanel"><div class="panel-grip left-grip" id="leftGrip" title="Drag to resize panel"></div>
   <button class="size-btn strip-btn" id="expandLeft" title="Expand sidebar" aria-label="Expand sidebar">⇥</button>
@@ -38,7 +61,7 @@
    <label for="editMode">Editor</label><select id="editMode"><option value="flow">Structured</option><option value="free">Free position</option></select>
   <button class="btn soft small" id="undoBtn" title="Undo" disabled>↶ Undo</button>
   <button class="btn outline small" id="loadBtn">Load JSON</button>
-  <button class="btn outline small" id="saveBtn">Save JSON</button>
+  <button class="btn outline small" id="saveBtn">Download JSON</button>
   <button class="btn outline small" id="atsBtn">ATS Check</button>
    <div class="spacer"></div><button class="btn soft small" id="zoomOut">−</button><span id="zoomLabel" style="font-size:11px;color:var(--muted)">100%</span><button class="btn soft small" id="zoomIn">＋</button>
   </div>

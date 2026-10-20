@@ -1,6 +1,10 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
+import {
+ cloudConfigured, deleteResume, listResumes, observeAuth, saveResume,
+ signInWithGoogle, signOutUser
+} from './firebase-cloud.js';
 import { zoomFromPinch } from './zoom.js';
 
 (()=>{'use strict';
@@ -61,11 +65,163 @@ function normalizeState(d){
  return out;
 }
 let state=fresh(),selectedId=null,zoom=1,history=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false;
+let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[];
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
-function saveLocal(){ $('saveState').textContent='Saving…';clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localStorage.setItem('resumeStudioV2',JSON.stringify(state));$('saveState').textContent='Saved in this browser'}catch(e){$('saveState').textContent='Local save unavailable'}},250)}
+function authErrorMessage(error){
+ const code=error?.code;
+ if(code==='auth/configuration-not-found'||code==='auth/operation-not-allowed'){
+  return 'Google sign-in is not enabled for this Firebase project. In Firebase Console, open Authentication → Sign-in method, enable Google, and save.';
+ }
+ if(code==='auth/unauthorized-domain'){
+  return `This website domain is not authorized for Firebase sign-in. Add "${location.hostname}" under Authentication → Settings → Authorized domains.`;
+ }
+ return error?.message||'Could not sign in with Google.';
+}
+function scheduleCloudSave(){
+ if(!cloudUser||!activeCloudResumeId||cloudSaveBlocked)return;
+ clearTimeout(cloudSaveTimer);
+ cloudSaveTimer=setTimeout(persistCloudResume,700);
+}
+async function persistCloudResume(){
+ if(!cloudUser||!activeCloudResumeId||cloudSaveBlocked)return;
+ if(cloudSaving){cloudSavePending=true;return}
+ const uid=cloudUser.uid,id=activeCloudResumeId,snapshot=deep(state),expectedRevision=activeCloudRevision;
+ cloudSaving=true;
+ try{
+  const result=await saveResume(uid,id,snapshot.docName,snapshot,expectedRevision);
+  if(activeCloudResumeId===id&&cloudUser?.uid===uid){
+   activeCloudRevision=result.revision;
+   if(JSON.stringify(snapshot)===JSON.stringify(state))$('saveState').textContent='Saved in cloud and browser';
+  }
+ }catch(error){
+  if(activeCloudResumeId===id){
+   cloudSaveBlocked=true;
+   $('saveState').textContent='Cloud save stopped—check message';
+   toast(error.message||'Could not save this resume to the cloud.');
+  }
+ }finally{
+  cloudSaving=false;
+  if(cloudSavePending&&!cloudSaveBlocked){cloudSavePending=false;scheduleCloudSave()}
+ }
+}
+function saveLocal(syncCloud=true){
+ $('saveState').textContent='Saving…';
+ clearTimeout(saveTimer);
+ saveTimer=setTimeout(()=>{
+  try{
+   localStorage.setItem('resumeStudioV2',JSON.stringify(state));
+   $('saveState').textContent='Saved in this browser';
+   if(syncCloud)scheduleCloudSave();
+  }catch(error){$('saveState').textContent='Local save unavailable';toast('Could not save this resume in this browser.')}
+ },250);
+}
+function renderCloudResumes(){
+ const list=$('cloudResumeList');
+ if(!cloudUser){list.innerHTML='<div class="cloud-empty">Sign in with Google to access your cloud resumes.</div>';return}
+ if(!cloudResumes.length){list.innerHTML='<div class="cloud-empty">No cloud resumes yet. Save your current resume as a new cloud copy to get started.</div>';return}
+ list.innerHTML=cloudResumes.map(item=>{
+  const updated=item.updatedAt?new Date(item.updatedAt).toLocaleString():'Date unavailable';
+  return `<div class="cloud-resume-item"><div class="cloud-resume-meta"><strong>${$esc(item.name||'Untitled resume')}</strong><small>Updated ${$esc(updated)}</small></div><button class="btn soft" type="button" data-cloud-load="${$esc(item.id)}">Open</button><button class="btn danger" type="button" data-cloud-delete="${$esc(item.id)}">Delete</button></div>`;
+ }).join('');
+}
+async function refreshCloudResumes(){
+ if(!cloudUser){renderCloudResumes();return}
+ const uid=cloudUser.uid;
+ $('cloudResumeList').innerHTML='<div class="cloud-empty">Loading cloud resumes…</div>';
+ try{
+  const resumes=await listResumes(uid);
+  if(cloudUser?.uid!==uid)return;
+  cloudResumes=resumes;
+  renderCloudResumes();
+ }catch(error){
+  if(cloudUser?.uid!==uid)return;
+  $('cloudResumeList').innerHTML=`<div class="cloud-empty">Could not load cloud resumes: ${$esc(error.message||'Firebase request failed.')}</div>`;
+ }
+}
+function openCloudModal(){
+ $('cloudModalBg').classList.add('show');
+ $('cloudModalBg').setAttribute('aria-hidden','false');
+ refreshCloudResumes();
+}
+function closeCloudModal(){
+ $('cloudModalBg').classList.remove('show');
+ $('cloudModalBg').setAttribute('aria-hidden','true');
+}
+async function saveCurrentAsCloudCopy(){
+ if(!cloudUser){toast('Sign in with Google before saving to the cloud.');return}
+ const suggested=state.docName||'Untitled resume';
+ const name=window.prompt('Name this cloud resume:',suggested);
+ if(name===null)return;
+ const cleanName=name.trim().slice(0,120)||'Untitled resume';
+ const copy=deep(state);
+ copy.docName=cleanName;
+ try{
+  const result=await saveResume(cloudUser.uid,null,cleanName,copy,null);
+  activeCloudResumeId=result.id;
+  activeCloudRevision=result.revision;
+  cloudSaveBlocked=false;
+  state=copy;
+  selectedId=null;
+  render();
+  saveLocal(false);
+  await refreshCloudResumes();
+  toast('Cloud resume saved. Future edits will sync automatically.');
+ }catch(error){toast(error.message||'Could not save this resume to the cloud.')}
+}
+function openCloudResume(id){
+ const item=cloudResumes.find(resume=>resume.id===id);
+ if(!item)return;
+ try{
+  state=normalizeState(item.state);
+  activeCloudResumeId=item.id;
+  activeCloudRevision=item.revision;
+  cloudSaveBlocked=false;
+  history=[];
+  selectedId=null;
+  render();
+  saveLocal(false);
+  $('saveState').textContent='Loaded from cloud';
+  closeCloudModal();
+  toast('Cloud resume opened. Future edits will sync automatically.');
+ }catch(error){toast(`Could not open this cloud resume: ${error.message}`)}
+}
+async function removeCloudResume(id){
+ const item=cloudResumes.find(resume=>resume.id===id);
+ if(!item||!cloudUser)return;
+ if(!window.confirm(`Delete "${item.name||'Untitled resume'}" from your cloud resumes? This cannot be undone.`))return;
+ try{
+  await deleteResume(cloudUser.uid,id);
+  if(activeCloudResumeId===id){activeCloudResumeId=null;activeCloudRevision=null;cloudSaveBlocked=false}
+  await refreshCloudResumes();
+  toast('Cloud resume deleted.');
+ }catch(error){toast(error.message||'Could not delete this cloud resume.')}
+}
+function updateCloudAccount(user,error){
+ if(error){
+  $('googleSignInBtn').disabled=true;
+  $('googleSignInBtn').textContent='Cloud setup needed';
+  $('googleSignInBtn').title=error.message;
+  $('cloudAccount').textContent=error.message;
+  renderCloudResumes();
+  return;
+ }
+ cloudUser=user;
+ $('googleSignInBtn').hidden=!!user;
+ $('cloudResumesBtn').hidden=!user;
+ $('googleSignOutBtn').hidden=!user;
+ $('cloudAccount').textContent=user?`Signed in as ${user.email||user.displayName||'Google user'}. Cloud saves are private to this account.`:'Sign in to access your resumes across devices.';
+ if(!user){
+  clearTimeout(cloudSaveTimer);
+  activeCloudResumeId=null;
+  activeCloudRevision=null;
+  cloudSaveBlocked=false;
+  $('saveState').textContent='Saved in this browser';
+ }
+ renderCloudResumes();
+}
 function updateUndoButton(){const button=$('undoBtn');if(button)button.disabled=history.length===0}
 function recordHistory(snapshot){history.push(snapshot);if(history.length>50)history.shift();updateUndoButton()}
 function transact(fn){const previous=deep(state);fn();if(JSON.stringify(previous)!==JSON.stringify(state))recordHistory(previous);render();saveLocal()}
@@ -278,7 +434,7 @@ function render(){renderTemplates();renderSectionList();renderSheets();renderIns
 function selectSection(id){selectedId=id;rightTab='section';renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
 function addSection(type,title,content){const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true};if(['experience','education','projects'].includes(type))s.entries=[{role:type==='education'?'Degree / qualification':type==='projects'?'Project name':'Job title',company:'Organization',date:'Year',details:'Add one detail per line.'}];else s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');state.sections.push(s);selectedId=s.id}
 function download(filename,blob){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
-function exportJSON(){download((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.json',new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));toast('JSON project saved')}
+function exportJSON(){download((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.json',new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));toast('JSON backup downloaded')}
 function importJSON(file){const r=new FileReader();r.onload=()=>{try{const next=normalizeState(JSON.parse(r.result));transact(()=>{state=next;selectedId=null});toast('Project loaded')}catch(e){alert('Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message))}};r.onerror=()=>alert('Could not read that file.');r.readAsText(file)}
 
 function addSelectableText(doc,sheet){
@@ -794,6 +950,26 @@ $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.
 $('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
 $('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
+ $('googleSignInBtn').addEventListener('click',async()=>{
+  try{await signInWithGoogle()}
+  catch(error){toast(authErrorMessage(error))}
+ });
+ $('googleSignOutBtn').addEventListener('click',async()=>{
+  try{await signOutUser();toast('Signed out. Your local browser copy is unchanged.')}
+  catch(error){toast(error.message||'Could not sign out.')}
+ });
+ $('cloudResumesBtn').addEventListener('click',openCloudModal);
+ $('closeCloudModal').addEventListener('click',closeCloudModal);
+ $('closeCloudModalAction').addEventListener('click',closeCloudModal);
+ $('cloudModalBg').addEventListener('click',event=>{if(event.target===$('cloudModalBg'))closeCloudModal()});
+ $('refreshCloudResumes').addEventListener('click',refreshCloudResumes);
+ $('saveCloudCopy').addEventListener('click',saveCurrentAsCloudCopy);
+ $('cloudResumeList').addEventListener('click',event=>{
+  const load=event.target.closest('[data-cloud-load]');
+  const remove=event.target.closest('[data-cloud-delete]');
+  if(load)openCloudResume(load.dataset.cloudLoad);
+  if(remove)removeCloudResume(remove.dataset.cloudDelete);
+ });
  $('pdfBtn').addEventListener('click',exportPDF);$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',runAtsChecks);$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(runAtsChecks,250)});
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 let resizing=null;
@@ -803,8 +979,8 @@ document.addEventListener('pointermove',e=>{if(!resizing)return;if(resizing==='r
 document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs()}});
 $('collapseLeft').addEventListener('click',toggleLeft);$('expandLeft').addEventListener('click',toggleLeft);$('expandRight').addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
-document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter();closePdfPreview()}});
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter();closePdfPreview();closeCloudModal()}});
 try{const raw=localStorage.getItem('resumeStudioV2')||localStorage.getItem('resumeStudioProject');if(raw)state=normalizeState(JSON.parse(raw))}catch(e){state=fresh()}
 addEventListener('pagehide',()=>{try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(e){}});
-loadPrefs();if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
+loadPrefs();if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
 })();

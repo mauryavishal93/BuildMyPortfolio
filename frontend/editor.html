@@ -68,6 +68,16 @@
   </div>
  </div></aside>
  <main class="center">
+  <section class="recovery-banner" id="recoveryBanner" role="alert" hidden>
+   <div>
+    <strong id="recoveryTitle">Saved resume needs attention</strong>
+    <p id="recoveryMessage"></p>
+   </div>
+   <div class="recovery-actions">
+    <button class="btn outline small" id="downloadRecoveryBackup" type="button">Download saved data</button>
+    <button class="btn primary small" id="resolveRecovery" type="button">Continue with recovered resume</button>
+   </div>
+  </section>
   <div class="toolbar">
    <label for="pageLayout">Layout</label><select id="pageLayout"><option value="single">Single column</option><option value="two">Two columns</option></select>
    <label for="editMode">Editor</label><select id="editMode"><option value="flow">Structured</option><option value="free">Free position</option></select>

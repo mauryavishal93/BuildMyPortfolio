@@ -1,6 +1,7 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
+import { readSavedProject } from './project-storage.js';
 import {
  cloudConfigured, deleteResume, listResumes, observeAuth, saveResume,
  signInWithGoogle, signOutUser
@@ -65,6 +66,7 @@ function normalizeState(d){
  return out;
 }
 let state=fresh(),selectedId=null,zoom=1,history=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false;
+let localPersistenceBlocked=false,recoverySnapshot=null;
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[];
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -108,6 +110,7 @@ async function persistCloudResume(){
  }
 }
 function saveLocal(syncCloud=true){
+ if(localPersistenceBlocked){$('saveState').textContent='Local recovery needed';return}
  $('saveState').textContent='Saving…';
  clearTimeout(saveTimer);
  saveTimer=setTimeout(()=>{
@@ -435,7 +438,47 @@ function selectSection(id){selectedId=id;rightTab='section';renderSectionList();
 function addSection(type,title,content){const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true};if(['experience','education','projects'].includes(type))s.entries=[{role:type==='education'?'Degree / qualification':type==='projects'?'Project name':'Job title',company:'Organization',date:'Year',details:'Add one detail per line.'}];else s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');state.sections.push(s);selectedId=s.id}
 function download(filename,blob){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
 function exportJSON(){download((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.json',new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));toast('JSON backup downloaded')}
-function importJSON(file){const r=new FileReader();r.onload=()=>{try{const next=normalizeState(JSON.parse(r.result));transact(()=>{state=next;selectedId=null});toast('Project loaded')}catch(e){alert('Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message))}};r.onerror=()=>alert('Could not read that file.');r.readAsText(file)}
+function importJSON(file){if(file.size>5*1024*1024){alert('Could not load project: JSON backups must be smaller than 5 MB.');return}const r=new FileReader();r.onload=()=>{try{const next=normalizeState(JSON.parse(r.result));localPersistenceBlocked=false;recoverySnapshot=null;$('recoveryBanner').hidden=true;transact(()=>{state=next;selectedId=null});toast('Project loaded')}catch(e){alert('Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message))}};r.onerror=()=>alert('Could not read that file.');r.readAsText(file)}
+function showRecoveryNotice(recovery){
+ if(!recovery.error)return;
+ recoverySnapshot=recovery;
+ localPersistenceBlocked=true;
+ const recoveredOlder=Boolean(recovery.state);
+ $('recoveryTitle').textContent=recovery.storageUnavailable?'Browser storage is unavailable':recoveredOlder?'A saved resume could not be read':'Saved resume could not be recovered';
+ $('recoveryMessage').textContent=recovery.storageUnavailable
+  ?'The browser did not allow access to saved resume data. Autosave is paused. Check your browser storage settings and reload before continuing.'
+  :recoveredOlder
+  ?'A valid older browser copy was loaded. Autosave is paused so it will not overwrite the unreadable saved data. Download the saved data or explicitly continue with the recovered copy.'
+  :'Your saved browser data could not be read. Autosave is paused to protect it. Download a copy before starting again or importing a backup.';
+ $('resolveRecovery').textContent=recoveredOlder?'Continue with recovered resume':'Start with a new resume';
+ $('resolveRecovery').hidden=Boolean(recovery.storageUnavailable);
+ $('downloadRecoveryBackup').hidden=!recovery.raw;
+ $('recoveryBanner').hidden=false;
+ $('saveState').textContent='Local recovery needed';
+}
+function resolveLocalRecovery(){
+ if(!recoverySnapshot)return;
+ if(!recoverySnapshot.state&&!confirm('Start a new resume and replace the unreadable browser data? Download the saved data first if you may need it.'))return;
+ try{
+  if(!recoverySnapshot.state)state=fresh();
+  localStorage.setItem('resumeStudioV2',JSON.stringify(state));
+  selectedId=null;
+  recoverySnapshot=null;
+  localPersistenceBlocked=false;
+  $('recoveryBanner').hidden=true;
+  render();
+  $('saveState').textContent='Saved in this browser';
+  scheduleCloudSave();
+ }catch(error){
+  console.error('Unable to replace unreadable resume data in this browser.',error);
+  toast('Could not replace the saved data. The saved backup remains available.');
+ }
+}
+function downloadRecoveryData(){
+ if(!recoverySnapshot?.raw){toast('No readable saved data is available to download.');return}
+ download('resume-recovery-backup.json',new Blob([recoverySnapshot.raw],{type:'application/json;charset=utf-8'}));
+ toast('Saved browser data backup downloaded');
+}
 
 function addSelectableText(doc,sheet){
  const bounds=sheet.getBoundingClientRect(),scale=210/bounds.width,range=document.createRange(),walker=document.createTreeWalker(sheet,NodeFilter.SHOW_TEXT);
@@ -696,16 +739,13 @@ function scoreGenericTitleClarity(){
  return {score,detail:words.length===1?`“${title}” is broad; use a specific role title.`:`Professional headline is present: ${title}.`};
 }
 function scoreGenericEducation(){
- const entries=state.sections.filter(s=>s.visible&&s.type==='education').flatMap(s=>s.entries||[]);
- if(!entries.length)return {score:40,detail:'No education entry found; education can be role-dependent.'};
+ const entries=state.sections.filter(s=>s.visible&&s.type==='education').flatMap(s=>s.entries||[]).filter(entry=>[entry.role,entry.company,entry.date].some(value=>!isPlaceholderText(value)));
  const fields=entries.reduce((sum,e)=>sum+[e.role,e.company,e.date].filter(value=>!isPlaceholderText(value)).length,0);
  const possible=entries.length*3;
  return {score:Math.round(fields/possible*100),detail:`${fields}/${possible} degree, institution, and date fields are filled.`};
 }
-function scoreGenericCertifications(){
- const text=state.sections.filter(s=>s.visible&&s.type==='certifications').map(s=>s.content||'').join(' ').trim();
- if(isPlaceholderText(text)||/^add relevant certifications/i.test(text))return {score:70,detail:'No certification is listed; this is treated as optional without a job description.'};
- return {score:90,detail:'Certification information is present; its relevance requires a job description.'};
+function getGenericCertificationText(){
+ return state.sections.filter(s=>s.visible&&s.type==='certifications').map(s=>s.content||'').join(' ').trim();
 }
 function scoreGenericContact(){
  const profile=state.profile;
@@ -728,10 +768,12 @@ function computeAtsChecks(jobTextOverride=''){
   const sectionScore=scoreSectionStructure();
   const experienceScore=scoreExperienceDepth();
   const skillsScore=scoreGenericSkills();
-  const educationScore=scoreGenericEducation();
-  const certificationScore=scoreGenericCertifications();
   const impactScore=scoreImpactQuality();
   const contactScore=scoreGenericContact();
+  const educationEntries=state.sections.filter(s=>s.visible&&s.type==='education').flatMap(s=>s.entries||[]);
+  const hasEducation=educationEntries.some(entry=>[entry.role,entry.company,entry.date].some(value=>!isPlaceholderText(value)));
+  const certificationText=getGenericCertificationText();
+  const hasCertifications=Boolean(certificationText&&!isPlaceholderText(certificationText)&&!/^add relevant certifications/i.test(certificationText));
   const resumeKeywords=collectAtsJobTerms(technicalSkillsText);
   const criteria=[
    {label:'ATS-friendly Formatting',weight:GENERIC_ATS_WEIGHTING.formatting,score:formatScore.score,detail:formatScore.detail},
@@ -739,11 +781,11 @@ function computeAtsChecks(jobTextOverride=''){
    {label:'Standard Section Structure',weight:GENERIC_ATS_WEIGHTING.sections,score:sectionScore.score,detail:sectionScore.detail},
    {label:'Experience & Dates',weight:GENERIC_ATS_WEIGHTING.experience,score:experienceScore.score,detail:experienceScore.detail},
    {label:'Technical Skills & Context',weight:GENERIC_ATS_WEIGHTING.skills,score:skillsScore.score,detail:skillsScore.detail},
-   {label:'Education Completeness',weight:GENERIC_ATS_WEIGHTING.education,score:educationScore.score,detail:educationScore.detail},
-   {label:'Certifications & Licenses',weight:GENERIC_ATS_WEIGHTING.certifications,score:certificationScore.score,detail:certificationScore.detail},
    {label:'Quantified Impact',weight:GENERIC_ATS_WEIGHTING.impact,score:impactScore.score,detail:impactScore.detail},
   {label:'Contact Information',weight:GENERIC_ATS_WEIGHTING.contact,score:contactScore.score,detail:contactScore.detail}
   ];
+  if(hasEducation){const educationScore=scoreGenericEducation();criteria.splice(5,0,{label:'Education Completeness',weight:GENERIC_ATS_WEIGHTING.education,score:educationScore.score,detail:educationScore.detail})}
+  if(hasCertifications){criteria.splice(hasEducation?6:5,0,{label:'Certifications & Licenses',weight:GENERIC_ATS_WEIGHTING.certifications,score:90,detail:'Certification information is present; its relevance requires a job description.'})}
   const score=weightedScore(criteria,95);
   const findings=criteria.filter(item=>item.score<70).map(item=>({title:item.label,detail:item.detail,severity:item.score<50?'high':'medium'}));
   if(!findings.length)findings.push({title:'Good general ATS readiness',detail:'Your resume has a solid structure and readable content. Add a job description for role-specific matching.',severity:'good'});
@@ -805,7 +847,7 @@ function renderAtsResults(report){
  const missingDisplay=missingKeywords||'<span class="ats-keyword matched">All key terms covered</span>';
  const comparisonDetails=report.generic?`<div class="ats-section-title">Recognized resume keywords</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Job-specific comparison</div><div class="ats-empty">Add a job description to compare required keywords, title alignment, and skill relevance.</div>`:`<div class="ats-section-title">Keyword match</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Missing terms</div><div class="ats-keywords">${missingDisplay}</div>`;
  const criteriaTitle=report.generic?'General readiness factors':'ATS criteria';
- const note=report.generic?'Generic readiness uses resume-verifiable factors only: format, title clarity, section quality, experience, technical skills, education, credentials, impact, and contact details. Job-description keyword, title, and required-skill matching are unavailable until a job description is added.':'Keyword match (50%) uses only the Technical Skills section; job title alignment (25%) and skills evidenced in experience (15%) make up the other primary factors. Formatting, structure, experience depth, education, certifications, and impact make up the remaining 10%. This heuristic score is capped at 95 because employer-specific ATS rules cannot be reproduced; scores around 75–80% or higher are generally considered strong.';
+ const note=report.generic?'Generic readiness uses available resume-verifiable factors. Optional education and certifications are excluded when absent. Job-description keyword, title, and required-skill matching are unavailable until a job description is added.':'Keyword match (50%) uses only the Technical Skills section; job title alignment (25%) and skills evidenced in experience (15%) make up the other primary factors. Formatting, structure, experience depth, education, certifications, and impact make up the remaining 10%. This heuristic score is capped at 95 because employer-specific ATS rules cannot be reproduced; scores around 75–80% or higher are generally considered strong.';
  container.innerHTML=`<div class="ats-score-row"><div class="ats-score">${hasScore?report.score:'—'}<small>score</small></div><div class="ats-score-meta"><strong>${report.generic?'Generic ATS readiness':'ATS readiness'}</strong><div>${report.generic?'Resume-only estimate; not matched to a job description.':hasScore?'Weighted score based on the 9 ATS criteria':'Paste a target job description to calculate compatibility.'}</div><div class="ats-progress"><span style="width:${hasScore?report.score:0}%"></span></div></div></div>${comparisonDetails}<div class="ats-section-title">${criteriaTitle}</div><div class="ats-criteria-grid">${criteria}</div><div class="ats-section-title">Findings</div><div class="ats-findings">${findings}</div><div class="ats-note">${note}</div>`;
 }
 function openAts(){
@@ -897,10 +939,7 @@ function applyAtsFriendlyLayout(){
  });
  toast('ATS-friendly layout applied');
 }
-async function runAtsChecks(){
- const results=$('atsResults');
- results.innerHTML='<div class="ats-processing"><div class="ats-spinner"></div><strong>Checking ATS readiness…</strong><div class="ats-processing-track"><span></span></div><p>Reviewing structure, keyword fit, and export readability.</p></div>';
- await new Promise(resolve => setTimeout(resolve, 3200));
+function runAtsChecks(){
  renderAtsResults(computeAtsChecks($('jobDescription').value || ''));
 }
 $('templates').addEventListener('click',e=>{const b=e.target.closest('[data-template]');if(!b)return;transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
@@ -970,6 +1009,8 @@ $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click
   if(load)openCloudResume(load.dataset.cloudLoad);
   if(remove)removeCloudResume(remove.dataset.cloudDelete);
  });
+ $('downloadRecoveryBackup').addEventListener('click',downloadRecoveryData);
+ $('resolveRecovery').addEventListener('click',resolveLocalRecovery);
  $('pdfBtn').addEventListener('click',exportPDF);$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',runAtsChecks);$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(runAtsChecks,250)});
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 let resizing=null;
@@ -980,7 +1021,9 @@ document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs(
 $('collapseLeft').addEventListener('click',toggleLeft);$('expandLeft').addEventListener('click',toggleLeft);$('expandRight').addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter();closePdfPreview();closeCloudModal()}});
-try{const raw=localStorage.getItem('resumeStudioV2')||localStorage.getItem('resumeStudioProject');if(raw)state=normalizeState(JSON.parse(raw))}catch(e){state=fresh()}
-addEventListener('pagehide',()=>{try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(e){}});
+const savedProject=readSavedProject(localStorage,normalizeState);
+if(savedProject.state)state=savedProject.state;
+showRecoveryNotice(savedProject);
+addEventListener('pagehide',()=>{if(localPersistenceBlocked)return;try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(error){console.error('Could not save the resume while closing the page.',error)}});
 loadPrefs();if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
 })();

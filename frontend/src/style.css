@@ -232,6 +232,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .theme-switch-thumb{width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transform:translateX(0);transition:transform .18s ease}
 :root[data-theme=dark] .theme-switch-track{background:#657cff}
 :root[data-theme=dark] .theme-switch-thumb{transform:translateX(15px)}
+.recovery-banner{max-width:850px;margin:0 auto 14px;padding:14px 16px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border:1px solid #d97706;border-radius:10px;background:#fffbeb;color:#78350f}
+.recovery-banner[hidden]{display:none}
+.recovery-banner p{margin:4px 0 0;font-size:12px;line-height:1.5}
+.recovery-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+:root[data-theme=dark] .recovery-banner{background:#352713;border-color:#b7791f;color:#ffdfa3}
+:root[data-theme=dark] .recovery-banner .outline{background:#1a2738;color:#ffdfa3;border-color:#725225}
 @media(max-width:800px){.topbar{grid-template-areas:"brand docname docname docname docname" "cloud cloud cloud cloud cloud" "theme theme theme theme theme" "cover cover about pdf pdf"}.topbar [data-theme-toggle]{grid-area:theme;width:100%}}
 @media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname docname" "cloud cloud cloud cloud" "theme theme theme theme" "cover cover about pdf"}}
+@media(max-width:700px){.recovery-banner{flex-direction:column}.recovery-actions{justify-content:flex-start}}
 @media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname about" "cloud cloud cloud cloud" "cover cover about pdf"}.cloud-actions{grid-area:cloud}.cloud-actions .btn{font-size:10px}}

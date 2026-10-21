@@ -45,4 +45,4 @@ The site is multi-page: `/` redirects to the editor, `/editor.html` is the edito
 
 ## Data flow
 
-Resume editing and autosaving work locally in the browser without an account. When a user chooses to sign in and save a resume, the Firebase client stores that named resume in Firestore under the user's authenticated UID. Firestore security rules enforce per-user access. JSON download remains a separate, local backup workflow. The app does not use its Express health-check server as a resume API.
+Resume editing and autosaving work locally in the browser without an account. If saved project data cannot be read, the editor pauses autosave, keeps the original data available for download, and asks before replacing it; a valid legacy copy can be recovered. JSON imports are limited to 5 MB and validated before replacing the current project. When a user chooses to sign in and save a resume, the Firebase client stores that named resume in Firestore under the user's authenticated UID. Firestore security rules enforce per-user access. JSON download remains a separate, local backup workflow. The app does not use its Express health-check server as a resume API.

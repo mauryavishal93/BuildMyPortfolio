@@ -14,17 +14,94 @@
         <span>BuildMyPortfolio</span>
       </a>
       <nav class="about-nav" aria-label="Main navigation">
+        <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme">
+          <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
+          <span class="theme-switch-label">Dark</span>
+        </button>
         <a class="btn outline about-cover-letter" href="/editor.html?tool=cover-letter">Cover letter</a>
         <a class="btn outline about-current" href="/about.html" aria-current="page">About</a>
         <a class="btn soft about-editor" href="/editor.html">Open editor</a>
       </nav>
     </header>
     <main class="about-main">
-      <section class="about-intro">
-        <p class="about-eyebrow">FREE RESUME BUILDER</p>
-        <h1>BuildMyPortfolio</h1>
-        <p class="about-lead">Create, tailor, and export a resume in one simple workspace.</p>
+      <section class="hero-section">
+        <div class="hero-copy">
+          <p class="about-eyebrow">FREE RESUME BUILDER</p>
+          <h1>Build a professional resume that works as hard as you do.</h1>
+          <p class="about-lead">Create, tailor, and export a resume in one focused workspace. BuildMyPortfolio brings templates, ATS guidance, and polished PDF export into a simple workflow designed for modern job seekers.</p>
+          <div class="hero-actions">
+            <a class="btn primary" href="/editor.html">Open editor</a>
+            <a class="btn outline" href="/editor.html?tool=cover-letter">Generate cover letter</a>
+          </div>
+          <div class="hero-metrics" aria-label="Platform overview">
+            <div><strong>17</strong><span>Templates</span></div>
+            <div><strong>ATS</strong><span>Scoring</span></div>
+            <div><strong>PDF</strong><span>Export</span></div>
+          </div>
+        </div>
+        <div class="hero-panel" aria-label="resume workflow panel">
+          <div class="panel-card">
+            <span class="panel-chip">Workflow</span>
+            <h3>Resume Studio</h3>
+            <ul>
+              <li>Guided resume editing</li>
+              <li>Cloud and local saves</li>
+              <li>ATS-ready content review</li>
+              <li>Export-ready final PDF</li>
+            </ul>
+          </div>
+        </div>
       </section>
+
+      <section class="architecture-section">
+        <div class="section-heading">
+          <p class="about-eyebrow">SYSTEM OVERVIEW</p>
+          <h2>How the resume engine works</h2>
+        </div>
+        <div class="mermaid architecture-diagram">
+flowchart TD
+    A[Editor UI] --> B[Validated Resume Model]
+    B --> C[Template Renderer]
+    B --> D[Local Persistence]
+    B --> E[JSON Import and Export]
+    C --> F[Preview]
+    C --> G[PDF Export]
+    B --> H[ATS Diagnostics]
+    D --> I[Recovery and Versioning]
+    B --> J[Optional Cloud Sync]
+    J --> K[Authentication and Security Rules]
+        </div>
+      </section>
+
+      <section class="feature-showcase">
+        <div class="section-heading section-heading-center">
+          <p class="about-eyebrow">WHY IT STANDS OUT</p>
+          <h2>Everything needed to build, refine, and submit a stronger resume.</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <span class="feature-icon">01</span>
+            <h3>Template-driven layout</h3>
+            <p>Choose from modern, executive, tech, elegant, and student-ready templates built to feel polished and recruiter-friendly.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">02</span>
+            <h3>ATS-focused diagnostics</h3>
+            <p>Compare experience and skills against a target job description to improve clarity, relevance, and keyword coverage.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">03</span>
+            <h3>Cover letter studio</h3>
+            <p>Generate a tailored first draft from your resume, then edit it before sending to recruiters or hiring managers.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">04</span>
+            <h3>PDF and backup workflows</h3>
+            <p>Preview the final layout, export a clean PDF, and keep a portable JSON backup for safe project recovery and transfer.</p>
+          </article>
+        </div>
+      </section>
+
       <div class="about-grid">
         <section class="about-section">
           <h2>Resume tools</h2>
@@ -64,6 +141,34 @@
         </section>
       </div>
     </main>
+    <script type="module">
+      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: 'base',
+        themeVariables: {
+          background: '#03070d',
+          primaryColor: '#123d66',
+          primaryTextColor: '#edf7ff',
+          primaryBorderColor: '#edf3ff',
+          lineColor: '#edf3ff',
+          secondaryColor: '#0f2f4d',
+          tertiaryColor: '#0f2f4d',
+          fontFamily: 'Segoe UI, Arial, sans-serif',
+          fontSize: '18px'
+        },
+        flowchart: {
+          curve: 'basis',
+          nodeSpacing: 48,
+          rankSpacing: 70,
+          padding: 12,
+          useMaxWidth: true
+        },
+        securityLevel: 'loose'
+      });
+    </script>
+    <script type="module" src="/src/theme.js"></script>
     <script type="module" src="/src/about.js"></script>
   </body>
 </html>

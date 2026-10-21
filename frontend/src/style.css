@@ -164,6 +164,59 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .cloud-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .cloud-modal-head h2{margin:0}
 .cloud-notice{margin:14px 0;padding:10px;border:1px solid #d8e4f2;border-radius:8px;background:#f6f9fd;color:#475467;font-size:11px;line-height:1.5}
+
+/* The resume sheet stays paper-white in both themes; the surrounding editor follows the site theme. */
+:root[data-theme=dark]{color-scheme:dark;--ink:#e6edf7;--muted:#9aa9bd;--line:#26374a;--bg:#070d15;--panel:#101a27;--purple:#7b8cff;--brand-soft:#19263a;--focus:#7b8cff}
+:root[data-theme=dark] body{color:var(--ink);background:radial-gradient(circle at 50% -20%,#12233c 0,#080f19 46%,#060b12 100%)}
+:root[data-theme=dark] .topbar,
+:root[data-theme=dark] .left,
+:root[data-theme=dark] .right{background:#0c1521;border-color:var(--line)}
+:root[data-theme=dark] .docname{color:var(--ink)}
+:root[data-theme=dark] .soft{background:#1a2738;color:#dce6f4}
+:root[data-theme=dark] .outline,
+:root[data-theme=dark] .size-btn{background:#111d2b;border-color:#34465c;color:#dce6f4}
+:root[data-theme=dark] .toolbar{background:rgba(13,24,37,.92);border-color:#2a3b50;box-shadow:0 5px 16px #0004}
+:root[data-theme=dark] .toolbar select,
+:root[data-theme=dark] .field input,
+:root[data-theme=dark] .field textarea,
+:root[data-theme=dark] .field select{background:#0a121d;border-color:#314156;color:#e6edf7}
+:root[data-theme=dark] .section-row,
+:root[data-theme=dark] .add{background:#111d2b;border-color:#34465c;color:#dce6f4}
+:root[data-theme=dark] .section-row.active,
+:root[data-theme=dark] .template.active{background:#1a2740}
+:root[data-theme=dark] .tabs,
+:root[data-theme=dark] .seg{background:#101b29}
+:root[data-theme=dark] .tab,
+:root[data-theme=dark] .seg button{color:#b6c4d8}
+:root[data-theme=dark] .tab.active,
+:root[data-theme=dark] .seg button.active{background:#1c2b40;color:#aeb9ff}
+:root[data-theme=dark] .small-note,
+:root[data-theme=dark] .ats-score-row,
+:root[data-theme=dark] .cloud-notice{background:#111e2d;border-color:#304258;color:#c4d1e2}
+:root[data-theme=dark] .modal{background:#101a27;color:#e6edf7;border:1px solid #304258;box-shadow:0 24px 70px #0009}
+:root[data-theme=dark] .ats-score{background:#0b1420;color:#e6edf7;border-color:#33435a}
+:root[data-theme=dark] .ats-score-meta,
+:root[data-theme=dark] .ats-finding p{color:#b6c4d8}
+:root[data-theme=dark] .ats-score-meta strong{color:#e6edf7}
+:root[data-theme=dark] .ats-progress,
+:root[data-theme=dark] .ats-criterion-bar,
+:root[data-theme=dark] .ats-processing .ats-processing-track{background:#26374a}
+:root[data-theme=dark] .ats-severity{background:#26374a!important;color:#d4deeb!important}
+:root[data-theme=dark] .ats-finding.high .ats-severity{background:#4b2226!important;color:#ffc4c4!important}
+:root[data-theme=dark] .ats-finding.medium .ats-severity{background:#49351c!important;color:#ffdfa3!important}
+:root[data-theme=dark] .ats-finding.good .ats-severity{background:#173b2d!important;color:#a6f0c7!important}
+:root[data-theme=dark] .ats-keyword{background:#111d2b;border-color:#3b4c62;color:#dce6f4}
+:root[data-theme=dark] .ats-keyword.matched{background:#173b2d;border-color:#236244;color:#a6f0c7}
+:root[data-theme=dark] .ats-keyword.missing{background:#49351c;border-color:#725225;color:#ffdfa3}
+:root[data-theme=dark] .ats-processing .ats-spinner{border-color:#26374a;border-top-color:#9ca7ff}
+:root[data-theme=dark] .pdf-preview-frame{background:#0b1420;border-color:#304258}
+:root[data-theme=dark] .google-signin{background:#f8faff;color:#3c4043}
+:root[data-theme=dark] .cloud-empty{border-color:#34465c;color:#b6c4d8}
+:root[data-theme=dark] .cloud-resume-item{background:#111d2b;border-color:#34465c}
+:root[data-theme=dark] .template{background:#111d2b;border-color:#34465c;color:#e6edf7}
+:root[data-theme=dark] .save-state,
+:root[data-theme=dark] .hint,
+:root[data-theme=dark] .toolbar label{color:#a9b8cc}
 .cloud-resume-list{display:grid;gap:8px;max-height:45vh;overflow:auto}
 .cloud-resume-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:9px}
 .cloud-resume-meta{flex:1;min-width:0}
@@ -172,4 +225,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .cloud-resume-item .btn{padding:6px 9px;font-size:11px}
 .cloud-empty{padding:18px;border:1px dashed var(--line);border-radius:9px;color:var(--muted);font-size:12px;text-align:center}
 @media(max-width:800px){.topbar{grid-template-areas:"brand docname docname docname docname" "cloud cloud cloud cloud cloud" "cover cover about pdf pdf"}.cloud-actions{grid-area:cloud;justify-content:center}.cloud-actions .btn{width:auto;padding:7px 9px}}
+.theme-switch{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:none;padding:5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font-size:12px;font-weight:700;line-height:1;cursor:pointer;transition:border-color .16s ease,background-color .16s ease}
+.theme-switch:hover{border-color:var(--purple)}
+.theme-switch:focus-visible{outline:3px solid #a5b4fc;outline-offset:2px}
+.theme-switch-track{display:inline-flex;align-items:center;width:34px;height:19px;padding:2px;border-radius:999px;background:#52647b;transition:background-color .18s ease}
+.theme-switch-thumb{width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transform:translateX(0);transition:transform .18s ease}
+:root[data-theme=dark] .theme-switch-track{background:#657cff}
+:root[data-theme=dark] .theme-switch-thumb{transform:translateX(15px)}
+@media(max-width:800px){.topbar{grid-template-areas:"brand docname docname docname docname" "cloud cloud cloud cloud cloud" "theme theme theme theme theme" "cover cover about pdf pdf"}.topbar [data-theme-toggle]{grid-area:theme;width:100%}}
+@media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname docname" "cloud cloud cloud cloud" "theme theme theme theme" "cover cover about pdf"}}
 @media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname about" "cloud cloud cloud cloud" "cover cover about pdf"}.cloud-actions{grid-area:cloud}.cloud-actions .btn{font-size:10px}}

@@ -6,6 +6,14 @@ button,a{font:inherit}
 .about-brand{display:inline-flex;align-items:center;gap:10px;color:var(--about-ink);font-size:16px;font-weight:800;text-decoration:none;white-space:nowrap}
 .about-logo{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,#1e7dd9,#0b4a7f);color:#fff;font-weight:900;box-shadow:0 8px 20px rgba(30,125,217,.45)}
 .about-nav{display:flex;align-items:center;gap:10px}
+.auth-actions{display:flex;align-items:center;gap:6px}
+.auth-actions [hidden]{display:none!important}
+.auth-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.auth-status.auth-error{position:static;width:auto;height:auto;margin:0;overflow:visible;clip:auto;color:#b42318;font-size:12px;white-space:normal}
+.about-nav .google-signin{height:40px;padding:0 14px;background:#fff;border:1px solid #dadce0;border-radius:6px;color:#3c4043;font-size:14px;font-weight:500;letter-spacing:.15px;gap:10px;box-shadow:0 1px 2px #0000001a}
+.about-nav .google-signin:hover:not(:disabled){background:#f8faff;border-color:#d2e3fc;box-shadow:0 1px 3px #00000024}
+.about-nav .google-signin:active:not(:disabled){background:#eef3fc;box-shadow:inset 0 1px 2px #0000001a}
+.google-signin-logo{width:18px;height:18px;flex:0 0 18px}
 .about-nav .btn,.hero-actions .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;border:1px solid var(--about-line);font-size:14px;font-weight:700;text-decoration:none;white-space:nowrap;transition:transform .16s ease,border-color .16s ease,background-color .16s ease,box-shadow .16s ease}
 .about-nav .btn:hover,.about-nav .btn:focus-visible,.hero-actions .btn:hover,.hero-actions .btn:focus-visible{transform:translateY(-1px)}
 .about-nav .btn:focus-visible,.hero-actions .btn:focus-visible{outline:3px solid rgba(30,125,217,.35);outline-offset:2px}
@@ -85,7 +93,8 @@ button,a{font:inherit}
 .architecture-diagram .marker{fill:#edf3ff !important}
 .architecture-diagram .cluster rect{fill:transparent !important;stroke:transparent !important}
 @media(max-width:980px){.hero-section,.feature-grid,.about-grid{grid-template-columns:1fr 1fr}.hero-section{grid-template-columns:1fr}.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.about-grid{grid-template-columns:1fr}}
-@media(max-width:640px){.about-header{height:auto;min-height:64px;padding:8px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:38px auto;grid-template-areas:"brand . . ." "nav nav nav nav";gap:8px}.about-brand{grid-area:brand;justify-self:start;margin-left:8px}.about-brand span:not(.about-logo){display:none}.about-nav{grid-area:nav;width:100%;justify-content:space-between;gap:12px}.about-nav .btn{padding:7px 8px;font-size:11px;line-height:1.2}.about-main{padding:32px 18px 48px}.hero-copy h1{font-size:2.4rem}.about-lead{font-size:1rem}.hero-metrics{gap:8px}.hero-metrics div{min-width:95px;padding:11px 12px}.about-grid,.feature-grid{grid-template-columns:1fr}.feature-grid{gap:14px}.about-section{padding:18px 16px}.feedback-form{grid-template-columns:1fr}.feedback-message,.feedback-actions{grid-column:auto}.feedback-actions{align-items:flex-start;flex-direction:column}.contact-list{grid-template-columns:1fr;gap:14px}.architecture-section{padding:18px 10px 12px}.architecture-diagram{min-height:440px}}
+@media(max-width:980px){.about-header{height:auto;min-height:64px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}.about-nav{justify-content:flex-end;flex-wrap:wrap}}
+@media(max-width:640px){.about-header{height:auto;min-height:64px;padding:8px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:38px auto;grid-template-areas:"brand . . ." "nav nav nav nav";gap:8px}.about-brand{grid-area:brand;justify-self:start;margin-left:8px}.about-brand span:not(.about-logo){display:none}.about-nav{grid-area:nav;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:6px}.about-nav .btn{padding:7px 8px;font-size:11px;line-height:1.2}.about-nav .google-signin{height:36px;padding:0 9px;font-size:11px;gap:6px}.google-signin-logo{width:16px;height:16px;flex-basis:16px}.about-main{padding:32px 18px 48px}.hero-copy h1{font-size:2.4rem}.about-lead{font-size:1rem}.hero-metrics{gap:8px}.hero-metrics div{min-width:95px;padding:11px 12px}.about-grid,.feature-grid{grid-template-columns:1fr}.feature-grid{gap:14px}.about-section{padding:18px 16px}.feedback-form{grid-template-columns:1fr}.feedback-message,.feedback-actions{grid-column:auto}.feedback-actions{align-items:flex-start;flex-direction:column}.contact-list{grid-template-columns:1fr;gap:14px}.architecture-section{padding:18px 10px 12px}.architecture-diagram{min-height:440px}}
 @media print{body.about-page{background:#fff;background-image:none}.about-header{display:none}.about-main{padding:0}.architecture-section,.about-section,.feature-card,.panel-card{box-shadow:none;border-color:#d7dfeb;color:#000;background:#fff}.about-section p,.feature-card p,.about-feature-list li,.about-lead,.hero-copy h1,.panel-card ul,.panel-card h3,.hero-copy h1{color:#000}.about-eyebrow{color:#666}}
 
 :root[data-theme=light]{color-scheme:light;--about-ink:#1b2434;--about-muted:#667085;--about-line:#e2e7ef;--about-paper:#fff;--about-canvas:#edf0f4;--about-accent:#14766f;--about-panel:#fff;--about-card:#fff}
@@ -96,6 +105,7 @@ button,a{font:inherit}
 :root[data-theme=light] .about-nav .outline,
 :root[data-theme=light] .hero-actions .outline{background:#fff;color:#344054;border-color:#e2e7ef}
 :root[data-theme=light] .about-nav .soft{background:#f0f2f7;color:#344054}
+:root[data-theme=light] .about-nav .google-signin{background:#fff;color:#3c4043;border-color:#dadce0}
 :root[data-theme=light] .about-nav .outline:hover,
 :root[data-theme=light] .hero-actions .outline:hover{background:#f7f9fc;border-color:#cdd6e3}
 :root[data-theme=light] .hero-copy h1,

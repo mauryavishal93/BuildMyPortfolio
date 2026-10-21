@@ -2,6 +2,9 @@ node_modules/
 dist/
 /src/
 /frontend/.env.local
+/.env
+/.env.*
+!/.env.example
 /resume-studio-working-model-v2.html
 .DS_Store
 npm-debug.log*

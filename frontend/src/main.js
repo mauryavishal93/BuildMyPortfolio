@@ -1,6 +1,8 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
+import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
+import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
 import { readSavedProject } from './project-storage.js';
 import {
  cloudConfigured, deleteResume, listResumes, observeAuth, saveResume,
@@ -67,8 +69,9 @@ function normalizeState(d){
 }
 let state=fresh(),selectedId=null,zoom=1,history=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
+let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[];
-let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0;
+let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
@@ -202,16 +205,20 @@ async function removeCloudResume(id){
   toast('Cloud resume deleted.');
  }catch(error){toast(error.message||'Could not delete this cloud resume.')}
 }
-function updateCloudAccount(user,error){
+async function updateCloudAccount(user,error){
  if(error){
+  cloudUser=null;
+  verifiedEntitlement=null;
   $('googleSignInBtn').disabled=true;
   $('googleSignInLabel').textContent='Cloud setup needed';
   $('googleSignInBtn').title=error.message;
   $('cloudAccount').textContent=error.message;
   renderCloudResumes();
+  renderTemplates();
   return;
  }
  cloudUser=user;
+ verifiedEntitlement=null;
  $('googleSignInBtn').hidden=!!user;
  $('cloudResumesBtn').hidden=!user;
  $('googleSignOutBtn').hidden=!user;
@@ -224,7 +231,34 @@ function updateCloudAccount(user,error){
   $('saveState').textContent='Saved in this browser';
  }
  renderCloudResumes();
+ renderTemplates();
+ if(user){
+  try{
+   const config=await loadBillingConfig();
+   if(config.checkoutEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
+  }catch(billingError){
+   console.error('Could not load the signed-in account billing status.',billingError);
+  }
+  if(cloudUser?.uid===user.uid){
+   renderTemplates();
+   if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
+  }
+ }
 }
+window.addEventListener('focus',async()=>{
+ const user=cloudUser;
+ if(!user)return;
+ try{
+  const config=await loadBillingConfig();
+  const entitlement=config.checkoutEnabled?await loadBillingEntitlement(user):null;
+  if(cloudUser?.uid!==user.uid)return;
+  verifiedEntitlement=entitlement;
+  renderTemplates();
+  if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
+ }catch(error){
+  console.error('Could not refresh the signed-in account billing status.',error);
+ }
+});
 function updateUndoButton(){const button=$('undoBtn');if(button)button.disabled=history.length===0}
 function recordHistory(snapshot){history.push(snapshot);if(history.length>50)history.shift();updateUndoButton()}
 function transact(fn){const previous=deep(state);fn();if(JSON.stringify(previous)!==JSON.stringify(state))recordHistory(previous);render();saveLocal()}
@@ -235,8 +269,17 @@ function websiteHref(value){
  const raw=String(value||'').trim();if(!raw)return '';
  try{const url=new URL(/^https?:\/\//i.test(raw)?raw:`https://${raw}`);return ['http:','https:'].includes(url.protocol)?url.href:''}catch{return ''}
 }
+function templateCardMarkup(t,hasProAccess){
+ const pro=isProTemplate(t.id),selected=state.template===t.id;
+ const photo=t.photo&&t.id!=='photo'?`<span class="mini-photo" style="${t.photoPos==='left'?'left':'right'}:${t.photoPos==='center'?'calc(50% - 7px)':'8px'};${t.photoPos==='center'?'left:calc(50% - 7px);right:auto':''}"></span>`:'';
+ const sidebar=t.layout==='two'?`<div style="float:left;width:30%;height:100%;background:${t.accent};margin-right:5px">${t.id==='photo'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
+ const preview=pro&&!hasProAccess?`<button class="template-preview-btn" type="button" data-template-preview="${t.id}" aria-label="Preview ${$esc(t.name)} template">Preview</button>`:'';
+ return `<div class="template-card"><button class="template ${selected?'active':''} ${pro?'template-pro':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, ${pro?'Pro':'Free'}"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="plan-badge ${pro?'pro':'free'}">${pro?'PRO':'FREE'}</span></span><small>${$esc(t.sub)}</small></button>${preview}</div>`;
+}
 function renderTemplates(){
- $('templates').innerHTML=templateDefs.map(t=>`<button class="template ${state.template===t.id?'active':''}" data-template="${t.id}" aria-pressed="${state.template===t.id}"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${t.photo&&t.id!=='photo'?`<span class="mini-photo" style="${t.photoPos==='left'?'left':'right'}:${t.photoPos==='center'?'calc(50% - 7px)':'8px'};${t.photoPos==='center'?'left:calc(50% - 7px);right:auto':''}"></span>`:''}<div class="mini-main">${t.layout==='two'?`<div style="float:left;width:30%;height:100%;background:${t.accent};margin-right:5px">${t.id==='photo'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:''}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><strong>${t.name}</strong><small>${t.sub}</small></button>`).join('');
+ const hasProAccess=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);
+ const currentLocked=isProTemplate(state.template)&&!hasProAccess;
+ $('templates').innerHTML=`${currentLocked?'<div class="template-access-note" role="status">This saved resume uses a Pro template. Your design and resume data are preserved. <a href="/pricing.html">View plans</a></div>':''}${templateDefs.map(t=>templateCardMarkup(t,hasProAccess)).join('')}`;
 }
 function renderSectionList(){
  $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${s.id}"><span class="grip">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" data-toggle="${s.id}" title="${s.visible?'Hide':'Show'} section">${s.visible?'◉':'○'}</button></div>`).join('');
@@ -367,6 +410,81 @@ function renderSheets(){
  });
  $('hint').textContent=state.mode==='free'?'Free position mode: drag sections on the sheet. Pagination is manual in this mode.':all.length>1?`${all.length} A4 pages · page breaks shown between sheets`:'A4 sheet · select any section to edit';
  $('zoomLabel').textContent=Math.round(zoom*100)+'%';
+}
+function closeTemplatePreview(){
+ templatePreviewGeneration++;
+ $('templatePreviewModalBg').classList.remove('show');
+ $('templatePreviewModalBg').setAttribute('aria-hidden','true');
+}
+async function openTemplatePreview(templateId){
+ const template=templateDefs.find(item=>item.id===templateId);
+ if(!template||!isProTemplate(templateId)||canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement))return;
+ const generation=++templatePreviewGeneration;
+ const modal=$('templatePreviewModalBg'),pages=$('templatePreviewPages'),status=$('templatePreviewStatus');
+ $('templatePreviewTitle').textContent=`${template.name} template preview`;
+ status.textContent='Creating a low-resolution preview of your current resume…';
+ pages.innerHTML='';
+ modal.classList.add('show');
+ modal.setAttribute('aria-hidden','false');
+ $('closeTemplatePreview').focus();
+
+ let renderedPages=[];
+ const originalState=state,originalSelection=selectedId,originalZoom=zoom;
+ try{
+  state=deep(state);
+  state.template=template.id;
+  state.layout=template.layout;
+  state.design.accent=template.accent;
+  selectedId=null;
+  zoom=1;
+  renderSheets();
+  renderedPages=[...$('sheets').querySelectorAll('.sheet')].map(sheet=>sheet.cloneNode(true));
+ }catch(error){
+  console.error('Could not render the Pro template preview.',error);
+  status.textContent='This resume preview could not be rendered. Close this window and try again.';
+  return;
+ }finally{
+  state=originalState;
+  selectedId=originalSelection;
+  zoom=originalZoom;
+  renderSheets();
+ }
+
+ const captureRoot=document.createElement('div');
+ captureRoot.className='template-preview-capture';
+ document.body.append(captureRoot);
+ try{
+  const {default:html2canvas}=await import('html2canvas');
+  for(let index=0;index<renderedPages.length;index++){
+   if(generation!==templatePreviewGeneration)return;
+   const sheet=renderedPages[index];
+   sheet.querySelectorAll('.selected').forEach(element=>element.classList.remove('selected'));
+   sheet.style.transform='none';
+   sheet.style.marginBottom='0';
+   captureRoot.replaceChildren(sheet);
+  const canvas=await html2canvas(sheet,{scale:1.6,backgroundColor:'#ffffff',logging:false,useCORS:true});
+   const page=document.createElement('div');
+   page.className='template-preview-page';
+   const image=document.createElement('img');
+  image.src=canvas.toDataURL('image/jpeg',.9);
+   image.alt=`Low-resolution ${template.name} resume preview, page ${index+1}`;
+   page.append(image);
+   const watermark=document.createElement('span');
+   watermark.className='template-preview-watermark';
+   watermark.textContent='BuildMyPortfolio · PREVIEW';
+   watermark.setAttribute('aria-hidden','true');
+   page.append(watermark);
+   pages.append(page);
+   canvas.width=0;
+   canvas.height=0;
+  }
+  if(generation===templatePreviewGeneration)status.textContent='Low-resolution preview only. Pro is required to apply this template or export it.';
+ }catch(error){
+  console.error('Could not create the Pro template preview image.',error);
+  if(generation===templatePreviewGeneration)status.textContent='The preview image could not be created. Check your browser resources and try again.';
+ }finally{
+  captureRoot.remove();
+ }
 }
 
 /* ---------- Inspector ---------- */
@@ -759,9 +877,9 @@ function scoreGenericContact(){
  return {score,detail:`Name ${nameValid?'present':'missing'}, email ${emailValid?'valid':'missing or placeholder'}, phone ${phoneValid?'valid':'missing'}, location ${locationValid?'present':'missing'}.`};
 }
 function jobTermMatchesAny(text, aliases){ return aliases.some(alias => jobTermMatches(text, alias)); }
-function computeAtsChecks(jobTextOverride=''){
+function computeAtsChecks(jobTextOverride=null){
  const technicalSkillsText=getTechnicalSkillsText();
- const jobText=jobTextOverride || $('jobDescription')?.value || '';
+ const jobText=jobTextOverride===null?$('jobDescription')?.value||'':jobTextOverride;
  if(!String(jobText).trim()){
   const formatScore=scoreFormatCompatibility();
   const titleScore=scoreGenericTitleClarity();
@@ -845,16 +963,16 @@ function renderAtsResults(report){
  const hasScore=Number.isFinite(report.score);
  const matchedDisplay=matchedKeywords||'<span class="ats-keyword missing">No recognized resume keywords detected</span>';
  const missingDisplay=missingKeywords||'<span class="ats-keyword matched">All key terms covered</span>';
- const comparisonDetails=report.generic?`<div class="ats-section-title">Recognized resume keywords</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Job-specific comparison</div><div class="ats-empty">Add a job description to compare required keywords, title alignment, and skill relevance.</div>`:`<div class="ats-section-title">Keyword match</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Missing terms</div><div class="ats-keywords">${missingDisplay}</div>`;
+ const comparisonDetails=report.generic?`<div class="ats-section-title">Recognized resume keywords</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Job-specific comparison</div><div class="ats-empty">${report.jobMatchLocked?'Job-description comparison is a planned Pro feature. Your pasted text remains in this browser and was not used in this Free analysis. <a href="/pricing.html">View plans</a>.':'Job-description comparison is planned for Pro and is not available yet.'}</div>`:`<div class="ats-section-title">Keyword match</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Missing terms</div><div class="ats-keywords">${missingDisplay}</div>`;
  const criteriaTitle=report.generic?'General readiness factors':'ATS criteria';
- const note=report.generic?'Generic readiness uses available resume-verifiable factors. Optional education and certifications are excluded when absent. Job-description keyword, title, and required-skill matching are unavailable until a job description is added.':'Keyword match (50%) uses only the Technical Skills section; job title alignment (25%) and skills evidenced in experience (15%) make up the other primary factors. Formatting, structure, experience depth, education, certifications, and impact make up the remaining 10%. This heuristic score is capped at 95 because employer-specific ATS rules cannot be reproduced; scores around 75–80% or higher are generally considered strong.';
+ const note=report.generic?'Generic readiness uses available resume-verifiable factors. Optional education and certifications are excluded when absent. Job-description keyword, title, and required-skill matching are planned for Pro and are not available yet.':'Keyword match (50%) uses only the Technical Skills section; job title alignment (25%) and skills evidenced in experience (15%) make up the other primary factors. Formatting, structure, experience depth, education, certifications, and impact make up the remaining 10%. This heuristic score is capped at 95 because employer-specific ATS rules cannot be reproduced; scores around 75–80% or higher are generally considered strong.';
  container.innerHTML=`<div class="ats-score-row"><div class="ats-score">${hasScore?report.score:'—'}<small>score</small></div><div class="ats-score-meta"><strong>${report.generic?'Generic ATS readiness':'ATS readiness'}</strong><div>${report.generic?'Resume-only estimate; not matched to a job description.':hasScore?'Weighted score based on the 9 ATS criteria':'Paste a target job description to calculate compatibility.'}</div><div class="ats-progress"><span style="width:${hasScore?report.score:0}%"></span></div></div></div>${comparisonDetails}<div class="ats-section-title">${criteriaTitle}</div><div class="ats-criteria-grid">${criteria}</div><div class="ats-section-title">Findings</div><div class="ats-findings">${findings}</div><div class="ats-note">${note}</div>`;
 }
 function openAts(){
  $('atsModalBg').classList.add('show');
  $('atsModalBg').setAttribute('aria-hidden','false');
  $('jobDescription').focus();
- runAtsChecks();
+ runAtsChecks({promptUpgrade:false});
 }
 function closeAts(){
  $('atsModalBg').classList.remove('show');
@@ -939,10 +1057,67 @@ function applyAtsFriendlyLayout(){
  });
  toast('ATS-friendly layout applied');
 }
-function runAtsChecks(){
- renderAtsResults(computeAtsChecks($('jobDescription').value || ''));
+function showUpgrade(featureId,title,description){
+ $('upgradeFeature').textContent=title;
+ $('upgradeDescription').textContent=description;
+ $('upgradePrice').textContent=`₹${PLAN_CONFIG.pro.monthly.price}/month or ₹${PLAN_CONFIG.pro.yearly.price}/year · recurring subscription`;
+ pendingUpgradeFeature=featureId;
+ const previewTemplate=pendingUpgradeFeature==='template'&&pendingProTemplate?templateDefs.find(item=>item.id===pendingProTemplate):null;
+ $('continueFree').textContent=featureId==='template'?'Use free Template':'Use free ATS checks';
+ $('previewUpgrade').hidden=!previewTemplate;
+ $('previewUpgrade').textContent=previewTemplate?`Preview ${previewTemplate.name}`:'Preview template';
+ $('upgradeModalBg').classList.add('show');
+ $('upgradeModalBg').setAttribute('aria-hidden','false');
+ $('viewPlans').focus();
 }
-$('templates').addEventListener('click',e=>{const b=e.target.closest('[data-template]');if(!b)return;transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
+function closeUpgrade(){
+ $('upgradeModalBg').classList.remove('show');
+ $('upgradeModalBg').setAttribute('aria-hidden','true');
+ $('previewUpgrade').hidden=true;
+ pendingProTemplate=null;
+ pendingUpgradeFeature='';
+}
+function previewPendingTemplate(){
+ if(pendingUpgradeFeature!=='template'||!pendingProTemplate){toast('Select a Pro template to preview it first.');return}
+ const templateId=pendingProTemplate;
+ pendingProTemplate=null;
+ pendingUpgradeFeature='';
+ $('upgradeModalBg').classList.remove('show');
+ $('upgradeModalBg').setAttribute('aria-hidden','true');
+ $('previewUpgrade').hidden=true;
+ openTemplatePreview(templateId);
+}
+function continueWithFreeTemplate(){
+ if(pendingUpgradeFeature!=='template'||!pendingProTemplate){closeUpgrade();return}
+ const fallback=isProTemplate(state.template)?templateDefs[0]:activeTemplate();
+ if(state.template!==fallback.id)transact(()=>{state.template=fallback.id;state.layout=fallback.layout;state.design.accent=fallback.accent;selectedId=null});
+ closeUpgrade();
+ toast(`Continuing with ${fallback.name}, a free template. Your resume content is unchanged.`);
+}
+function runAtsChecks({promptUpgrade=true}={}){
+ const jobText=$('jobDescription').value.trim();
+ const hasAdvancedAccess=canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS,verifiedEntitlement);
+ if(jobText&&!hasAdvancedAccess){
+  if(promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Compare resume skills with a target role, review matched and missing terms, and see role-specific diagnostics.');
+  const report=computeAtsChecks('');
+  report.jobMatchLocked=true;
+  renderAtsResults(report);
+  return;
+ }
+ renderAtsResults(computeAtsChecks());
+}
+$('templates').addEventListener('click',e=>{
+ const preview=e.target.closest('[data-template-preview]');
+ if(preview){
+  e.preventDefault();
+  e.stopPropagation();
+  openTemplatePreview(preview.dataset.templatePreview);
+  return;
+ }
+ const b=e.target.closest('[data-template]');
+ if(!b||b.dataset.template===state.template)return;
+ if(isProTemplate(b.dataset.template)&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){pendingProTemplate=b.dataset.template;const template=templateDefs.find(item=>item.id===pendingProTemplate);showUpgrade('template',`${template.name} is a Pro template`,'Preview the style above without changing your resume. Pro includes all 17 templates. Cancel or continue with a Free template; your resume content will be preserved.');return}
+ transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
 $('sectionList').addEventListener('click',e=>{const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
 $('sectionList').addEventListener('dragstart',e=>{const row=e.target.closest('[data-section-row]');if(!row)return;draggingId=row.dataset.sectionRow;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggingId);row.style.opacity='.5'});
 $('sectionList').addEventListener('dragend',e=>{const row=e.target.closest('[data-section-row]');if(row)row.style.opacity='1';draggingId=null});
@@ -1002,6 +1177,14 @@ $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click
  $('closeCloudModalAction').addEventListener('click',closeCloudModal);
  $('cloudModalBg').addEventListener('click',event=>{if(event.target===$('cloudModalBg'))closeCloudModal()});
  $('refreshCloudResumes').addEventListener('click',refreshCloudResumes);
+ $('closeUpgrade').addEventListener('click',closeUpgrade);
+ $('cancelUpgrade').addEventListener('click',closeUpgrade);
+ $('previewUpgrade').addEventListener('click',previewPendingTemplate);
+ $('continueFree').addEventListener('click',continueWithFreeTemplate);
+ $('upgradeModalBg').addEventListener('click',event=>{if(event.target===$('upgradeModalBg'))closeUpgrade()});
+ $('closeTemplatePreview').addEventListener('click',closeTemplatePreview);
+ $('closeTemplatePreviewAction').addEventListener('click',closeTemplatePreview);
+ $('templatePreviewModalBg').addEventListener('click',event=>{if(event.target===$('templatePreviewModalBg'))closeTemplatePreview()});
  $('saveCloudCopy').addEventListener('click',saveCurrentAsCloudCopy);
  $('cloudResumeList').addEventListener('click',event=>{
   const load=event.target.closest('[data-cloud-load]');
@@ -1011,7 +1194,7 @@ $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click
  });
  $('downloadRecoveryBackup').addEventListener('click',downloadRecoveryData);
  $('resolveRecovery').addEventListener('click',resolveLocalRecovery);
- $('pdfBtn').addEventListener('click',exportPDF);$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',runAtsChecks);$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(runAtsChecks,250)});
+ $('pdfBtn').addEventListener('click',exportPDF);$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(()=>runAtsChecks({promptUpgrade:false}),250)});
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 let resizing=null;
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
@@ -1020,7 +1203,7 @@ document.addEventListener('pointermove',e=>{if(!resizing)return;if(resizing==='r
 document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs()}});
 $('collapseLeft').addEventListener('click',toggleLeft);$('expandLeft').addEventListener('click',toggleLeft);$('expandRight').addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
-document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter();closePdfPreview();closeCloudModal()}});
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}});
 const savedProject=readSavedProject(localStorage,normalizeState);
 if(savedProject.state)state=savedProject.state;
 showRecoveryNotice(savedProject);

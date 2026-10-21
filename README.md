@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Vite opens the editor at the root URL (`/`).
+Vite opens the editor at `/`. To run the billing API locally, start the backend in a second terminal with `npm run backend`; Vite proxies `/api` requests to `http://127.0.0.1:3000`. Billing remains disabled unless all server-side configuration is present.
 
 ## Production
 
@@ -23,26 +23,44 @@ npm run build
 npm start
 ```
 
-The production build is generated in `dist/`. `npm start` serves that build; run `npm run build` first.
+The production build is generated in `dist/`. `npm start` serves the site and billing API; run `npm run build` first.
 
 ## Deploy on Render
 
-The root `render.yaml` configures a Render Static Site. Push it to the `main` branch, then in Render choose **New > Blueprint** and connect `mauryavishal93/BuildMyPortfolio`. Render will run `npm install && npm run build` and publish `dist/`. Approve the `buildmyportfolio` service to start the deploy. Because the GitHub repository is private, authorize Render to access it when prompted.
+The root `render.yaml` configures a Render Node web service that serves the built site and trusted billing API. Push it to the `main` branch, then in Render choose **New > Blueprint** and connect `mauryavishal93/BuildMyPortfolio`. Render runs `npm install && npm run build`, then `npm start`. Approve the `buildmyportfolio` service to start the deploy. Because the GitHub repository is private, authorize Render to access it when prompted. Configure the secret environment variables described below before enabling billing.
 
-The site is multi-page: `/` redirects to the editor, `/editor.html` is the editor page, `/about.html` is the About page, and `/privacy.html` is the privacy policy. No Render web service or environment variables are required.
+The site is multi-page: `/` opens the editor; `/editor.html` is the editor page; `/about.html` is the About page; `/privacy.html` is the privacy policy; `/pricing.html` is the plan and purchase page; `/terms.html` describes service terms; and `/refunds.html` describes refund status.
 
 ## Project structure
 
-- `frontend/index.html`, `frontend/editor.html`, `frontend/about.html`, and `frontend/privacy.html` are the HTML entry points.
-- `frontend/src/main.js` owns the editor state, resume rendering, editing controls, local autosave, JSON import/export, and PDF workflows.
-- `frontend/src/firebase-cloud.js` provides optional Google authentication and per-user Firestore resume storage. Firebase SDK modules are loaded only when cloud features are used.
-- `firestore.rules` restricts resume documents to the authenticated owner. `firebase.json` maps this rules file for Firebase CLI rules-only deployments; it does not configure Firebase Hosting.
+- `frontend/index.html`, `frontend/editor.html`, `frontend/about.html`, and `frontend/privacy.html` are the main HTML entry points.
+- `frontend/pricing.html`, `frontend/src/pricing.js`, and `frontend/src/billing-client.js` provide the signed-in monthly/yearly purchase experience and call the same-origin billing API.
+- `frontend/src/main.js` owns editor state, resume rendering, editing controls, local autosave, JSON import/export, and PDF workflows.
+- `frontend/src/plan-access.js` centralizes the Free/Pro feature definitions and UI gates. Editor access is based on entitlements loaded from the server; browser code is not the payment authority.
+- `frontend/src/firebase-cloud.js` provides Google authentication and per-user Firestore resume storage. Firebase SDK modules are loaded only when cloud/auth features are used.
+- `backend/server.js` verifies Firebase ID tokens, creates Razorpay subscriptions, verifies checkout signatures and provider state, processes signed webhooks, supports cancellation, and manages server-side Firestore entitlements.
+- `backend/billing.js` contains server-owned prices, subscription intervals, signature checks, and entitlement validity logic.
+- `firestore.rules` restricts resume documents to their authenticated owner and explicitly blocks all client access to billing documents. `firebase.json` maps the rules for Firebase CLI rules-only deployments; it does not configure Firebase Hosting.
 - `frontend/src/ats-scoring.js`, `frontend/src/cover-letter.js`, `frontend/src/cover-letter-pdf.js`, and `frontend/src/zoom.js` contain focused editor helpers.
-- `frontend/src/style.css` and `frontend/src/about.css` contain the editor and informational-page styles.
-- `backend/server.js` serves the production frontend and provides `/api/health`; the Render deployment uses the static-site configuration in `render.yaml`.
-- `vite.config.js` configures the frontend build, while `package.json` and `package-lock.json` define scripts and dependencies.
-- `tests/` contains the Node.js test suite. `reference/` keeps the original standalone HTML for reference.
+- `frontend/src/style.css` and `frontend/src/about.css` contain editor and informational-page styles.
+- `vite.config.js` configures the frontend build and local API proxy. `tests/` contains the Node.js test suite.
 
 ## Data flow
 
-Resume editing and autosaving work locally in the browser without an account. If saved project data cannot be read, the editor pauses autosave, keeps the original data available for download, and asks before replacing it; a valid legacy copy can be recovered. JSON imports are limited to 5 MB and validated before replacing the current project. When a user chooses to sign in and save a resume, the Firebase client stores that named resume in Firestore under the user's authenticated UID. Firestore security rules enforce per-user access. JSON download remains a separate, local backup workflow. The app does not use its Express health-check server as a resume API.
+Resume editing and autosaving work locally in the browser without an account. If saved project data cannot be read, the editor pauses autosave, keeps the original data available for download, and asks before replacing it; a valid legacy copy can be recovered. JSON imports are limited to 5 MB and validated before replacing the current project. Optional Google sign-in and Firebase cloud resume storage remain separate from local browser drafts.
+
+Paid plan purchases require a signed-in Google account. The backend verifies the Firebase ID token, creates the subscription with a server-selected Razorpay plan, verifies the checkout signature and Razorpay subscription/payment state, and activates entitlements only from verified checkout/provider events. A signed-in user can cancel future renewals; access remains valid through the current paid period. Resume contents and job descriptions are not sent to Razorpay.
+
+## Free and Pro plans
+
+Core resume editing, six templates, standard PDF export, resume-only ATS checks, basic cover-letter tools, JSON backup, and browser autosave remain free. Pro costs ₹99 per month or ₹399 per year as a recurring subscription until canceled. Pro includes all 17 templates and job-description ATS matching.
+
+Checkout fails closed until the server is fully configured. Start in Razorpay test mode and:
+
+1. Create a Razorpay Plan for INR 99 billed monthly and another for INR 399 billed yearly, each with interval 1. Set their IDs as `RAZORPAY_PLAN_MONTHLY_ID` and `RAZORPAY_PLAN_YEARLY_ID`. Before creating any subscription, the backend fetches and verifies the provider plan amount, currency, and interval; the browser cannot set the charge amount.
+2. Configure `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only in the server environment. Never put provider secrets in Vite variables, frontend code, or browser storage.
+3. Set `FIREBASE_SERVICE_ACCOUNT_JSON` to a server-only Firebase service account JSON with only the permissions needed to verify Firebase Authentication ID tokens and access billing records. Firebase client rules explicitly deny access to billing documents.
+4. Set the Razorpay webhook URL to `https://<your-domain>/api/billing/webhook` and subscribe to `subscription.activated`, `subscription.charged`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, and `subscription.expired`. The backend verifies signatures against the exact raw body and records event IDs for idempotency.
+5. Publish and review final service terms and refund information. Only then set `BILLING_TERMS_PUBLISHED=true`, `BILLING_REFUNDS_PUBLISHED=true`, and `BILLING_ENABLED=true`. Checkout stays disabled until all flags, provider credentials, plan IDs, and Firebase Admin credentials are present.
+
+The configured Razorpay subscriptions cover up to 100 years of billing cycles. Test purchases, renewals, failed payments, cancellations, webhook replay, and expired entitlements using Razorpay test credentials before considering a live launch. Use live provider credentials only after checking the production webhook and publishing final policies. The repository contains no payment credentials; live purchases are unavailable until the external Razorpay and Firebase services are configured.

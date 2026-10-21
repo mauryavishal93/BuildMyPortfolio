@@ -26,5 +26,17 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt is timestamp;
     }
+
+    match /users/{userId}/billing/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /billingSubscriptions/{subscriptionId} {
+      allow read, write: if false;
+    }
+
+    match /billingWebhookEvents/{eventId} {
+      allow read, write: if false;
+    }
   }
 }

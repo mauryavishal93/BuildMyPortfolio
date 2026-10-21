@@ -240,5 +240,39 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 :root[data-theme=dark] .recovery-banner .outline{background:#1a2738;color:#ffdfa3;border-color:#725225}
 @media(max-width:800px){.topbar{grid-template-areas:"brand docname docname docname docname" "cloud cloud cloud cloud cloud" "theme theme theme theme theme" "cover cover about pdf pdf"}.topbar [data-theme-toggle]{grid-area:theme;width:100%}}
 @media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname docname" "cloud cloud cloud cloud" "theme theme theme theme" "cover cover about pdf"}}
+.template-label-row{display:flex;align-items:center;justify-content:space-between;gap:4px}
+.template-label-row strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plan-badge{flex:none;padding:2px 5px;border-radius:999px;font-size:8px;font-weight:850;letter-spacing:.04em}
+.plan-badge.free{background:#e7f6ed;color:#17643a}
+.plan-badge.pro{background:#fff3d6;color:#83520a}
+.template-card{display:flex;flex-direction:column;gap:6px}
+.template-preview-btn{width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);font-size:11px;font-weight:700}
+.template-preview-btn:hover{border-color:var(--purple);background:#f7f6ff}
+.template-pro{position:relative}
+.template-pro .mini:after{content:"PREVIEW";position:absolute;top:10px;right:10px;padding:2px 5px;border-radius:4px;background:#142d4c;color:#fff;font-size:7px;font-weight:800;letter-spacing:.04em}
+.template-access-note{grid-column:1/-1;padding:8px;border:1px solid #d97706;border-radius:8px;background:#fff8e7;color:#75450b;font-size:10px;line-height:1.5}
+.template-access-note a{color:inherit;font-weight:800}
+.template-preview-modal .template-preview-pages{display:grid;gap:12px;max-height:60vh;overflow:auto;padding-top:6px}
+.template-preview-page{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.template-preview-page img{display:block;width:100%;height:auto}
+.template-preview-watermark{position:absolute;right:10px;bottom:10px;padding:4px 7px;border-radius:999px;background:rgba(17,24,39,.7);color:#fff;font-size:9px;letter-spacing:.08em}
+.plans-inline-link{display:inline-block;margin-top:12px;color:var(--purple);font-size:11px;font-weight:800}
+.upgrade-modal{width:min(520px,100%)}
+#upgradeModalBg{z-index:40}
+.upgrade-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.upgrade-modal-head .eyebrow{margin-left:0}
+.upgrade-modal-head h2{margin:0 0 8px}
+.upgrade-description{margin:0;color:var(--muted);line-height:1.55}
+.upgrade-price{margin:16px 0 10px;font-weight:800}
+.upgrade-modal .modal-actions{display:flex;flex-wrap:nowrap;justify-content:space-between;align-items:center;gap:8px;max-width:100%}
+.upgrade-modal .modal-actions > *{flex:0 1 auto;min-width:0}
+.upgrade-modal .modal-actions #continueFree{white-space:nowrap}
+.upgrade-modal .modal-actions #previewUpgrade{white-space:nowrap}
+.upgrade-modal .modal-actions #viewPlans{white-space:nowrap}
+.upgrade-modal .modal-actions #cancelUpgrade{white-space:nowrap}
+:root[data-theme=dark] .plan-badge.free{background:#173b2d;color:#a6f0c7}
+:root[data-theme=dark] .plan-badge.pro{background:#49351c;color:#ffdfa3}
+:root[data-theme=dark] .template-access-note{background:#352713;border-color:#b7791f;color:#ffdfa3}
+@media(max-width:560px){.upgrade-modal .modal-actions{flex-wrap:nowrap;justify-content:stretch}.upgrade-modal .modal-actions>*{flex:1 1 auto;min-width:0}}
 @media(max-width:700px){.recovery-banner{flex-direction:column}.recovery-actions{justify-content:flex-start}}
 @media(max-width:520px){.topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand docname docname about" "cloud cloud cloud cloud" "cover cover about pdf"}.cloud-actions{grid-area:cloud}.cloud-actions .btn{font-size:10px}}

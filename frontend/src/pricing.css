@@ -1,0 +1,69 @@
+.pricing-main{max-width:1080px}
+.pricing-hero{max-width:780px;margin:20px auto 40px;text-align:center}
+.pricing-hero h1{margin:0;color:#f3f8ff;font-size:clamp(2.2rem,4vw,3.7rem);line-height:1.05;letter-spacing:-.04em}
+.pricing-hero .about-lead{margin:18px auto 0}
+.plan-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.billing-account{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;margin:-18px auto 28px;padding:12px 16px;border:1px solid rgba(162,180,204,.2);border-radius:12px;background:rgba(9,18,28,.55)}
+.billing-account p{margin:0;color:#dce6f4;font-size:13px}
+.billing-account [hidden]{display:none}
+.billing-editor-link{display:inline-flex;align-items:center;justify-content:center;padding:7px 11px;border:1px solid rgba(162,180,204,.3);border-radius:8px;color:#eff6ff;font-size:12px;font-weight:700;text-decoration:none}
+.billing-editor-link:hover,.billing-editor-link:focus-visible{border-color:#7bb7f4;background:rgba(255,255,255,.06)}
+.plan-card{display:flex;flex-direction:column;padding:28px;background:linear-gradient(180deg,rgba(11,22,34,.88),rgba(9,18,28,.96));border:1px solid rgba(162,180,204,.18);border-radius:18px;box-shadow:0 14px 28px rgba(0,0,0,.18)}
+.plan-card-pro{border-color:rgba(90,151,226,.55);box-shadow:0 14px 32px rgba(15,76,135,.2)}
+.plan-card-yearly{border-color:rgba(70,191,151,.6);box-shadow:0 14px 32px rgba(15,135,95,.14)}
+.plan-card h2{margin:0;font-size:1.6rem}
+.plan-card>p:not(.about-eyebrow):not(.plan-price):not(.plan-duration):not(.checkout-status){color:#bdcce0}
+.plan-price{margin:12px 0;color:#f3f8ff;font-size:2rem;font-weight:800;line-height:1.2}
+.plan-price span{display:block;margin-top:5px;color:#9fb1c6;font-size:.85rem;font-weight:500}
+.plan-duration,.checkout-status{color:#ffdfa3;font-size:12px}
+.plan-card ul{display:grid;gap:10px;margin:12px 0 24px;padding-left:20px;color:#dce6f4}
+.plan-card li::marker{color:#7bb7f4}
+.plan-action{width:100%;margin-top:auto;justify-content:center}
+.plan-card .plan-action:is(#purchaseMonthly,#purchaseYearly){min-height:54px;padding:14px 20px;border:1px solid transparent;border-radius:10px;color:#fff;font-weight:750;box-shadow:0 9px 20px rgba(10,105,155,.25);transition:transform .18s ease,box-shadow .18s ease,filter .18s ease}
+#purchaseMonthly.plan-action{background:linear-gradient(110deg,#1678c8,#087e91)}
+#purchaseYearly.plan-action{background:linear-gradient(110deg,#138c75,#16a47f);box-shadow:0 9px 20px rgba(10,135,103,.24)}
+#purchaseMonthly.plan-action:not(:disabled)::after,#purchaseYearly.plan-action:not(:disabled)::after{content:'→';margin-left:10px;font-size:18px;line-height:1;transition:transform .18s ease}
+#purchaseMonthly.plan-action:not(:disabled):hover,#purchaseYearly.plan-action:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 13px 24px rgba(10,105,155,.32);filter:brightness(1.06)}
+#purchaseMonthly.plan-action:not(:disabled):hover::after,#purchaseYearly.plan-action:not(:disabled):hover::after{transform:translateX(3px)}
+#purchaseMonthly.plan-action:focus-visible,#purchaseYearly.plan-action:focus-visible{outline:3px solid #f0bf62;outline-offset:3px}
+#purchaseMonthly.plan-action:disabled,#purchaseYearly.plan-action:disabled{opacity:1;filter:saturate(.45);box-shadow:none}
+.plan-card .btn:disabled{opacity:.58;cursor:not-allowed}
+#purchaseMonthly.plan-action:disabled,#purchaseYearly.plan-action:disabled{cursor:not-allowed}
+.checkout-status{max-width:780px;margin:14px auto;color:#ffdfa3;text-align:center;line-height:1.5}
+.pricing-comparison{margin-top:52px}
+.pricing-table-wrap{overflow-x:auto;border:1px solid rgba(162,180,204,.18);border-radius:14px}
+.pricing-table{width:100%;border-collapse:collapse;min-width:560px;background:rgba(9,18,28,.8)}
+.pricing-table th,.pricing-table td{padding:14px 16px;text-align:left;border-bottom:1px solid rgba(162,180,204,.14)}
+.pricing-table thead th{background:rgba(30,125,217,.14);color:#f3f8ff}
+.pricing-table tbody th{color:#e4edf8;font-weight:700}
+.pricing-table tbody td{color:#c0cde0}
+.pricing-table tbody tr:last-child>*{border-bottom:0}
+.pricing-terms{margin-top:28px}
+.pricing-links{display:flex;flex-wrap:wrap;gap:14px 22px;margin-top:18px}
+.pricing-links a{color:#9ec9ff}
+:root[data-theme=light] .pricing-hero h1,
+:root[data-theme=light] .plan-card h2,
+:root[data-theme=light] .plan-price{color:#202a3a}
+:root[data-theme=light] .plan-card{background:linear-gradient(180deg,#fff,#f8fafc);border-color:#e2e7ef;box-shadow:0 14px 28px rgba(27,36,52,.08)}
+:root[data-theme=light] .plan-card-pro{border-color:#9ac5f3}
+:root[data-theme=light] .plan-card-yearly{border-color:#87d5b6}
+:root[data-theme=light] .billing-account{background:#f8fafc;border-color:#e2e7ef}
+:root[data-theme=light] .billing-account p{color:#4e596b}
+:root[data-theme=light] .billing-editor-link{color:#344054;border-color:#cdd6e3}
+:root[data-theme=light] .billing-editor-link:hover,:root[data-theme=light] .billing-editor-link:focus-visible{background:#f7f9fc;border-color:#14766f}
+:root[data-theme=light] .plan-card>p:not(.about-eyebrow):not(.plan-price):not(.plan-duration):not(.checkout-status),
+:root[data-theme=light] .plan-card ul{color:#4e596b}
+:root[data-theme=light] .plan-price span{color:#667085}
+:root[data-theme=light] .plan-duration,
+:root[data-theme=light] .checkout-status{color:#805500}
+:root[data-theme=light] .pricing-table-wrap{border-color:#e2e7ef}
+:root[data-theme=light] .pricing-table{background:#fff}
+:root[data-theme=light] .pricing-table th,
+:root[data-theme=light] .pricing-table td{border-color:#e2e7ef}
+:root[data-theme=light] .pricing-table thead th{background:#eef6ff;color:#202a3a}
+:root[data-theme=light] .pricing-table tbody th{color:#1b2434}
+:root[data-theme=light] .pricing-table tbody td{color:#4e596b}
+:root[data-theme=light] .pricing-links a{color:#14766f}
+@media(max-width:900px){.plan-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-card:first-child{grid-column:1/-1}}
+@media(max-width:700px){.pricing-hero{margin:8px auto 28px}.plan-cards{grid-template-columns:1fr}.plan-card:first-child{grid-column:auto}.plan-card{padding:22px}.pricing-comparison{margin-top:36px}}
+@media(prefers-reduced-motion:reduce){#purchaseMonthly.plan-action,#purchaseYearly.plan-action,#purchaseMonthly.plan-action::after,#purchaseYearly.plan-action::after{transition:none}}

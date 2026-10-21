@@ -62,6 +62,15 @@ export async function signOutUser() {
   await authSdk.signOut(auth);
 }
 
+export async function getFirebaseIdToken(user) {
+  const { auth } = await getServices();
+  const signedInUser = auth.currentUser;
+  if (!user || !signedInUser || signedInUser.uid !== user.uid) {
+    throw new Error('Sign in before accessing paid plans.');
+  }
+  return signedInUser.getIdToken();
+}
+
 export async function listResumes(uid) {
   const { db, firestoreSdk } = await getServices();
   const result = await firestoreSdk.getDocs(firestoreSdk.query(

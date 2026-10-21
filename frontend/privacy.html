@@ -18,6 +18,20 @@
           <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
           <span class="theme-switch-label">Dark</span>
         </button>
+        <div class="auth-actions">
+          <button class="btn google-signin" type="button" data-auth-sign-in>
+            <svg class="google-signin-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.05 5.05 0 0 1-2.2 3.31v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.25 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.15v2.84A11 11 0 0 0 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.43.34-2.1V7.06H2.15A11 11 0 0 0 1 12c0 1.78.43 3.46 1.15 4.94l3.69-2.84z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1a11 11 0 0 0-9.85 6.06L5.84 9.9c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            <span data-auth-sign-in-label>Sign in with Google</span>
+          </button>
+          <button class="btn outline" type="button" data-auth-sign-out hidden>Sign out</button>
+          <span class="auth-status" data-auth-status role="status" aria-live="polite"></span>
+        </div>
+        <a class="btn outline" href="/pricing.html">Plans</a>
         <a class="btn outline about-cover-letter" href="/editor.html?tool=cover-letter">Cover letter</a>
         <a class="btn outline" href="/about.html">About</a>
         <a class="btn soft about-editor" href="/editor.html">Open editor</a>
@@ -28,7 +42,7 @@
         <p class="about-eyebrow">YOUR INFORMATION</p>
         <h1>Privacy Policy</h1>
         <p class="about-lead">This policy explains how BuildMyPortfolio handles information when you use this website and its resume tools.</p>
-        <p>Last updated: October 20, 2026</p>
+        <p>Last updated: October 21, 2026</p>
       </section>
       <div class="about-grid">
         <section class="about-section">
@@ -42,33 +56,38 @@
           <p>Cloud saving is optional. Your browser copy remains separate from cloud copies. Signing out does not delete cloud resumes; use the cloud-resume controls to delete individual saved resumes. The hosting and Firebase services process information as described by their own terms and privacy practices.</p>
         </section>
         <section class="about-section">
-          <h2>3. Information handled when you visit</h2>
+          <h2>3. Paid plan and payment information</h2>
+          <p>If paid checkout is enabled, purchases require a signed-in Google account. The server verifies your Firebase sign-in and stores your account identifier, selected subscription plan, Razorpay subscription identifier, billing status, and paid-through date in Firebase for entitlement and cancellation management. Razorpay processes payment details, and may process your name, email address, payment method, and transaction information under its own terms and privacy practices. Resume contents and job descriptions are not sent to Razorpay. Billing records are retained as needed to manage access, resolve payment issues, and meet applicable record-keeping obligations.</p>
+        </section>
+        <section class="about-section">
+          <h2>4. Information handled when you visit</h2>
           <p>Your browser must request website files from the hosting provider for the site to load. The hosting infrastructure may process technical request information, such as your IP address, browser and device details, requested pages, and request timestamps, in connection with delivering, securing, and maintaining the website. The operator does not receive resume contents through the editor's normal operation unless you choose to save a project to Firebase. The hosting provider's processing is subject to its own terms and privacy practices.</p>
           <p>The app does not intentionally use advertising trackers, analytics services, or its own tracking cookies. Your browser may store the editor's data in local storage; this is browser storage, not a cookie.</p>
         </section>
         <section class="about-section">
-          <h2>4. Feedback and communications</h2>
+          <h2>5. Feedback and communications</h2>
           <p>If you choose the feedback form on the About page, it opens a new message in your device's email application. The form does not submit your message to this website. Your email application or provider processes the message only if you review and send it. If you contact the developer directly, the information in your message and email address will be used to respond and handle your request.</p>
         </section>
         <section class="about-section">
-          <h2>5. Sharing and third-party services</h2>
+          <h2>6. Sharing and third-party services</h2>
           <p>We do not sell or rent personal information. If you use Google sign-in and cloud saving, Google Firebase processes sign-in information and the resume data you choose to store there to provide those features. Website hosting providers may process technical request information as described above. If you follow a link to an external website, that service's privacy policy and practices apply. Your email provider will also handle any message you choose to send.</p>
         </section>
         <section class="about-section">
-          <h2>6. Retention, security, and your choices</h2>
+          <h2>7. Retention, security, and your choices</h2>
           <p>Browser-stored resume data and preferences remain in local storage until you remove them or your browser clears them. You can remove them by clearing this website's local storage or site data in your browser settings. Cloud resumes remain stored in Firebase until you delete them using the cloud-resume controls or contact the developer to request deletion. Signing out or clearing browser data does not delete cloud resumes. Export a JSON backup first if you want to keep a copy. Deleting browser data or a cloud resume does not delete a JSON file you previously downloaded or information in messages you sent.</p>
           <p>Protect access to your device and browser profile, especially on shared devices. Local storage is subject to the security of your device and browser. No method of storage or internet transmission can be guaranteed completely secure.</p>
         </section>
         <section class="about-section">
-          <h2>7. Children and applicable rights</h2>
+          <h2>8. Children and applicable rights</h2>
           <p>BuildMyPortfolio is a general-purpose resume tool and is not directed to children. Signing in is optional. Depending on where you live, privacy laws may give you rights regarding personal information processed by website hosting, Firebase, or in communications you send. Contact the developer to ask about a request; information stored only in your browser can be managed through your browser settings, and cloud resumes can be managed in the app.</p>
         </section>
         <section class="about-section">
-          <h2>8. Changes to this policy</h2>
+          <h2>9. Changes to this policy</h2>
           <p>This policy may be updated if the website or its data practices change. The latest version and its update date will be published on this page. Please review it periodically.</p>
         </section>
       </div>
     </main>
     <script type="module" src="/src/theme.js"></script>
+    <script type="module" src="/src/auth-nav.js"></script>
   </body>
 </html>

@@ -202,7 +202,7 @@ async function removeCloudResume(id){
 function updateCloudAccount(user,error){
  if(error){
   $('googleSignInBtn').disabled=true;
-  $('googleSignInBtn').textContent='Cloud setup needed';
+  $('googleSignInLabel').textContent='Cloud setup needed';
   $('googleSignInBtn').title=error.message;
   $('cloudAccount').textContent=error.message;
   renderCloudResumes();

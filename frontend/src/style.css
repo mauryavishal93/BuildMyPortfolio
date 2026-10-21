@@ -155,6 +155,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 @media print{body{background:white}.topbar,.left,.right,.toolbar,.hint,.toast{display:none!important}.layout{display:block;min-height:0}.center{padding:0;overflow:visible}.sheets{display:block;min-height:0}.sheet{width:210mm!important;height:297mm!important;flex:none!important;box-shadow:none;transform:none!important;margin:0!important;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto}.resume-section.selected{outline:0!important}@page{size:A4 portrait;margin:0}}
 .cloud-actions{display:flex;align-items:center;gap:6px}
 .cloud-actions [hidden]{display:none!important}
+.google-signin{height:40px;padding:0 14px;background:#fff;border:1px solid #dadce0;border-radius:6px;color:#3c4043;font-size:14px;font-weight:500;letter-spacing:.15px;gap:10px;box-shadow:0 1px 2px #0000001a}
+.google-signin:hover:not(:disabled){background:#f8faff;border-color:#d2e3fc;box-shadow:0 1px 3px #00000024}
+.google-signin:active:not(:disabled){background:#eef3fc;box-shadow:inset 0 1px 2px #0000001a}
+.google-signin-logo{width:18px;height:18px;flex:0 0 18px}
+@media(max-width:800px){.cloud-actions .google-signin{height:36px;padding:0 12px;font-size:13px}}
 .cloud-modal{width:min(620px,100%);max-height:min(88vh,760px);overflow:auto}
 .cloud-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .cloud-modal-head h2{margin:0}

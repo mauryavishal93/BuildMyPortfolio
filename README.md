@@ -1,6 +1,6 @@
 # BuildMyPortfolio
 
-A browser-based resume editor with multiple templates, editable sections, JSON project import/export, local autosave, and high-resolution PDF export with selectable text.
+A browser-based resume editor with multiple templates, editable sections, JSON project import/export, local autosave, optional Google sign-in and Firebase cloud resume storage, and high-resolution PDF export with selectable text.
 
 ## Requirements
 
@@ -29,19 +29,20 @@ The production build is generated in `dist/`. `npm start` serves that build; run
 
 The root `render.yaml` configures a Render Static Site. Push it to the `main` branch, then in Render choose **New > Blueprint** and connect `mauryavishal93/BuildMyPortfolio`. Render will run `npm install && npm run build` and publish `dist/`. Approve the `buildmyportfolio` service to start the deploy. Because the GitHub repository is private, authorize Render to access it when prompted.
 
-The site is multi-page: `/` opens the editor, `/editor.html` is the editor page, `/about.html` is the About page, and `/privacy.html` is the privacy policy. No Render web service or environment variables are required.
+The site is multi-page: `/` redirects to the editor, `/editor.html` is the editor page, `/about.html` is the About page, and `/privacy.html` is the privacy policy. No Render web service or environment variables are required.
 
 ## Project structure
 
-- `frontend/editor.html` is the resume editor page.
-- `frontend/about.html` contains product and developer information.
-- `frontend/privacy.html` contains the privacy policy.
-- `frontend/src/style.css` contains the app styles.
-- `frontend/src/main.js` contains the editor behavior.
-- `frontend/index.html` redirects to the named app page.
-- `backend/server.js` serves the production frontend and provides `/api/health`.
-- `reference/` keeps the original standalone HTML for reference.
-- `vite.config.js` configures the frontend build.
-- `package.json` and `package-lock.json` manage scripts and dependencies.
+- `frontend/index.html`, `frontend/editor.html`, `frontend/about.html`, and `frontend/privacy.html` are the HTML entry points.
+- `frontend/src/main.js` owns the editor state, resume rendering, editing controls, local autosave, JSON import/export, and PDF workflows.
+- `frontend/src/firebase-cloud.js` provides optional Google authentication and per-user Firestore resume storage. Firebase SDK modules are loaded only when cloud features are used.
+- `firestore.rules` restricts resume documents to the authenticated owner. `firebase.json` maps this rules file for Firebase CLI rules-only deployments; it does not configure Firebase Hosting.
+- `frontend/src/ats-scoring.js`, `frontend/src/cover-letter.js`, `frontend/src/cover-letter-pdf.js`, and `frontend/src/zoom.js` contain focused editor helpers.
+- `frontend/src/style.css` and `frontend/src/about.css` contain the editor and informational-page styles.
+- `backend/server.js` serves the production frontend and provides `/api/health`; the Render deployment uses the static-site configuration in `render.yaml`.
+- `vite.config.js` configures the frontend build, while `package.json` and `package-lock.json` define scripts and dependencies.
+- `tests/` contains the Node.js test suite. `reference/` keeps the original standalone HTML for reference.
 
-Resume data is still stored in the browser; the backend currently provides static hosting and a health endpoint.
+## Data flow
+
+Resume editing and autosaving work locally in the browser without an account. When a user chooses to sign in and save a resume, the Firebase client stores that named resume in Firestore under the user's authenticated UID. Firestore security rules enforce per-user access. JSON download remains a separate, local backup workflow. The app does not use its Express health-check server as a resume API.

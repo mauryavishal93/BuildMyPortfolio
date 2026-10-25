@@ -66,8 +66,52 @@ test('monthly and yearly prices match the displayed INR subscriptions', () => {
   assert.deepEqual(PLAN_CONFIG.pro.yearly, { price: 399, interval: 'year' });
 });
 
-test('upgrade modal exposes a template preview action for gated Pro templates', () => {
+test('Pro template preview offers PDF export without a template-application trial modal', () => {
   const html = readFileSync(new URL('../frontend/editor.html', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
   assert.match(html, /id="previewUpgrade"/);
+  assert.doesNotMatch(html, /proTemplateTrialModalBg|applyProTemplate/);
   assert.match(html, /id="templatePreviewModalBg"/);
+  assert.match(html, /id="templatePreviewAllowance"/);
+  assert.match(html, /id="exportProTemplatePreview"[^>]*disabled/);
+  assert.doesNotMatch(source, /template-preview-btn|data-template-preview/);
+});
+
+test('Free users preview Pro templates and can render a PDF without applying the template', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /pendingProTemplate=null;\s*openTemplatePreview\(templateId\)/);
+  assert.match(source, /async function exportPDF\(templateId=null\)/);
+  assert.match(source, /void exportPDF\(templateId\)/);
+  assert.match(source, /consumeProTemplateDownload\(cloudUser\.uid\)/);
+  assert.match(source, /You have used both free Pro-template PDF downloads\. Export is disabled/);
+  assert.match(source, /of 2 free Pro PDF downloads remaining/);
+  assert.match(source, /exportButton\.disabled=true/);
+  assert.match(source, /if\(!cloudUser\)\{[\s\S]*?button\.disabled=true/);
+  assert.match(source, /!cloudUser\|\|!Number\.isInteger\(proTemplateDownloadsRemaining\)\|\|proTemplateDownloadsRemaining<1/);
+  assert.doesNotMatch(source, /applyPendingProTemplate|showProTemplateTrial/);
+});
+
+test('upgrade modal actions wrap instead of overlapping at narrow widths', () => {
+  const styles = readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.upgrade-modal \.modal-actions[^}]*display:grid/);
+  assert.match(styles, /@media\(max-width:560px\)[^{]*\{[^}]*grid-template-columns:1fr/s);
+});
+
+test('photo templates show an accessible avatar placeholder when no photo is uploaded', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8');
+  assert.match(source, /const hasPhoto=!!tmpl\.photo/);
+  assert.match(source, /photo-placeholder" role="img" aria-label="No profile photo uploaded"/);
+  assert.match(styles, /\.photo-placeholder::before/);
+  assert.match(styles, /\.photo-placeholder::after/);
+});
+
+test('Firestore rules restrict the lifetime Pro-template trial to two owner-only increments', () => {
+  const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /match \/users\/\{userId\}\/trial\/proTemplateDownloads/);
+  assert.match(rules, /request\.auth\.uid == userId/);
+  assert.match(rules, /request\.resource\.data\.count == 1/);
+  assert.match(rules, /request\.resource\.data\.count == resource\.data\.count \+ 1/);
+  assert.match(rules, /request\.resource\.data\.count <= 2/);
+  assert.match(rules, /allow delete: if false/);
 });

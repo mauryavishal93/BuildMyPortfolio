@@ -7,6 +7,7 @@ import {
   BILLING_PLANS,
   billingConfigured,
   entitlementFromSubscription,
+  firebaseAdminConfigured,
   planKeyForRazorpayPlanId,
   planMatchesRazorpay,
   validRazorpaySignature,
@@ -30,6 +31,14 @@ app.disable('x-powered-by');
 function requireBillingConfig(_request, response, next) {
   if (!billingConfigured()) {
     response.status(503).json({ error: 'Paid plans are not configured on this server yet.' });
+    return;
+  }
+  next();
+}
+
+function requireEntitlementConfig(_request, response, next) {
+  if (!firebaseAdminConfigured()) {
+    response.status(503).json({ error: 'Plan status is unavailable on this server.' });
     return;
   }
   next();
@@ -160,6 +169,7 @@ app.use('/api/billing', (_request, response, next) => {
 app.get('/api/billing/config', (_request, response) => {
   response.json({
     checkoutEnabled: billingConfigured(),
+    entitlementEnabled: firebaseAdminConfigured(),
     keyId: billingConfigured() ? process.env.RAZORPAY_KEY_ID : null,
     plans: Object.fromEntries(Object.entries(BILLING_PLANS).map(([key, plan]) => [
       key,
@@ -311,7 +321,7 @@ app.post(
 
 app.use(express.json({ limit: '32kb' }));
 
-app.get('/api/billing/entitlement', requireBillingConfig, requireFirebaseUser, async (request, response) => {
+app.get('/api/billing/entitlement', requireEntitlementConfig, requireFirebaseUser, async (request, response) => {
   try {
     const { db } = await getFirebaseAdmin();
     const snapshot = await userEntitlementDocument(db, request.user.uid).get();

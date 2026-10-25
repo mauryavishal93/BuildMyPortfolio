@@ -155,13 +155,25 @@ test('billing routes reject unauthenticated and unapproved checkout requests', a
 
   process.env.BILLING_TEST_MODE_VERIFIED = 'false';
   const config = await request('/api/billing/config');
-  assert.equal((await config.json()).checkoutEnabled, false);
+  const configBody = await config.json();
+  assert.equal(configBody.checkoutEnabled, false);
+  assert.equal(configBody.entitlementEnabled, true);
+  fakeDatabase.records.set('users/user-1/billing/entitlement', {
+    planId: 'pro',
+    billingPlan: 'yearly',
+    validUntil: Date.now() + 60_000,
+    subscriptionId: 'sub_existing'
+  });
+  const entitlement = await request('/api/billing/entitlement', { token: 'valid-test-token' });
+  assert.equal(entitlement.status, 200);
+  assert.equal((await entitlement.json()).entitlement.planId, 'pro');
   const blocked = await request('/api/billing/subscriptions', {
     method: 'POST',
     token: 'valid-test-token',
     body: { planKey: 'monthly' }
   });
   assert.equal(blocked.status, 503);
+  fakeDatabase.records.delete('users/user-1/billing/entitlement');
   process.env.BILLING_TEST_MODE_VERIFIED = environment.BILLING_TEST_MODE_VERIFIED;
 });
 

@@ -35,7 +35,7 @@ async function refreshProBadge(user) {
 
   try {
     const config = await loadBillingConfig();
-    const entitlement = config.checkoutEnabled ? await loadBillingEntitlement(user) : null;
+    const entitlement = config.entitlementEnabled ? await loadBillingEntitlement(user) : null;
     if (requestId === entitlementRequest) updateProBadge(entitlement);
   } catch (error) {
     if (requestId === entitlementRequest) updateProBadge(null);

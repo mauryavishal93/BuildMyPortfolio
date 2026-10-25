@@ -53,6 +53,19 @@ export function planMatchesRazorpay(plan, expected) {
     && plan.interval === expected.interval;
 }
 
+export function firebaseAdminConfigured(env = process.env) {
+  if (typeof env.FIREBASE_SERVICE_ACCOUNT_JSON !== 'string') return false;
+  try {
+    const serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    return serviceAccount.type === 'service_account'
+      && typeof serviceAccount.project_id === 'string'
+      && typeof serviceAccount.client_email === 'string'
+      && typeof serviceAccount.private_key === 'string';
+  } catch {
+    return false;
+  }
+}
+
 export function planKeyForRazorpayPlanId(planId, env = process.env) {
   return Object.keys(BILLING_PLANS).find(key => env[`RAZORPAY_PLAN_${key.toUpperCase()}_ID`] === planId) || null;
 }
@@ -87,16 +100,8 @@ export function billingConfigured(env = process.env) {
       env.RAZORPAY_PLAN_MONTHLY_ID,
       env.RAZORPAY_PLAN_YEARLY_ID
     ].every(value => typeof value === 'string' && value.length > 0)
-    || typeof env.FIREBASE_SERVICE_ACCOUNT_JSON !== 'string') {
+    || !firebaseAdminConfigured(env)) {
     return false;
   }
-  try {
-    const serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
-    return serviceAccount.type === 'service_account'
-      && typeof serviceAccount.project_id === 'string'
-      && typeof serviceAccount.client_email === 'string'
-      && typeof serviceAccount.private_key === 'string';
-  } catch {
-    return false;
-  }
+  return true;
 }

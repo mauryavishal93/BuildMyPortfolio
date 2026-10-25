@@ -27,6 +27,26 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp;
     }
 
+    match /users/{userId}/trial/proTemplateDownloads {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list: if false;
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['count', 'updatedAt'])
+        && request.resource.data.count == 1
+        && request.resource.data.updatedAt is timestamp;
+
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['count', 'updatedAt'])
+        && request.resource.data.count == resource.data.count + 1
+        && request.resource.data.count <= 2
+        && request.resource.data.updatedAt is timestamp;
+
+      allow delete: if false;
+    }
+
     match /users/{userId}/billing/{document=**} {
       allow read, write: if false;
     }

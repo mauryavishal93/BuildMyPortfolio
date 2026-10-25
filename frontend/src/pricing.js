@@ -103,7 +103,7 @@ async function refreshBillingState(user) {
   accountStatus.textContent = `Signed in as ${user.email || user.displayName || 'Google user'}. Purchases are attached to this account.`;
   try {
     if (!billingConfig) billingConfig = await loadBillingConfig();
-    if (billingConfig.checkoutEnabled) entitlement = await loadBillingEntitlement(user);
+    if (billingConfig.entitlementEnabled) entitlement = await loadBillingEntitlement(user);
     if (currentUser?.uid !== user.uid) return;
 
     if (entitlement?.status === 'active') {

@@ -70,7 +70,7 @@ export function createFirebaseCloudClient({ config = firebaseConfig, loadSdk = l
     const { auth } = await getServices();
     const signedInUser = auth.currentUser;
     if (!user || !signedInUser || signedInUser.uid !== user.uid) {
-      throw new Error('Sign in before accessing paid plans.');
+      throw new Error('Sign in before accessing account features.');
     }
     return signedInUser.getIdToken();
   }
@@ -141,6 +141,37 @@ export function createFirebaseCloudClient({ config = firebaseConfig, loadSdk = l
     await firestoreSdk.deleteDoc(firestoreSdk.doc(resumeCollection(firestoreSdk, db, uid), id));
   }
 
+  async function getProTemplateDownloadStatus(uid) {
+    const { db, firestoreSdk } = await getServices();
+    const ref = firestoreSdk.doc(db, 'users', uid, 'trial', 'proTemplateDownloads');
+    const snapshot = await firestoreSdk.getDoc(ref);
+    const used = snapshot.exists() ? snapshot.data().count : 0;
+    if (!Number.isInteger(used) || used < 0 || used > 2) {
+      throw new Error('The Pro-template trial counter is invalid. Contact support before retrying.');
+    }
+    return { used, remaining: Math.max(0, 2 - used) };
+  }
+
+  async function consumeProTemplateDownload(uid) {
+    const { db, firestoreSdk } = await getServices();
+    const ref = firestoreSdk.doc(db, 'users', uid, 'trial', 'proTemplateDownloads');
+    return firestoreSdk.runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(ref);
+      const used = snapshot.exists() ? snapshot.data().count : 0;
+      if (!Number.isInteger(used) || used < 0 || used > 2) {
+        throw new Error('The Pro-template trial counter is invalid. Contact support before retrying.');
+      }
+      if (used >= 2) return { allowed: false, used, remaining: 0 };
+
+      const nextUsed = used + 1;
+      transaction.set(ref, {
+        count: nextUsed,
+        updatedAt: firestoreSdk.serverTimestamp()
+      });
+      return { allowed: true, used: nextUsed, remaining: 2 - nextUsed };
+    });
+  }
+
   return {
     cloudConfigured: isConfigured,
     observeAuth,
@@ -149,7 +180,9 @@ export function createFirebaseCloudClient({ config = firebaseConfig, loadSdk = l
     getFirebaseIdToken,
     listResumes,
     saveResume,
-    deleteResume
+    deleteResume,
+    getProTemplateDownloadStatus,
+    consumeProTemplateDownload
   };
 }
 
@@ -161,3 +194,5 @@ export const getFirebaseIdToken = defaultClient.getFirebaseIdToken;
 export const listResumes = defaultClient.listResumes;
 export const saveResume = defaultClient.saveResume;
 export const deleteResume = defaultClient.deleteResume;
+export const getProTemplateDownloadStatus = defaultClient.getProTemplateDownloadStatus;
+export const consumeProTemplateDownload = defaultClient.consumeProTemplateDownload;

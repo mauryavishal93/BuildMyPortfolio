@@ -53,6 +53,7 @@
           <h2>2. Resume information and optional cloud saving</h2>
           <p>You can use the resume editor without signing in. Resume information, job descriptions, cover-letter drafts, analysis, previews, and exports are processed in your browser. The editor saves the current project and interface preferences in your browser's local storage.</p>
           <p>If you choose to sign in with Google and save a resume to the cloud, the app uses Firebase Authentication to process your Google account identifier and available profile information, such as your email address and display name. The resume projects you choose to save—including contact details, work history, education, skills, and any profile photo—are stored in Google Firebase Cloud Firestore under your account so you can access them on other devices. Editing a cloud resume syncs later changes to that saved project. Job descriptions and generated cover-letter drafts are not included in cloud resume saves.</p>
+          <p>If you use a Pro template while signed in without an active Pro subscription, Firestore stores a counter under your account for up to two lifetime Pro-template PDF download attempts. The counter is used only to enforce the free trial allowance; resume contents are not sent to the server for this check. Active Pro subscribers are not charged against this allowance.</p>
           <p>Cloud saving is optional. Your browser copy remains separate from cloud copies. Signing out does not delete cloud resumes; use the cloud-resume controls to delete individual saved resumes. The hosting and Firebase services process information as described by their own terms and privacy practices.</p>
         </section>
         <section class="about-section">
@@ -70,7 +71,7 @@
         </section>
         <section class="about-section">
           <h2>6. Sharing and third-party services</h2>
-          <p>We do not sell or rent personal information. If you use Google sign-in and cloud saving, Google Firebase processes sign-in information and the resume data you choose to store there to provide those features. Website hosting providers may process technical request information as described above. If you follow a link to an external website, that service's privacy policy and practices apply. Your email provider will also handle any message you choose to send.</p>
+          <p>We do not sell or rent personal information. If you use Google sign-in, Google Firebase processes sign-in information, the resume data you choose to store, and the Pro-template download counter associated with your account to provide those features. Website hosting providers may process technical request information as described above. If you follow a link to an external website, that service's privacy policy and practices apply. Your email provider will also handle any message you choose to send.</p>
         </section>
         <section class="about-section">
           <h2>7. Retention, security, and your choices</h2>

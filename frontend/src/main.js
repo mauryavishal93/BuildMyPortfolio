@@ -7,7 +7,7 @@ import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-a
 import { readSavedProject } from './project-storage.js';
 import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from './resume-pdf.js';
 import {
- cloudConfigured, deleteResume, listResumes, observeAuth, saveResume,
+ cloudConfigured, consumeProTemplateDownload, deleteResume, getProTemplateDownloadStatus, listResumes, observeAuth, saveResume,
  signInWithGoogle, signOutUser
 } from './firebase-cloud.js';
 import { zoomFromPinch } from './zoom.js';
@@ -73,8 +73,8 @@ function normalizeState(d){
 let state=fresh(),selectedId=null,zoom=1,history=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null;
 let localPersistenceBlocked=false,recoverySnapshot=null;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
-let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[];
-let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0;
+let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null;
+let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
@@ -212,7 +212,9 @@ async function removeCloudResume(id){
 async function updateCloudAccount(user,error){
  if(error){
   cloudUser=null;
-  verifiedEntitlement=null;
+   proTemplateDownloadsRemaining=null;
+   verifiedEntitlement=null;
+  updateProTemplatePreviewAllowance();
   updateProLabel();
   $('googleSignInBtn').disabled=true;
   $('googleSignInLabel').textContent='Cloud setup needed';
@@ -223,7 +225,9 @@ async function updateCloudAccount(user,error){
   return;
  }
  cloudUser=user;
+ proTemplateDownloadsRemaining=null;
  verifiedEntitlement=null;
+ updateProTemplatePreviewAllowance({checking:!!user});
  updateProLabel();
  $('googleSignInBtn').hidden=!!user;
  $('cloudResumesBtn').hidden=!user;
@@ -240,8 +244,18 @@ async function updateCloudAccount(user,error){
  renderTemplates();
  if(user){
   try{
+   if(!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
+    const usage=await getProTemplateDownloadStatus(user.uid);
+    proTemplateDownloadsRemaining=usage.remaining;
+    updateProTemplatePreviewAllowance();
+   }
+  }catch(error){
+   console.error('Could not load the Pro-template trial allowance.',error);
+   updateProTemplatePreviewAllowance({error:true});
+  }
+  try{
    const config=await loadBillingConfig();
-   if(config.checkoutEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
+   if(config.entitlementEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
   }catch(billingError){
    console.error('Could not load the signed-in account billing status.',billingError);
   }
@@ -257,9 +271,17 @@ window.addEventListener('focus',async()=>{
  if(!user)return;
  try{
   const config=await loadBillingConfig();
-  const entitlement=config.checkoutEnabled?await loadBillingEntitlement(user):null;
+  const entitlement=config.entitlementEnabled?await loadBillingEntitlement(user):null;
   if(cloudUser?.uid!==user.uid)return;
   verifiedEntitlement=entitlement;
+  if(!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)) {
+   const usage=await getProTemplateDownloadStatus(user.uid);
+   if(cloudUser?.uid!==user.uid)return;
+   proTemplateDownloadsRemaining=usage.remaining;
+   updateProTemplatePreviewAllowance();
+  } else {
+   proTemplateDownloadsRemaining=null;
+  }
   updateProLabel();
   renderTemplates();
   if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
@@ -277,16 +299,14 @@ function websiteHref(value){
  const raw=String(value||'').trim();if(!raw)return '';
  try{const url=new URL(/^https?:\/\//i.test(raw)?raw:`https://${raw}`);return ['http:','https:'].includes(url.protocol)?url.href:''}catch{return ''}
 }
-function templateCardMarkup(t,hasProAccess){
+function templateCardMarkup(t){
  const pro=isProTemplate(t.id),selected=state.template===t.id;
  const photo=t.photo&&t.id!=='photo'?`<span class="mini-photo" style="${t.photoPos==='left'?'left':'right'}:${t.photoPos==='center'?'calc(50% - 7px)':'8px'};${t.photoPos==='center'?'left:calc(50% - 7px);right:auto':''}"></span>`:'';
  const sidebar=t.layout==='two'?`<div style="float:left;width:30%;height:100%;background:${t.accent};margin-right:5px">${t.id==='photo'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
- const preview=pro&&!hasProAccess?`<button class="template-preview-btn" type="button" data-template-preview="${t.id}" aria-label="Preview ${$esc(t.name)} template">Preview</button>`:'';
- return `<div class="template-card"><button class="template ${selected?'active':''} ${pro?'template-pro':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, ${pro?'Pro':'Free'}"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="plan-badge ${pro?'pro':'free'}">${pro?'PRO':'FREE'}</span></span><small>${$esc(t.sub)}</small></button>${preview}</div>`;
+ return `<div class="template-card"><button class="template ${selected?'active':''} ${pro?'template-pro':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, ${pro?'Pro':'Free'}"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="plan-badge ${pro?'pro':'free'}">${pro?'PRO':'FREE'}</span></span><small>${$esc(t.sub)}</small></button></div>`;
 }
 function renderTemplates(){
- const hasProAccess=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);
- $('templates').innerHTML=templateDefs.map(t=>templateCardMarkup(t,hasProAccess)).join('');
+ $('templates').innerHTML=templateDefs.map(templateCardMarkup).join('');
 }
 function renderSectionList(){
  $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${s.id}"><span class="grip">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" data-toggle="${s.id}" title="${s.visible?'Hide':'Show'} section">${s.visible?'◉':'○'}</button></div>`).join('');
@@ -295,9 +315,10 @@ function renderSectionList(){
 /* ---------- Sheet construction ---------- */
 function sheetHTML(index,cols){
  const p=state.profile,tmpl=activeTemplate();
- const hasPhoto=!!(p.photo&&tmpl.photo),photoPos=['left','center','right'].includes(state.design.photoAlign)?state.design.photoAlign:(tmpl.photoPos||'right');
+ const hasPhoto=!!tmpl.photo,photoPos=['left','center','right'].includes(state.design.photoAlign)?state.design.photoAlign:(tmpl.photoPos||'right');
  const contact=[p.email?`<a href="mailto:${$esc(p.email)}">${$esc(p.email)}</a>`:'',p.phone,p.location,p.website?(websiteHref(p.website)?`<a href="${$esc(websiteHref(p.website))}" target="_blank" rel="noopener noreferrer">${$esc(p.website)}</a>`:$esc(p.website)):''].filter(Boolean).join(' · ');
- const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:''}<div class="header-text"><h1 class="name">${$esc(p.name||'Your Name')}</h1><div class="headline">${$esc(p.headline||'Professional Title')}</div><div class="contact">${contact}</div></div></header>`:'';
+ const photoMarkup=p.photo?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:'<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded"></span>';
+ const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?photoMarkup:''}<div class="header-text"><h1 class="name">${$esc(p.name||'Your Name')}</h1><div class="headline">${$esc(p.headline||'Professional Title')}</div><div class="contact">${contact}</div></div></header>`:'';
  return `<div class="sheet-inner">${head}<div class="sections-area">${cols?'<div class="section-columns"><div class="section-column"></div><div class="section-column"></div></div>':''}</div></div><div class="page-number"></div>`;
 }
 function createSheet(index,tmpl,cols){
@@ -429,10 +450,14 @@ async function openTemplatePreview(templateId){
  const generation=++templatePreviewGeneration;
  const modal=$('templatePreviewModalBg'),pages=$('templatePreviewPages'),status=$('templatePreviewStatus');
  $('templatePreviewTitle').textContent=`${template.name} template preview`;
+ $('templatePreviewTitle').dataset.templateId=templateId;
+ const exportButton=$('exportProTemplatePreview');
+ exportButton.disabled=true;
  status.textContent='Creating a high-resolution preview of your current resume…';
  pages.innerHTML='';
  modal.classList.add('show');
  modal.setAttribute('aria-hidden','false');
+ updateProTemplatePreviewAllowance({checking:!!cloudUser});
  $('closeTemplatePreview').focus();
 
  let renderedPages=[];
@@ -485,13 +510,60 @@ async function openTemplatePreview(templateId){
    canvas.width=0;
    canvas.height=0;
   }
-  if(generation===templatePreviewGeneration)status.textContent='Pro subscription is required to apply this template or export it.';
+  if(generation!==templatePreviewGeneration)return;
+  if(cloudUser){
+   const requestingUid=cloudUser.uid;
+   try{
+    const usage=await getProTemplateDownloadStatus(requestingUid);
+    if(generation!==templatePreviewGeneration||cloudUser?.uid!==requestingUid)return;
+    proTemplateDownloadsRemaining=usage.remaining;
+    updateProTemplatePreviewAllowance();
+   }catch(error){
+    console.error('Could not refresh the Pro-template trial allowance.',error);
+    if(generation!==templatePreviewGeneration)return;
+    status.textContent='Could not refresh your free Pro-template PDF allowance. You can still preview; the allowance will be confirmed before download.';
+    updateProTemplatePreviewAllowance({error:true});
+   }
+  }
+  if(generation!==templatePreviewGeneration)return;
+  updateProTemplatePreviewAllowance();
  }catch(error){
   console.error('Could not create the Pro template preview image.',error);
   if(generation===templatePreviewGeneration)status.textContent='The preview image could not be created. Check your browser resources and try again.';
  }finally{
   captureRoot.remove();
  }
+}
+function updateProTemplatePreviewAllowance({checking=false,error=false}={}){
+ const modal=$('templatePreviewModalBg');
+ if(!modal?.classList.contains('show'))return;
+ const badge=$('templatePreviewAllowance'),status=$('templatePreviewStatus'),button=$('exportProTemplatePreview');
+ const remaining=proTemplateDownloadsRemaining;
+ if(!cloudUser){
+  badge.className='template-preview-allowance unavailable';
+  badge.textContent='Sign in to get 2 free Pro PDFs';
+  status.textContent='Preview only; sign in with Google to export and download up to two Pro-template PDFs.';
+  button.disabled=true;
+  return;
+ }
+ if(checking||error||!Number.isInteger(remaining)){
+  badge.className='template-preview-allowance unavailable';
+  badge.textContent=error?'Could not verify free Pro PDF allowance':'Checking free Pro PDF allowance…';
+  if(!error)status.textContent='Checking your free Pro-template PDF allowance…';
+  button.disabled=true;
+  return;
+ }
+ if(remaining===0){
+  badge.className='template-preview-allowance exhausted';
+  badge.textContent='0 of 2 free Pro PDF downloads remaining';
+  status.textContent='You have used both free Pro-template PDF downloads. Export is disabled; upgrade to Pro for unlimited downloads.';
+  button.disabled=true;
+  return;
+ }
+ badge.className='template-preview-allowance';
+ badge.textContent=`${remaining} of 2 free Pro PDF downloads remaining`;
+ status.textContent=`Preview only; this does not apply the Pro template in the editor. Create a PDF preview, then download it to use one free download.`;
+ button.disabled=false;
 }
 
 /* ---------- Inspector ---------- */
@@ -646,8 +718,21 @@ function addPDFLinks(doc,sheet){
   }
  });
 }
-async function exportPDF(){
- const sheets=[...$('sheets').querySelectorAll('.sheet')];if(!sheets.length)return;
+async function exportPDF(templateId=null){
+ const originalState=state,originalSelection=selectedId,originalZoom=zoom;
+ if(templateId){
+  const template=templateDefs.find(item=>item.id===templateId);
+  if(!template||!isProTemplate(templateId)||canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement))return;
+  state=deep(state);
+  state.template=template.id;
+  state.layout=template.layout;
+  state.design.accent=template.accent;
+  selectedId=null;
+  zoom=1;
+  renderSheets();
+ }
+ const sheets=[...$('sheets').querySelectorAll('.sheet')];if(!sheets.length){if(templateId){state=originalState;selectedId=originalSelection;zoom=originalZoom;renderSheets()}return}
+ pdfPreviewUsesProTemplate=isProTemplate(state.template);
  const generation=++pdfPreviewGeneration;
  const btn=$('pdfBtn'),status=$('pdfPreviewStatus'),frame=$('pdfPreviewFrame'),downloadBtn=$('downloadPdfPreview');
  openPdfPreview();
@@ -686,7 +771,14 @@ async function exportPDF(){
  }catch(e){
   console.error(e);
   status.textContent=e.message||'PDF preview could not be created. Close this window and try again.';
- }finally{renderedPages.forEach(({canvas})=>{canvas.width=0;canvas.height=0});$('sheets').classList.remove('exporting');btn.disabled=false;btn.textContent='Export PDF';renderSheets()}
+ }finally{
+  renderedPages.forEach(({canvas})=>{canvas.width=0;canvas.height=0});
+  $('sheets').classList.remove('exporting');
+  btn.disabled=false;
+  btn.textContent='Export PDF';
+  if(templateId){state=originalState;selectedId=originalSelection;zoom=originalZoom}
+  renderSheets();
+ }
 }
 function openPdfPreview(){
  $('pdfPreviewModalBg').classList.add('show');
@@ -702,8 +794,14 @@ function showPdfPreview(blob,filename,pageCount,title){
  $('pdfPreviewTitle').textContent=title;
  $('pdfPreviewFrame').src=pdfPreviewUrl;
  $('pdfPreviewFrame').hidden=false;
- const sizeKb=Math.max(1,Math.round(blob.size/1024));
- $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'} · ${sizeKb} KB of 500 KB · Text remains selectable and searchable. Review before downloading.`;
+ const trialText=pdfPreviewUsesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)
+  ? !cloudUser
+   ? ' · Sign in with Google for two free Pro-template PDF downloads'
+   : proTemplateDownloadsRemaining===null
+    ? ' · Free Pro-template allowance will be checked when downloading'
+    : ` · ${proTemplateDownloadsRemaining} free Pro-template PDF download${proTemplateDownloadsRemaining===1?'':'s'} remaining`
+  : '';
+ $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading.`;
  $('downloadPdfPreview').disabled=false;
 }
 function closePdfPreview(){
@@ -717,11 +815,41 @@ function closePdfPreview(){
  pdfPreviewFilename='';
  if(pdfPreviewUrl){URL.revokeObjectURL(pdfPreviewUrl);pdfPreviewUrl=null}
 }
-function downloadPreviewPdf(){
- if(!pdfPreviewBlob)return;
- download(pdfPreviewFilename,pdfPreviewBlob);
- closePdfPreview();
- toast('PDF downloaded');
+async function downloadPreviewPdf(){
+ if(!pdfPreviewBlob||$('downloadPdfPreview').disabled)return;
+ const button=$('downloadPdfPreview');
+ const usesProTemplate=pdfPreviewUsesProTemplate;
+ button.disabled=true;
+ try{
+  if(usesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
+   if(!cloudUser){
+    closePdfPreview();
+    showUpgrade('template-trial-sign-in','Sign in for free Pro-template downloads','Sign in with Google to use Pro templates and get two lifetime Pro-template PDF downloads.');
+    $('googleSignInBtn').focus();
+    return;
+   }
+   try{
+    const usage=await consumeProTemplateDownload(cloudUser.uid);
+    proTemplateDownloadsRemaining=usage.remaining;
+    if(!usage.allowed){
+     closePdfPreview();
+     showUpgrade('template-trial-exhausted','Free Pro-template downloads used','You have used both free Pro-template PDF downloads for this Google account. Upgrade to Pro for unlimited Pro-template PDF downloads.');
+     return;
+    }
+   }catch(error){
+    console.error('Could not reserve a Pro-template PDF download.',error);
+    $('pdfPreviewStatus').textContent=error.message||'Could not confirm your free Pro-template download. Please retry.';
+    return;
+   }
+  }
+  download(pdfPreviewFilename,pdfPreviewBlob);
+  closePdfPreview();
+  toast(usesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)
+   ? `${proTemplateDownloadsRemaining} free Pro-template PDF downloads remaining`
+   : 'PDF downloaded');
+ }finally{
+  if(pdfPreviewBlob)button.disabled=false;
+ }
 }
 
 const ATS_STOPWORDS=new Set('a an the and or but if then than with without for from into onto to of in on at by as is are was were be been being this that these those it its your you we our they their will can may must should have has had not no do does did about across after before during over under between per each all any more most other such use using used work working role job team company experience skills skill required preferred plus including strong excellent good knowledge ability able responsibilities qualifications requirement requirements candidate position'.split(/\s+/));
@@ -1049,6 +1177,7 @@ async function previewCoverLetterPdf(){
  if(!text){toast('Generate a draft first');return}
  const button=$('downloadCoverLetterPdf');
  const generation=++pdfPreviewGeneration;
+ pdfPreviewUsesProTemplate=false;
  openPdfPreview();
  $('pdfPreviewTitle').textContent='Preview your cover letter PDF';
  $('pdfPreviewStatus').textContent='Preparing your PDF preview…';
@@ -1086,7 +1215,7 @@ function showUpgrade(featureId,title,description){
  $('upgradePrice').textContent=`₹${PLAN_CONFIG.pro.monthly.price}/month or ₹${PLAN_CONFIG.pro.yearly.price}/year · recurring subscription`;
  pendingUpgradeFeature=featureId;
  const previewTemplate=pendingUpgradeFeature==='template'&&pendingProTemplate?templateDefs.find(item=>item.id===pendingProTemplate):null;
- $('continueFree').textContent=featureId==='template'?'Use free Template':'Use free ATS checks';
+ $('continueFree').textContent=featureId.startsWith('template')?'Use free Template':'Use free ATS checks';
  $('previewUpgrade').hidden=!previewTemplate;
  $('previewUpgrade').textContent=previewTemplate?`Preview ${previewTemplate.name}`:'Preview template';
  $('upgradeModalBg').classList.add('show');
@@ -1117,6 +1246,32 @@ function continueWithFreeTemplate(){
  closeUpgrade();
  toast(`Continuing with ${fallback.name}, a free template. Your resume content is unchanged.`);
 }
+async function requestProTemplate(templateId){
+ pendingProTemplate=templateId;
+ const template=templateDefs.find(item=>item.id===templateId);
+ if(canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
+  transact(()=>{
+   state.template=template.id;
+   state.layout=template.layout;
+   state.design.accent=template.accent;
+   selectedId=null;
+  });
+  pendingProTemplate=null;
+  toast(`Applied ${template.name}`);
+  return;
+ }
+ pendingProTemplate=null;
+ openTemplatePreview(templateId);
+}
+function exportProTemplatePreview(){
+ const templateId=$('templatePreviewTitle').dataset.templateId;
+ if(!templateId||!cloudUser||!Number.isInteger(proTemplateDownloadsRemaining)||proTemplateDownloadsRemaining<1){
+  updateProTemplatePreviewAllowance({error:!!cloudUser});
+  return;
+ }
+ closeTemplatePreview();
+ void exportPDF(templateId);
+}
 function runAtsChecks({promptUpgrade=true}={}){
  const jobText=$('jobDescription').value.trim();
  const hasAdvancedAccess=canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS,verifiedEntitlement);
@@ -1130,16 +1285,10 @@ function runAtsChecks({promptUpgrade=true}={}){
  renderAtsResults(computeAtsChecks());
 }
 $('templates').addEventListener('click',e=>{
- const preview=e.target.closest('[data-template-preview]');
- if(preview){
-  e.preventDefault();
-  e.stopPropagation();
-  openTemplatePreview(preview.dataset.templatePreview);
-  return;
- }
  const b=e.target.closest('[data-template]');
- if(!b||b.dataset.template===state.template)return;
- if(isProTemplate(b.dataset.template)&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){pendingProTemplate=b.dataset.template;const template=templateDefs.find(item=>item.id===pendingProTemplate);showUpgrade('template',`${template.name} is a Pro template`,'Preview the style above without changing your resume. Pro includes all 17 templates. Cancel or continue with a Free template; your resume content will be preserved.');return}
+ if(!b)return;
+ if(isProTemplate(b.dataset.template)&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){void requestProTemplate(b.dataset.template);return}
+ if(b.dataset.template===state.template)return;
  transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
 $('sectionList').addEventListener('click',e=>{const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
 $('sectionList').addEventListener('dragstart',e=>{const row=e.target.closest('[data-section-row]');if(!row)return;draggingId=row.dataset.sectionRow;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggingId);row.style.opacity='.5'});
@@ -1209,6 +1358,7 @@ $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click
  $('upgradeModalBg').addEventListener('click',event=>{if(event.target===$('upgradeModalBg'))closeUpgrade()});
  $('closeTemplatePreview').addEventListener('click',closeTemplatePreview);
  $('closeTemplatePreviewAction').addEventListener('click',closeTemplatePreview);
+ $('exportProTemplatePreview').addEventListener('click',exportProTemplatePreview);
  $('templatePreviewModalBg').addEventListener('click',event=>{if(event.target===$('templatePreviewModalBg'))closeTemplatePreview()});
  $('saveCloudCopy').addEventListener('click',saveCurrentAsCloudCopy);
  $('cloudResumeList').addEventListener('click',event=>{

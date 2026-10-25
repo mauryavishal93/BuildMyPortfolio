@@ -5,6 +5,7 @@ import {
   BILLING_PLANS,
   billingConfigured,
   entitlementFromSubscription,
+  firebaseAdminConfigured,
   planKeyForRazorpayPlanId,
   planMatchesRazorpay,
   validRazorpaySignature,
@@ -101,4 +102,18 @@ test('billing stays disabled until provider, Firebase, terms and refund configur
   assert.equal(billingConfigured({ ...env, BILLING_TEST_MODE_VERIFIED: 'false' }), false);
   assert.equal(billingConfigured({ ...env, BILLING_LIVE_LAUNCH_APPROVED: 'false' }), false);
   assert.equal(billingConfigured({ ...env, RAZORPAY_KEY_SECRET: '' }), false);
+});
+
+test('Firebase Admin entitlement reads can be enabled while checkout remains disabled', () => {
+  const env = {
+    FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({
+      type: 'service_account',
+      project_id: 'test-project',
+      client_email: 'billing@test-project.iam.gserviceaccount.com',
+      private_key: 'test-private-key'
+    })
+  };
+  assert.equal(firebaseAdminConfigured(env), true);
+  assert.equal(billingConfigured(env), false);
+  assert.equal(firebaseAdminConfigured({ FIREBASE_SERVICE_ACCOUNT_JSON: '{invalid' }), false);
 });

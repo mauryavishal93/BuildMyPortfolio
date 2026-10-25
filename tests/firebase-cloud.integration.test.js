@@ -33,10 +33,16 @@ function createFakeFirebase() {
   const firestoreSdk = {
     getFirestore: () => ({}),
     collection: (_db, ...segments) => ({ path: segments.join('/') }),
-    doc: (parent, id) => {
-      const key = `${parent.path}/${id || `resume-${++generatedId}`}`;
+    doc: (parent, ...segments) => {
+      const prefix = parent.path || '';
+      const suffix = segments.join('/');
+      const key = [prefix, suffix || `resume-${++generatedId}`].filter(Boolean).join('/');
       return { key, id: key.split('/').at(-1) };
     },
+    getDoc: async ref => ({
+      exists: () => records.has(ref.key),
+      data: () => records.get(ref.key)
+    }),
     orderBy: (field, direction) => ({ field, direction }),
     query: collection => collection,
     getDocs: async collection => ({
@@ -115,4 +121,21 @@ test('cloud resume create, list, revision update, conflict detection, and delete
 
   await firebase.client.deleteResume('user-1', created.id);
   assert.equal((await firebase.client.listResumes('user-1')).length, 0);
+});
+
+test('Pro-template PDF trial allowance allows two lifetime claims and rejects later claims', async () => {
+  const firebase = createFakeFirebase();
+  assert.deepEqual(await firebase.client.getProTemplateDownloadStatus('user-1'), { used: 0, remaining: 2 });
+
+  assert.deepEqual(await firebase.client.consumeProTemplateDownload('user-1'), {
+    allowed: true, used: 1, remaining: 1
+  });
+  assert.deepEqual(await firebase.client.consumeProTemplateDownload('user-1'), {
+    allowed: true, used: 2, remaining: 0
+  });
+  assert.deepEqual(await firebase.client.getProTemplateDownloadStatus('user-1'), { used: 2, remaining: 0 });
+  assert.deepEqual(await firebase.client.consumeProTemplateDownload('user-1'), {
+    allowed: false, used: 2, remaining: 0
+  });
+  assert.deepEqual(await firebase.client.getProTemplateDownloadStatus('user-2'), { used: 0, remaining: 2 });
 });

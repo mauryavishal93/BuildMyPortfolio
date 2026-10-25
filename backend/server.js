@@ -2,11 +2,12 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   BILLING_PLANS,
   billingConfigured,
   entitlementFromSubscription,
+  planKeyForRazorpayPlanId,
   planMatchesRazorpay,
   validRazorpaySignature,
   validWebhookSignature
@@ -35,6 +36,7 @@ function requireBillingConfig(_request, response, next) {
 }
 
 async function getFirebaseAdmin() {
+  if (app.locals.firebaseAdmin) return app.locals.firebaseAdmin;
   if (firebaseAdmin) return firebaseAdmin;
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (!serviceAccountJson) throw new Error('Firebase Admin credentials are not configured.');
@@ -80,6 +82,9 @@ function razorpayConfiguration() {
 }
 
 async function razorpayRequest(endpoint, { method = 'GET', body } = {}) {
+  if (app.locals.razorpayRequest) {
+    return app.locals.razorpayRequest(endpoint, { method, body });
+  }
   const { keyId, keySecret } = razorpayConfiguration();
   const response = await fetch(`https://api.razorpay.com/v1${endpoint}`, {
     method,
@@ -136,7 +141,10 @@ function publicEntitlement(data) {
     source: 'server-verified',
     validUntil,
     subscriptionId: data?.subscriptionId || null,
-    cancelAtCycleEnd: data?.cancelAtCycleEnd === true
+    cancelAtCycleEnd: data?.cancelAtCycleEnd === true,
+    scheduledPlan: Object.hasOwn(BILLING_PLANS, data?.scheduledPlan) ? data.scheduledPlan : null,
+    scheduledAt: Number(data?.scheduledAt) || null,
+    planChangeStatus: data?.planChangeStatus || null
   };
 }
 
@@ -220,12 +228,21 @@ app.post(
           || 0;
         const isPaidThrough = validUntil > Date.now();
         const activated = ['subscription.activated', 'subscription.charged'].includes(event.event);
+        const providerPlanKey = planKeyForRazorpayPlanId(subscription?.plan_id);
+        const planChangeApplied = event.event === 'subscription.charged'
+          && providerPlanKey
+          && providerPlanKey !== mapping.planKey;
+        const planChangeCancelled = ['subscription.cancelled', 'subscription.completed', 'subscription.expired'].includes(event.event)
+          && !isPaidThrough;
+        const billingPlan = planChangeApplied ? providerPlanKey : mapping.planKey;
+        const scheduledPlan = planChangeApplied || planChangeCancelled ? null : mapping.pendingPlanKey || null;
+        const scheduledAt = scheduledPlan ? Number(mapping.scheduledAt) || null : null;
         const entitlement = activated
-          ? entitlementFromSubscription(subscription, mapping.planKey)
+          ? entitlementFromSubscription(subscription, billingPlan)
           : isPaidThrough
             ? {
                 planId: 'pro',
-                billingPlan: mapping.planKey,
+                billingPlan,
                 status: 'active',
                 source: 'server-verified',
                 validUntil
@@ -238,6 +255,9 @@ app.post(
                 validUntil: 0
               };
         if (entitlement) {
+          entitlement.billingPlan = billingPlan;
+          entitlement.scheduledPlan = scheduledPlan;
+          entitlement.scheduledAt = scheduledAt;
           entitlement.subscriptionId = subscriptionId;
           entitlement.cancelAtCycleEnd = event.event === 'subscription.cancelled'
             || currentEntitlement.data()?.cancelAtCycleEnd === true
@@ -248,6 +268,14 @@ app.post(
         transaction.set(subscriptionDocument(db, subscriptionId), {
           status: subscription?.status || event.event.replace('subscription.', ''),
           currentEnd: validUntil,
+          ...(planChangeApplied ? { planKey: billingPlan, planId: subscription.plan_id } : {}),
+          ...(planChangeApplied || planChangeCancelled ? {
+            pendingPlanKey: null,
+            pendingPlanId: null,
+            pendingPlanStatus: null,
+            planChangeRequestId: null,
+            scheduledAt: null
+          } : {}),
           updatedAt: Date.now()
         }, { merge: true });
         transaction.set(entitlementRef, entitlement || {
@@ -264,6 +292,10 @@ app.post(
             transaction.set(checkoutRef, {
               status: event.event.replace('subscription.', ''),
               currentEnd: validUntil,
+              planKey: billingPlan,
+              scheduledPlan,
+              scheduledAt,
+              planChangeStatus: scheduledPlan ? mapping.pendingPlanStatus || 'scheduled' : null,
               updatedAt: Date.now()
             }, { merge: true });
           }
@@ -480,6 +512,161 @@ app.post('/api/billing/verify', requireBillingConfig, requireFirebaseUser, async
   }
 });
 
+app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, async (request, response) => {
+  if (request.body?.planKey !== 'yearly') {
+    response.status(400).json({ error: 'Choose the yearly plan to schedule a plan switch.' });
+    return;
+  }
+
+  try {
+    const { db } = await getFirebaseAdmin();
+    const entitlementRef = userEntitlementDocument(db, request.user.uid);
+    const entitlementSnapshot = await entitlementRef.get();
+    const entitlement = publicEntitlement(entitlementSnapshot.data());
+    if (entitlement.status !== 'active' || entitlement.billingPlan !== 'monthly' || !entitlement.subscriptionId) {
+      response.status(409).json({ error: 'Only an active monthly subscriber can schedule a switch to yearly.' });
+      return;
+    }
+    if (entitlement.cancelAtCycleEnd) {
+      response.status(409).json({ error: 'This monthly subscription is already scheduled to end. It cannot be switched to yearly.' });
+      return;
+    }
+    if (entitlement.scheduledPlan) {
+      response.status(409).json({ error: 'A plan change is already scheduled for this subscription.' });
+      return;
+    }
+
+    const subscriptionId = entitlement.subscriptionId;
+    const mappingRef = subscriptionDocument(db, subscriptionId);
+    const mappingSnapshot = await mappingRef.get();
+    const mapping = mappingSnapshot.data() || {};
+    if (!mappingSnapshot.exists || mapping.uid !== request.user.uid || mapping.planKey !== 'monthly') {
+      response.status(403).json({ error: 'This subscription could not be matched to the signed-in account.' });
+      return;
+    }
+
+    const [subscription, yearlyPlan] = await Promise.all([
+      razorpayRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`),
+      verifiedProviderPlan('yearly')
+    ]);
+    const currentEnd = Number(subscription.current_end) * 1000;
+    if (subscription.status !== 'active' || subscription.plan_id !== mapping.planId
+      || !Number.isFinite(currentEnd) || currentEnd <= Date.now()) {
+      response.status(409).json({ error: 'Razorpay does not show an active monthly billing period for this subscription.' });
+      return;
+    }
+    if (['upi', 'emandate'].includes(String(subscription.payment_method || '').toLowerCase())) {
+      response.status(409).json({ error: 'Razorpay does not support plan changes for this payment method. You can choose yearly after the monthly plan ends.' });
+      return;
+    }
+    if (subscription.has_scheduled_changes) {
+      response.status(409).json({ error: 'This subscription already has a change scheduled in Razorpay.' });
+      return;
+    }
+
+    const requestId = randomUUID();
+    await db.runTransaction(async transaction => {
+      const [currentMapping, currentEntitlement] = await Promise.all([
+        transaction.get(mappingRef),
+        transaction.get(entitlementRef)
+      ]);
+      const currentMap = currentMapping.data() || {};
+      const currentPlan = publicEntitlement(currentEntitlement.data());
+      if (!currentMapping.exists || currentMap.uid !== request.user.uid
+        || currentMap.planKey !== 'monthly' || currentPlan.subscriptionId !== subscriptionId
+        || currentPlan.status !== 'active' || currentPlan.scheduledPlan || currentPlan.cancelAtCycleEnd) {
+        const error = new Error('The subscription changed while the plan switch was being scheduled. Refresh and check its status.');
+        error.status = 409;
+        throw error;
+      }
+      transaction.set(mappingRef, {
+        pendingPlanKey: 'yearly',
+        pendingPlanId: yearlyPlan.id,
+        pendingPlanStatus: 'scheduling',
+        planChangeRequestId: requestId,
+        scheduledAt: currentEnd,
+        updatedAt: Date.now()
+      }, { merge: true });
+      transaction.set(entitlementRef, {
+        scheduledPlan: 'yearly',
+        scheduledAt: currentEnd,
+        planChangeStatus: 'scheduling'
+      }, { merge: true });
+      transaction.set(userCheckoutDocument(db, request.user.uid), {
+        subscriptionId,
+        planKey: 'monthly',
+        scheduledPlan: 'yearly',
+        scheduledAt: currentEnd,
+        planChangeStatus: 'scheduling',
+        updatedAt: Date.now()
+      }, { merge: true });
+    });
+
+    let razorpayScheduled = false;
+    try {
+      const updated = await razorpayRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+        method: 'PATCH',
+        body: {
+          plan_id: yearlyPlan.id,
+          remaining_count: BILLING_PLANS.yearly.totalCount,
+          schedule_change_at: 'cycle_end',
+          customer_notify: 1
+        }
+      });
+      if (updated.has_scheduled_changes !== true) {
+        throw new Error('Razorpay did not confirm the scheduled plan change.');
+      }
+      razorpayScheduled = true;
+      await db.runTransaction(async transaction => {
+        const [currentMapping, currentEntitlement] = await Promise.all([
+          transaction.get(mappingRef),
+          transaction.get(entitlementRef)
+        ]);
+        if (currentMapping.data()?.planChangeRequestId !== requestId) return;
+        transaction.set(mappingRef, { pendingPlanStatus: 'scheduled', updatedAt: Date.now() }, { merge: true });
+        transaction.set(entitlementRef, { planChangeStatus: 'scheduled' }, { merge: true });
+        transaction.set(userCheckoutDocument(db, request.user.uid), { planChangeStatus: 'scheduled', updatedAt: Date.now() }, { merge: true });
+      });
+    } catch (error) {
+      if (!razorpayScheduled) {
+        await db.runTransaction(async transaction => {
+          const [currentMapping, currentEntitlement] = await Promise.all([
+            transaction.get(mappingRef),
+            transaction.get(entitlementRef)
+          ]);
+          if (currentMapping.data()?.planChangeRequestId !== requestId) return;
+          transaction.set(mappingRef, {
+            pendingPlanKey: null,
+            pendingPlanId: null,
+            pendingPlanStatus: null,
+            planChangeRequestId: null,
+            scheduledAt: null,
+            updatedAt: Date.now()
+          }, { merge: true });
+          transaction.set(entitlementRef, { scheduledPlan: null, scheduledAt: null, planChangeStatus: null }, { merge: true });
+          transaction.set(userCheckoutDocument(db, request.user.uid), {
+            scheduledPlan: null,
+            scheduledAt: null,
+            planChangeStatus: null,
+            updatedAt: Date.now()
+          }, { merge: true });
+        });
+      }
+      throw error;
+    }
+    response.json({ scheduled: true, scheduledPlan: 'yearly', scheduledAt: currentEnd });
+  } catch (error) {
+    console.error('Could not schedule the yearly plan change.', error);
+    response.status(error.status === 409 ? 409 : error.status === 400 ? 400 : 502).json({
+      error: error.status === 409
+        ? error.message
+        : error.status === 400
+          ? 'Razorpay could not schedule this plan change. The monthly subscription has not been replaced.'
+          : 'Could not schedule the yearly plan. Refresh and check the subscription status before retrying.'
+    });
+  }
+});
+
 app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async (request, response) => {
   const subscriptionId = request.body?.subscriptionId;
   if (typeof subscriptionId !== 'string' || !/^sub_[A-Za-z0-9]+$/.test(subscriptionId)) {
@@ -495,6 +682,10 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
       response.status(404).json({ error: 'No subscription was found for this account.' });
       return;
     }
+    if (snapshot.data().pendingPlanStatus === 'scheduling') {
+      response.status(409).json({ error: 'A plan switch is being scheduled. Wait a moment and try again.' });
+      return;
+    }
     const result = await razorpayRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, {
       method: 'POST',
       body: { cancel_at_cycle_end: true }
@@ -505,7 +696,14 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
       const currentValidUntil = Number(currentEntitlement.data()?.validUntil)
         || Number(snapshot.data().currentEnd)
         || 0;
-      transaction.set(ref, { status: result.status || 'cancelled', cancelAtCycleEnd: true, updatedAt: Date.now() }, { merge: true });
+      transaction.set(ref, {
+        status: result.status || 'cancelled',
+        cancelAtCycleEnd: true,
+        pendingPlanKey: null,
+        pendingPlanId: null,
+        scheduledAt: null,
+        updatedAt: Date.now()
+      }, { merge: true });
       transaction.set(entitlementRef, {
         planId: 'pro',
         billingPlan: snapshot.data().planKey,
@@ -513,13 +711,19 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
         source: 'server-verified',
         validUntil: currentValidUntil,
         subscriptionId,
-        cancelAtCycleEnd: true
+        cancelAtCycleEnd: true,
+        scheduledPlan: null,
+        scheduledAt: null,
+        planChangeStatus: null
       }, { merge: true });
       transaction.set(userCheckoutDocument(db, request.user.uid), {
         subscriptionId,
         status: result.status || 'active',
         currentEnd: currentValidUntil,
         cancelAtCycleEnd: true,
+        scheduledPlan: null,
+        scheduledAt: null,
+        planChangeStatus: null,
         updatedAt: Date.now()
       }, { merge: true });
     });
@@ -539,6 +743,10 @@ app.use((_request, response) => {
   response.status(404).json({ error: 'Not found' });
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`BuildMyPortfolio backend listening on port ${port}`);
-});
+export { app };
+
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`BuildMyPortfolio backend listening on port ${port}`);
+  });
+}

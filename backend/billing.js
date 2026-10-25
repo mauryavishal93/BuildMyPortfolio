@@ -53,6 +53,10 @@ export function planMatchesRazorpay(plan, expected) {
     && plan.interval === expected.interval;
 }
 
+export function planKeyForRazorpayPlanId(planId, env = process.env) {
+  return Object.keys(BILLING_PLANS).find(key => env[`RAZORPAY_PLAN_${key.toUpperCase()}_ID`] === planId) || null;
+}
+
 export function entitlementFromSubscription(subscription, fallbackPlan = 'monthly', now = Date.now()) {
   const validUntil = Number(subscription?.current_end) * 1000;
   const planId = subscription?.notes?.plan_key || fallbackPlan;
@@ -74,6 +78,8 @@ export function billingConfigured(env = process.env) {
   if (env.BILLING_ENABLED !== 'true'
     || env.BILLING_TERMS_PUBLISHED !== 'true'
     || env.BILLING_REFUNDS_PUBLISHED !== 'true'
+    || env.BILLING_TEST_MODE_VERIFIED !== 'true'
+    || env.BILLING_LIVE_LAUNCH_APPROVED !== 'true'
     || ![
       env.RAZORPAY_KEY_ID,
       env.RAZORPAY_KEY_SECRET,

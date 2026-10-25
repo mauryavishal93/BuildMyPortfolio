@@ -5,6 +5,7 @@ import {
   BILLING_PLANS,
   billingConfigured,
   entitlementFromSubscription,
+  planKeyForRazorpayPlanId,
   planMatchesRazorpay,
   validRazorpaySignature,
   validWebhookSignature
@@ -51,6 +52,16 @@ test('Razorpay plan metadata must exactly match server-set price and billing int
   assert.equal(planMatchesRazorpay({ ...plan, period: 'yearly' }, BILLING_PLANS.monthly), false);
 });
 
+test('Razorpay plan IDs resolve only to configured billing plans', () => {
+  const env = {
+    RAZORPAY_PLAN_MONTHLY_ID: 'plan_monthly',
+    RAZORPAY_PLAN_YEARLY_ID: 'plan_yearly'
+  };
+  assert.equal(planKeyForRazorpayPlanId('plan_monthly', env), 'monthly');
+  assert.equal(planKeyForRazorpayPlanId('plan_yearly', env), 'yearly');
+  assert.equal(planKeyForRazorpayPlanId('plan_unknown', env), null);
+});
+
 test('entitlements are server verified and expire at Razorpay current_end', () => {
   const subscription = {
     current_end: 2_000,
@@ -71,6 +82,8 @@ test('billing stays disabled until provider, Firebase, terms and refund configur
     BILLING_ENABLED: 'true',
     BILLING_TERMS_PUBLISHED: 'true',
     BILLING_REFUNDS_PUBLISHED: 'true',
+    BILLING_TEST_MODE_VERIFIED: 'true',
+    BILLING_LIVE_LAUNCH_APPROVED: 'true',
     FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({
       type: 'service_account',
       project_id: 'test-project',
@@ -85,5 +98,7 @@ test('billing stays disabled until provider, Firebase, terms and refund configur
   };
   assert.equal(billingConfigured(env), true);
   assert.equal(billingConfigured({ ...env, BILLING_REFUNDS_PUBLISHED: 'false' }), false);
+  assert.equal(billingConfigured({ ...env, BILLING_TEST_MODE_VERIFIED: 'false' }), false);
+  assert.equal(billingConfigured({ ...env, BILLING_LIVE_LAUNCH_APPROVED: 'false' }), false);
   assert.equal(billingConfigured({ ...env, RAZORPAY_KEY_SECRET: '' }), false);
 });

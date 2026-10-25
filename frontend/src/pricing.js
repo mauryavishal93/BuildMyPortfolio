@@ -3,6 +3,7 @@ import {
   createBillingSubscription,
   loadBillingConfig,
   loadBillingEntitlement,
+  scheduleBillingPlanChange,
   verifyBillingCheckout
 } from './billing-client.js';
 import { cloudConfigured, observeAuth } from './firebase-cloud.js';
@@ -42,18 +43,38 @@ for (const feature of PRICING_FEATURES) {
 
 function updatePurchaseControls() {
   const active = entitlement?.status === 'active';
+  const activePlan = active ? entitlement.billingPlan : null;
+  const yearlyScheduled = active && entitlement.scheduledPlan === 'yearly';
   const canPurchase = Boolean(currentUser && billingConfig?.checkoutEnabled && !active);
+  const canSwitchYearly = Boolean(currentUser && billingConfig?.checkoutEnabled
+    && activePlan === 'monthly' && !yearlyScheduled && !entitlement.cancelAtCycleEnd);
   monthlyButton.disabled = !canPurchase;
-  yearlyButton.disabled = !canPurchase;
-  const buttonText = interval => !currentUser
-    ? `Sign in to purchase ${interval}`
-    : active
-      ? 'Pro is active'
-      : billingConfig?.checkoutEnabled
-        ? `Start ${interval} subscription`
-        : 'Checkout unavailable';
-  monthlyButton.textContent = buttonText('monthly');
-  yearlyButton.textContent = buttonText('yearly');
+  yearlyButton.disabled = !(canPurchase || canSwitchYearly);
+
+  monthlyButton.textContent = !currentUser
+    ? 'Sign in to purchase monthly'
+    : !active
+      ? billingConfig?.checkoutEnabled ? 'Start monthly subscription' : 'Checkout unavailable'
+      : activePlan === 'monthly' ? 'Monthly plan active' : 'Yearly plan active';
+  yearlyButton.textContent = !currentUser
+    ? 'Sign in to purchase yearly'
+    : !active
+      ? billingConfig?.checkoutEnabled ? 'Start yearly subscription' : 'Checkout unavailable'
+      : activePlan === 'yearly'
+        ? 'Yearly plan active'
+        : yearlyScheduled
+          ? 'Yearly switch scheduled'
+          : entitlement.cancelAtCycleEnd
+            ? 'Subscription ending'
+            : 'Switch to yearly';
+
+  const monthlyBadge = $('#monthlyPlanBadge');
+  const yearlyBadge = $('#yearlyPlanBadge');
+  monthlyBadge.textContent = 'Active';
+  monthlyBadge.hidden = activePlan !== 'monthly';
+  yearlyBadge.textContent = activePlan === 'yearly' ? 'Active' : 'Scheduled';
+  yearlyBadge.classList.toggle('scheduled', activePlan !== 'yearly');
+  yearlyBadge.hidden = activePlan !== 'yearly' && !yearlyScheduled;
 
   let cancel = $('#billingCancel');
   if (!cancel) {
@@ -87,7 +108,10 @@ async function refreshBillingState(user) {
 
     if (entitlement?.status === 'active') {
       const date = entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleDateString() : 'the current paid period';
-      accountStatus.textContent = `Pro ${entitlement.billingPlan || ''} is active through ${date}.${entitlement.cancelAtCycleEnd ? ' It will not renew.' : ''}`;
+      const scheduled = entitlement.scheduledPlan === 'yearly'
+        ? ` Yearly billing is scheduled to start after ${date}.`
+        : '';
+      accountStatus.textContent = `Pro ${entitlement.billingPlan || ''} is active through ${date}.${entitlement.cancelAtCycleEnd ? ' It will not renew.' : scheduled}`;
     }
     updatePurchaseControls();
   } catch (error) {
@@ -178,6 +202,24 @@ async function startCheckout(planKey) {
   }
 }
 
+async function scheduleYearlySwitch() {
+  if (!currentUser || entitlement?.billingPlan !== 'monthly' || !billingConfig?.checkoutEnabled) return;
+  const date = entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleDateString() : 'the end of this billing period';
+  if (!window.confirm(`Schedule Pro Yearly to begin after ${date}? Your monthly access continues until then; ₹399/year will be charged when the switch takes effect.`)) return;
+
+  yearlyButton.disabled = true;
+  checkoutStatus.textContent = 'Scheduling your yearly plan…';
+  try {
+    const result = await scheduleBillingPlanChange(currentUser, 'yearly');
+    checkoutStatus.textContent = `Yearly plan scheduled for ${new Date(result.scheduledAt).toLocaleDateString()}. Your monthly access continues until then.`;
+    await refreshBillingState(currentUser);
+  } catch (error) {
+    console.error('Could not schedule the yearly plan.', error);
+    checkoutStatus.textContent = error.message;
+    updatePurchaseControls();
+  }
+}
+
 async function cancelCurrentSubscription() {
   if (!currentUser || !entitlement?.subscriptionId) return;
   if (!window.confirm('Cancel future renewals? Pro remains active until the current paid period ends.')) return;
@@ -192,7 +234,9 @@ async function cancelCurrentSubscription() {
 }
 
 monthlyButton.addEventListener('click', () => startCheckout('monthly'));
-yearlyButton.addEventListener('click', () => startCheckout('yearly'));
+yearlyButton.addEventListener('click', () => entitlement?.status === 'active' && entitlement.billingPlan === 'monthly'
+  ? scheduleYearlySwitch()
+  : startCheckout('yearly'));
 
 loadBillingConfig().then(config => {
   billingConfig = config;

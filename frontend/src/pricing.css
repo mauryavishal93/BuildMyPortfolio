@@ -11,6 +11,11 @@
 .plan-card{display:flex;flex-direction:column;padding:28px;background:linear-gradient(180deg,rgba(11,22,34,.88),rgba(9,18,28,.96));border:1px solid rgba(162,180,204,.18);border-radius:18px;box-shadow:0 14px 28px rgba(0,0,0,.18)}
 .plan-card-pro{border-color:rgba(90,151,226,.55);box-shadow:0 14px 32px rgba(15,76,135,.2)}
 .plan-card-yearly{border-color:rgba(70,191,151,.6);box-shadow:0 14px 32px rgba(15,135,95,.14)}
+.plan-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.plan-card-heading h2{min-width:0}
+.plan-status-badge{flex:0 0 auto;padding:4px 8px;border:1px solid #8bd5bd;border-radius:999px;background:#eaf8f3;color:#146c54;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.plan-status-badge.scheduled{border-color:#f1d18a;background:#fff5dc;color:#79560a}
+.plan-status-badge[hidden]{display:none}
 .plan-card h2{margin:0;font-size:1.6rem}
 .plan-card>p:not(.about-eyebrow):not(.plan-price):not(.plan-duration):not(.checkout-status){color:#bdcce0}
 .plan-price{margin:12px 0;color:#f3f8ff;font-size:2rem;font-weight:800;line-height:1.2}

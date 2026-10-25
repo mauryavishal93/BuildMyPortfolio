@@ -43,6 +43,13 @@ export async function createBillingSubscription(user, planKey) {
   });
 }
 
+export async function scheduleBillingPlanChange(user, planKey) {
+  return billingRequest('change-plan', user, {
+    method: 'POST',
+    body: { planKey }
+  });
+}
+
 export async function verifyBillingCheckout(user, checkoutResponse) {
   return billingRequest('verify', user, {
     method: 'POST',

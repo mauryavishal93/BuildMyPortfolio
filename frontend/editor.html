@@ -8,7 +8,7 @@
 </head>
 <body>
 <header class="topbar">
- <div class="brand"><span class="logo">B</span><span>BuildMyPortfolio</span></div>
+ <div class="brand"><span class="logo">B</span><span>BuildMyPortfolio</span><span id="proBrandBadge" class="pro-brand-badge" hidden>Pro</span></div>
  <input id="docName" class="docname" aria-label="Project name" value="Untitled resume">
  <div class="spacer"></div><span class="save-state"><span class="dot"></span><span id="saveState">Saved in this browser</span></span>
  <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme">
@@ -78,6 +78,19 @@
     <button class="btn primary small" id="resolveRecovery" type="button">Continue with recovered resume</button>
    </div>
   </section>
+  <section class="onboarding-card" id="onboardingCard" aria-labelledby="onboardingTitle" hidden>
+   <div class="onboarding-copy">
+    <p class="eyebrow">GET STARTED</p>
+    <h1 id="onboardingTitle">Create a resume in three steps</h1>
+    <ol>
+     <li><strong>Choose a template</strong> from the Templates panel.</li>
+     <li><strong>Edit your details</strong> by selecting a section on the page.</li>
+     <li><strong>Export your PDF</strong> when your resume is ready.</li>
+    </ol>
+    <p>Your work saves in this browser automatically. Sign-in and cloud saving are optional.</p>
+   </div>
+   <button class="btn outline small" id="dismissOnboarding" type="button">Got it</button>
+  </section>
   <div class="toolbar">
    <label for="pageLayout">Layout</label><select id="pageLayout"><option value="single">Single column</option><option value="two">Two columns</option></select>
    <label for="editMode">Editor</label><select id="editMode"><option value="flow">Structured</option><option value="free">Free position</option></select>
@@ -85,7 +98,7 @@
   <button class="btn outline small" id="loadBtn">Load JSON</button>
   <button class="btn outline small" id="saveBtn">Download JSON</button>
   <button class="btn outline small" id="atsBtn">ATS Check</button>
-   <div class="spacer"></div><button class="btn soft small" id="zoomOut">−</button><span id="zoomLabel" style="font-size:11px;color:var(--muted)">100%</span><button class="btn soft small" id="zoomIn">＋</button>
+   <div class="spacer"></div><button class="btn soft small" id="zoomOut" type="button" aria-label="Zoom out">−</button><span id="zoomLabel" style="font-size:11px;color:var(--muted)" aria-live="polite">100%</span><button class="btn soft small" id="zoomIn" type="button" aria-label="Zoom in">＋</button>
   </div>
   <div class="hint" id="hint">A4 preview · Select a section to edit it</div>
   <div class="sheets" id="sheets"></div>
@@ -93,7 +106,7 @@
  <aside class="right" id="rightPanel"><div class="panel-grip" id="panelGrip" title="Drag to resize panel"></div><div id="inspector"></div><button class="size-btn strip-btn" id="expandRight" title="Expand properties" aria-label="Expand properties">⇤</button></aside>
 </div>
 <div class="toast" id="toast" role="status"></div>
-<div class="modal-bg" id="modalBg"><div class="modal"><h2>Add custom section</h2><div class="field"><label for="customTitle">Section title</label><input id="customTitle" value="Additional information"></div><div class="field"><label for="customContent">Content</label><textarea id="customContent" placeholder="Write the section content"></textarea></div><div class="modal-actions"><button class="btn soft" id="cancelCustom">Cancel</button><button class="btn primary" id="confirmCustom">Add section</button></div></div></div>
+<div class="modal-bg" id="modalBg" aria-hidden="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="customSectionTitle"><h2 id="customSectionTitle">Add custom section</h2><div class="field"><label for="customTitle">Section title</label><input id="customTitle" value="Additional information"></div><div class="field"><label for="customContent">Content</label><textarea id="customContent" placeholder="Write the section content"></textarea></div><div class="modal-actions"><button class="btn soft" id="cancelCustom" type="button">Cancel</button><button class="btn primary" id="confirmCustom" type="button">Add section</button></div></section></div>
 <div class="modal-bg" id="upgradeModalBg" aria-hidden="true">
   <section class="modal upgrade-modal" role="dialog" aria-modal="true" aria-labelledby="upgradeFeature">
     <div class="upgrade-modal-head">

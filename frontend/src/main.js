@@ -1,9 +1,11 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
+import { confirmSignOut } from './signout-modal.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
 import { readSavedProject } from './project-storage.js';
+import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from './resume-pdf.js';
 import {
  cloudConfigured, deleteResume, listResumes, observeAuth, saveResume,
  signInWithGoogle, signOutUser
@@ -12,8 +14,9 @@ import { zoomFromPinch } from './zoom.js';
 
 (()=>{'use strict';
 const $=id=>document.getElementById(id),deep=x=>JSON.parse(JSON.stringify(x)),uid=()=>Math.random().toString(36).slice(2,10);
+const baseDocumentTitle=document.title;
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
-const PAGE_W=794,PAGE_H=1122,PDF_EXPORT_SCALE=8,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
+const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
 const templateDefs=[
 {id:'classic',name:'Classic',sub:'ATS-friendly',accent:'#31547a',cls:'layout-classic',layout:'single'},
@@ -67,7 +70,7 @@ function normalizeState(d){
  if(pos&&typeof pos==='object')for(const [k,p] of Object.entries(pos)){if(!seen.has(k)||!p||typeof p!=='object')continue;const x=Number(p.x),y=Number(p.y),w=Number(p.w);if(![x,y,w].every(Number.isFinite))continue;if(ver<3&&x===0&&w===610)continue;out.positions[k]={x:clamp(x,0,PAGE_W,0),y:clamp(y,0,PAGE_H,0),w:clamp(w,120,PAGE_W,610)}}
  return out;
 }
-let state=fresh(),selectedId=null,zoom=1,history=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false;
+let state=fresh(),selectedId=null,zoom=1,history=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null;
 let localPersistenceBlocked=false,recoverySnapshot=null;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[];
@@ -75,6 +78,7 @@ let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGener
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
+function updateProLabel(){const isPro=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);const badge=$('proBrandBadge');if(badge)badge.hidden=!isPro;document.title=isPro?`${baseDocumentTitle} | Pro`:baseDocumentTitle}
 function authErrorMessage(error){
  const code=error?.code;
  if(code==='auth/configuration-not-found'||code==='auth/operation-not-allowed'){
@@ -209,6 +213,7 @@ async function updateCloudAccount(user,error){
  if(error){
   cloudUser=null;
   verifiedEntitlement=null;
+  updateProLabel();
   $('googleSignInBtn').disabled=true;
   $('googleSignInLabel').textContent='Cloud setup needed';
   $('googleSignInBtn').title=error.message;
@@ -219,6 +224,7 @@ async function updateCloudAccount(user,error){
  }
  cloudUser=user;
  verifiedEntitlement=null;
+ updateProLabel();
  $('googleSignInBtn').hidden=!!user;
  $('cloudResumesBtn').hidden=!user;
  $('googleSignOutBtn').hidden=!user;
@@ -240,6 +246,7 @@ async function updateCloudAccount(user,error){
    console.error('Could not load the signed-in account billing status.',billingError);
   }
   if(cloudUser?.uid===user.uid){
+    updateProLabel();
    renderTemplates();
    if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
   }
@@ -253,6 +260,7 @@ window.addEventListener('focus',async()=>{
   const entitlement=config.checkoutEnabled?await loadBillingEntitlement(user):null;
   if(cloudUser?.uid!==user.uid)return;
   verifiedEntitlement=entitlement;
+  updateProLabel();
   renderTemplates();
   if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
  }catch(error){
@@ -278,8 +286,7 @@ function templateCardMarkup(t,hasProAccess){
 }
 function renderTemplates(){
  const hasProAccess=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);
- const currentLocked=isProTemplate(state.template)&&!hasProAccess;
- $('templates').innerHTML=`${currentLocked?'<div class="template-access-note" role="status">This saved resume uses a Pro template. Your design and resume data are preserved. <a href="/pricing.html">View plans</a></div>':''}${templateDefs.map(t=>templateCardMarkup(t,hasProAccess)).join('')}`;
+ $('templates').innerHTML=templateDefs.map(t=>templateCardMarkup(t,hasProAccess)).join('');
 }
 function renderSectionList(){
  $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${s.id}"><span class="grip">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" data-toggle="${s.id}" title="${s.visible?'Hide':'Show'} section">${s.visible?'◉':'○'}</button></div>`).join('');
@@ -422,7 +429,7 @@ async function openTemplatePreview(templateId){
  const generation=++templatePreviewGeneration;
  const modal=$('templatePreviewModalBg'),pages=$('templatePreviewPages'),status=$('templatePreviewStatus');
  $('templatePreviewTitle').textContent=`${template.name} template preview`;
- status.textContent='Creating a low-resolution preview of your current resume…';
+ status.textContent='Creating a high-resolution preview of your current resume…';
  pages.innerHTML='';
  modal.classList.add('show');
  modal.setAttribute('aria-hidden','false');
@@ -462,12 +469,12 @@ async function openTemplatePreview(templateId){
    sheet.style.transform='none';
    sheet.style.marginBottom='0';
    captureRoot.replaceChildren(sheet);
-  const canvas=await html2canvas(sheet,{scale:1.6,backgroundColor:'#ffffff',logging:false,useCORS:true});
+  const canvas=await html2canvas(sheet,{scale:2,backgroundColor:'#ffffff',logging:false,useCORS:true});
    const page=document.createElement('div');
    page.className='template-preview-page';
    const image=document.createElement('img');
   image.src=canvas.toDataURL('image/jpeg',.9);
-   image.alt=`Low-resolution ${template.name} resume preview, page ${index+1}`;
+  image.alt=`High-resolution ${template.name} resume preview, page ${index+1}`;
    page.append(image);
    const watermark=document.createElement('span');
    watermark.className='template-preview-watermark';
@@ -478,7 +485,7 @@ async function openTemplatePreview(templateId){
    canvas.width=0;
    canvas.height=0;
   }
-  if(generation===templatePreviewGeneration)status.textContent='Low-resolution preview only. Pro is required to apply this template or export it.';
+  if(generation===templatePreviewGeneration)status.textContent='Pro subscription is required to apply this template or export it.';
  }catch(error){
   console.error('Could not create the Pro template preview image.',error);
   if(generation===templatePreviewGeneration)status.textContent='The preview image could not be created. Check your browser resources and try again.';
@@ -548,8 +555,8 @@ function togglePanel(){collapsed=!collapsed;applyPanels();savePrefs()}
 function toggleLeft(){leftCollapsed=!leftCollapsed;applyPanels();savePrefs()}
 function setTab(t){leftTab=t==='sections'?'sections':'templates';leftCollapsed=false;for(const k of ['templates','sections']){const on=k===leftTab;$('pane'+k[0].toUpperCase()+k.slice(1)).hidden=!on;const b=$('tab'+k[0].toUpperCase()+k.slice(1));b.classList.toggle('active',on);b.setAttribute('aria-selected',on)}applyPanels();savePrefs()}
 function setRightTab(t){rightTab=t==='section'?'section':'design';renderInspector();savePrefs()}
-function savePrefs(){try{localStorage.setItem('resumeStudioUI',JSON.stringify({leftWidth,panelWidth,leftCollapsed,collapsed,leftTab,rightTab}))}catch(e){}}
-function loadPrefs(){try{const u=JSON.parse(localStorage.getItem('resumeStudioUI')||'null');if(u){leftWidth=clamp(u.leftWidth,LW[0],LW[1],260);panelWidth=clamp(u.panelWidth,RW[0],RW[1],300);leftCollapsed=!!u.leftCollapsed;collapsed=!!u.collapsed;leftTab=u.leftTab==='sections'?'sections':'templates';rightTab=u.rightTab==='section'?'section':'design'}}catch(e){}}
+function savePrefs(){try{localStorage.setItem('resumeStudioUI',JSON.stringify({leftWidth,panelWidth,leftCollapsed,collapsed,leftTab,rightTab,onboardingDismissed}))}catch(e){}}
+function loadPrefs(){try{const u=JSON.parse(localStorage.getItem('resumeStudioUI')||'null');if(u){leftWidth=clamp(u.leftWidth,LW[0],LW[1],260);panelWidth=clamp(u.panelWidth,RW[0],RW[1],300);leftCollapsed=!!u.leftCollapsed;collapsed=!!u.collapsed;leftTab=u.leftTab==='sections'?'sections':'templates';rightTab=u.rightTab==='section'?'section':'design';onboardingDismissed=u.onboardingDismissed===true}}catch(e){}}
 function render(){renderTemplates();renderSectionList();renderSheets();renderInspector();$('docName').value=state.docName;$('pageLayout').value=state.layout;$('editMode').value=state.mode;updateUndoButton()}
 /* Selecting only toggles highlight classes: no re-layout, so the page never jumps while you click around. */
 function selectSection(id){selectedId=id;rightTab='section';renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
@@ -605,12 +612,14 @@ function addSelectableText(doc,sheet){
   const style=getComputedStyle(node.parentElement),fontSize=parseFloat(style.fontSize)||12,family=style.fontFamily.toLowerCase();
   const font=/courier|monospace/.test(family)?'courier':/georgia|times/.test(family)?'times':'helvetica';
   const bold=Number.parseInt(style.fontWeight,10)>=600||style.fontWeight==='bold',italic=style.fontStyle==='italic';
-  doc.setFont(font,bold?(italic?'bolditalic':'bold'):(italic?'italic':'normal'));
-  doc.setFontSize(fontSize*scale*72/25.4);
+  const pdfStyle=bold?(italic?'bolditalic':'bold'):(italic?'italic':'normal');
+  const rgb=style.color.match(/[\d.]+/g)||['32','42','58'];
+  const color=rgb.slice(0,3).map(Number);
+  const pdfSize=fontSize*scale*72/25.4;
   let line='',lineTop=null,lineLeft=0;
   const flush=()=>{
    const visibleLine=line.replace(/\s+$/,'');
-   if(visibleLine.trim())doc.text(visibleLine,(lineLeft-bounds.left)*scale,(lineTop-bounds.top+fontSize*.86)*scale,{renderingMode:'invisible'});
+   if(visibleLine.trim())drawPdfText(doc,visibleLine,(lineLeft-bounds.left)*scale,(lineTop-bounds.top+fontSize*.86)*scale,{font,style:pdfStyle,size:pdfSize,color});
    line='';lineTop=null;
   };
   for(let offset=0;offset<text.length;){
@@ -647,25 +656,37 @@ async function exportPDF(){
  frame.hidden=true;
  downloadBtn.disabled=true;
  btn.disabled=true;btn.textContent='Creating preview…';
+ const renderedPages=[];
  try{
   $('sheets').classList.add('exporting');sheets.forEach(sheet=>sheet.style.transform='none');
   if(document.fonts&&document.fonts.ready)await document.fonts.ready;
   const [{default:html2canvas},{jsPDF}]=await Promise.all([import('html2canvas'),import('jspdf')]);
   if(generation!==pdfPreviewGeneration)return;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
-  for(let i=0;i<sheets.length;i++){
-   const canvas=await html2canvas(sheets[i],{scale:PDF_EXPORT_SCALE,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
-   if(generation!==pdfPreviewGeneration)return;
-   if(i>0)doc.addPage('a4','portrait');
-   doc.addImage(canvas.toDataURL('image/jpeg',.96),'JPEG',0,0,210,297,undefined,'FAST');
-   addSelectableText(doc,sheets[i]);
-   addPDFLinks(doc,sheets[i]);
-  }
-  showPdfPreview(doc.output('blob'),`${(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')}.pdf`,doc.getNumberOfPages(),'Preview your resume PDF');
+  $('sheets').classList.add('pdf-rasterizing');
+  try{
+   for(let i=0;i<sheets.length;i++){
+    const canvas=await html2canvas(sheets[i],{scale:RESUME_PDF_RENDER_SCALE,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
+    if(generation!==pdfPreviewGeneration)return;
+    renderedPages.push({canvas,sheet:sheets[i]});
+   }
+  }finally{$('sheets').classList.remove('pdf-rasterizing')}
+  const {blob}=await buildResumePdf(jsPDF,renderedPages,{
+   addSelectableText,
+   addPDFLinks,
+   resizeCanvas:(source,scale)=>{
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(source.width*scale));
+    canvas.height=Math.max(1,Math.round(source.height*scale));
+    canvas.getContext('2d',{alpha:false}).drawImage(source,0,0,canvas.width,canvas.height);
+    return canvas;
+   }
+  });
+  if(generation!==pdfPreviewGeneration)return;
+  showPdfPreview(blob,`${(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')}.pdf`,sheets.length,'Preview your resume PDF');
  }catch(e){
   console.error(e);
-  status.textContent='PDF preview could not be created. Close this window and try again.';
- }finally{$('sheets').classList.remove('exporting');btn.disabled=false;btn.textContent='Export PDF';renderSheets()}
+  status.textContent=e.message||'PDF preview could not be created. Close this window and try again.';
+ }finally{renderedPages.forEach(({canvas})=>{canvas.width=0;canvas.height=0});$('sheets').classList.remove('exporting');btn.disabled=false;btn.textContent='Export PDF';renderSheets()}
 }
 function openPdfPreview(){
  $('pdfPreviewModalBg').classList.add('show');
@@ -673,6 +694,7 @@ function openPdfPreview(){
  $('closePdfPreview').focus();
 }
 function showPdfPreview(blob,filename,pageCount,title){
+ if(blob.size>=MAX_PDF_BYTES)throw new Error('This PDF is larger than 500 KB and cannot be downloaded. Reduce the resume content and try again.');
  if(pdfPreviewUrl)URL.revokeObjectURL(pdfPreviewUrl);
  pdfPreviewBlob=blob;
  pdfPreviewFilename=filename;
@@ -680,7 +702,8 @@ function showPdfPreview(blob,filename,pageCount,title){
  $('pdfPreviewTitle').textContent=title;
  $('pdfPreviewFrame').src=pdfPreviewUrl;
  $('pdfPreviewFrame').hidden=false;
- $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'} · Review the PDF before downloading.`;
+ const sizeKb=Math.max(1,Math.round(blob.size/1024));
+ $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'} · ${sizeKb} KB of 500 KB · Text remains selectable and searchable. Review before downloading.`;
  $('downloadPdfPreview').disabled=false;
 }
 function closePdfPreview(){
@@ -1040,7 +1063,7 @@ async function previewCoverLetterPdf(){
   showPdfPreview(doc.output('blob'),`${coverLetterFilename()}.pdf`,doc.getNumberOfPages(),'Preview your cover letter PDF');
  }catch(error){
   console.error(error);
-  if(generation===pdfPreviewGeneration)$('pdfPreviewStatus').textContent='Cover letter PDF preview could not be created. Close this window and try again.';
+  if(generation===pdfPreviewGeneration)$('pdfPreviewStatus').textContent=error.message||'Cover letter PDF preview could not be created. Close this window and try again.';
  }finally{
   button.disabled=false;
   button.textContent='Download .pdf';
@@ -1155,10 +1178,11 @@ const finishTouchPointer=e=>{
 };
 $('sheets').addEventListener('pointerup',finishTouchPointer);
 $('sheets').addEventListener('pointercancel',finishTouchPointer);
-document.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.add==='custom'){$('modalBg').classList.add('show');$('customTitle').focus();return}transact(()=>addSection(b.dataset.add))}));
-$('confirmCustom').addEventListener('click',()=>{transact(()=>addSection('custom',$('customTitle').value.trim()||'Additional information',$('customContent').value));$('modalBg').classList.remove('show')});
-$('cancelCustom').addEventListener('click',()=>$('modalBg').classList.remove('show'));
-$('modalBg').addEventListener('click',e=>{if(e.target===$('modalBg'))$('modalBg').classList.remove('show')});
+function closeCustomSectionDialog(){const bg=$('modalBg');bg.classList.remove('show');bg.setAttribute('aria-hidden','true');customSectionTrigger?.focus();customSectionTrigger=null}
+document.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.add==='custom'){customSectionTrigger=b;$('modalBg').classList.add('show');$('modalBg').setAttribute('aria-hidden','false');$('customTitle').focus();return}transact(()=>addSection(b.dataset.add))}));
+$('confirmCustom').addEventListener('click',()=>{transact(()=>addSection('custom',$('customTitle').value.trim()||'Additional information',$('customContent').value));closeCustomSectionDialog()});
+$('cancelCustom').addEventListener('click',closeCustomSectionDialog);
+$('modalBg').addEventListener('click',e=>{if(e.target===$('modalBg'))closeCustomSectionDialog()});
 $('coverLetterBtn').addEventListener('click',openCoverLetter);$('closeCoverLetter').addEventListener('click',closeCoverLetter);$('coverLetterModalBg').addEventListener('click',e=>{if(e.target===$('coverLetterModalBg'))closeCoverLetter()});$('generateCoverLetter').addEventListener('click',generateCoverLetter);$('copyCoverLetter').addEventListener('click',copyCoverLetter);$('downloadCoverLetter').addEventListener('click',downloadCoverLetter);$('downloadCoverLetterPdf').addEventListener('click',previewCoverLetterPdf);
 $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.value==='two'?'two':'single'));
 $('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
@@ -1169,6 +1193,7 @@ $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click
   catch(error){toast(authErrorMessage(error))}
  });
  $('googleSignOutBtn').addEventListener('click',async()=>{
+  if(!await confirmSignOut())return;
   try{await signOutUser();toast('Signed out. Your local browser copy is unchanged.')}
   catch(error){toast(error.message||'Could not sign out.')}
  });
@@ -1196,6 +1221,7 @@ $('undoBtn').addEventListener('click',undo);$('saveBtn').addEventListener('click
  $('resolveRecovery').addEventListener('click',resolveLocalRecovery);
  $('pdfBtn').addEventListener('click',exportPDF);$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(()=>runAtsChecks({promptUpgrade:false}),250)});
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
+$('dismissOnboarding').addEventListener('click',()=>{$('onboardingCard').hidden=true;onboardingDismissed=true;savePrefs()});
 let resizing=null;
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
 $('panelGrip').addEventListener('pointerdown',gripDown('r'));$('leftGrip').addEventListener('pointerdown',gripDown('l'));
@@ -1203,10 +1229,10 @@ document.addEventListener('pointermove',e=>{if(!resizing)return;if(resizing==='r
 document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs()}});
 $('collapseLeft').addEventListener('click',toggleLeft);$('expandLeft').addEventListener('click',toggleLeft);$('expandRight').addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
-document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){$('modalBg').classList.remove('show');closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}});
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){e.preventDefault();undo()}if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}});
 const savedProject=readSavedProject(localStorage,normalizeState);
 if(savedProject.state)state=savedProject.state;
 showRecoveryNotice(savedProject);
 addEventListener('pagehide',()=>{if(localPersistenceBlocked)return;try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(error){console.error('Could not save the resume while closing the page.',error)}});
-loadPrefs();if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
+loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
 })();

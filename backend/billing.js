@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export const BILLING_PLANS = Object.freeze({
   monthly: Object.freeze({
@@ -64,6 +64,32 @@ export function firebaseAdminConfigured(env = process.env) {
   } catch {
     return false;
   }
+}
+
+export function configuredVouchers(env = process.env) {
+  if (typeof env.PRO_VOUCHERS_JSON !== 'string') return null;
+  try {
+    const vouchers = JSON.parse(env.PRO_VOUCHERS_JSON);
+    if (!Array.isArray(vouchers) || vouchers.length === 0) return null;
+    const codes = new Set();
+    for (const voucher of vouchers) {
+      if (!voucher || typeof voucher.code !== 'string'
+        || !/^[A-Z0-9][A-Z0-9-]{5,39}$/.test(voucher.code)
+        || codes.has(voucher.code)
+        || !Number.isInteger(voucher.durationDays) || voucher.durationDays < 1 || voucher.durationDays > 3650
+        || !Number.isInteger(voucher.maxRedemptions) || voucher.maxRedemptions < 1 || voucher.maxRedemptions > 1_000_000) {
+        return null;
+      }
+      codes.add(voucher.code);
+    }
+    return vouchers;
+  } catch {
+    return null;
+  }
+}
+
+export function voucherDocumentId(code) {
+  return createHash('sha256').update(code).digest('hex');
 }
 
 export function planKeyForRazorpayPlanId(planId, env = process.env) {

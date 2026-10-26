@@ -106,6 +106,15 @@ test('photo templates show an accessible avatar placeholder when no photo is upl
   assert.match(styles, /\.photo-placeholder::after/);
 });
 
+test('pricing exposes voucher entry and labels sample codes as non-redeemable examples', () => {
+  const html = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../frontend/src/pricing.js', import.meta.url), 'utf8');
+  assert.match(html, /id="voucherForm"/);
+  assert.match(html, /Example formats only — these are not valid codes/);
+  assert.match(source, /redeemBillingVoucher\(user, code\)/);
+  assert.match(source, /voucherEnabled/);
+});
+
 test('Firestore rules restrict the lifetime Pro-template trial to two owner-only increments', () => {
   const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
   assert.match(rules, /match \/users\/\{userId\}\/trial\/proTemplateDownloads/);

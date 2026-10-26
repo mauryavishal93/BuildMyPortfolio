@@ -3,6 +3,7 @@ import {
   createBillingSubscription,
   loadBillingConfig,
   loadBillingEntitlement,
+  redeemBillingVoucher,
   scheduleBillingPlanChange,
   verifyBillingCheckout
 } from './billing-client.js';
@@ -55,13 +56,16 @@ function updatePurchaseControls() {
     ? 'Sign in to purchase monthly'
     : !active
       ? billingConfig?.checkoutEnabled ? 'Start monthly subscription' : 'Checkout unavailable'
-      : activePlan === 'monthly' ? 'Monthly plan active' : 'Yearly plan active';
+      : activePlan === 'voucher' ? 'Pro voucher active'
+        : activePlan === 'monthly' ? 'Monthly plan active' : 'Yearly plan active';
   yearlyButton.textContent = !currentUser
     ? 'Sign in to purchase yearly'
     : !active
       ? billingConfig?.checkoutEnabled ? 'Start yearly subscription' : 'Checkout unavailable'
       : activePlan === 'yearly'
         ? 'Yearly plan active'
+        : activePlan === 'voucher'
+          ? 'Pro voucher active'
         : yearlyScheduled
           ? 'Yearly switch scheduled'
           : entitlement.cancelAtCycleEnd
@@ -88,6 +92,18 @@ function updatePurchaseControls() {
     cancel.addEventListener('click', cancelCurrentSubscription);
   }
   cancel.hidden = !active || !entitlement?.subscriptionId || Boolean(entitlement?.cancelAtCycleEnd);
+  updateVoucherControls();
+}
+
+function updateVoucherControls() {
+  const section = $('#voucherSection');
+  const button = $('#redeemVoucher');
+  const input = $('#voucherCode');
+  if (!section || !button) return;
+  section.hidden = !billingConfig?.voucherEnabled;
+  const unavailable = !currentUser || !billingConfig?.voucherEnabled || entitlement?.status === 'active';
+  button.disabled = unavailable;
+  input.disabled = unavailable;
 }
 
 async function refreshBillingState(user) {
@@ -103,6 +119,7 @@ async function refreshBillingState(user) {
   accountStatus.textContent = `Signed in as ${user.email || user.displayName || 'Google user'}. Purchases are attached to this account.`;
   try {
     if (!billingConfig) billingConfig = await loadBillingConfig();
+    $('#voucherSection').hidden = !billingConfig.voucherEnabled;
     if (billingConfig.entitlementEnabled) entitlement = await loadBillingEntitlement(user);
     if (currentUser?.uid !== user.uid) return;
 
@@ -111,8 +128,11 @@ async function refreshBillingState(user) {
       const scheduled = entitlement.scheduledPlan === 'yearly'
         ? ` Yearly billing is scheduled to start after ${date}.`
         : '';
-      accountStatus.textContent = `Pro ${entitlement.billingPlan || ''} is active through ${date}.${entitlement.cancelAtCycleEnd ? ' It will not renew.' : scheduled}`;
+      accountStatus.textContent = entitlement.billingPlan === 'voucher'
+        ? `Pro voucher access is active through ${date}.`
+        : `Pro ${entitlement.billingPlan || ''} is active through ${date}.${entitlement.cancelAtCycleEnd ? ' It will not renew.' : scheduled}`;
     }
+
     updatePurchaseControls();
   } catch (error) {
     console.error('Could not load billing status.', error);
@@ -120,6 +140,34 @@ async function refreshBillingState(user) {
     updatePurchaseControls();
   }
 }
+
+$('#voucherForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const codeInput = $('#voucherCode');
+  const status = $('#voucherStatus');
+  const button = $('#redeemVoucher');
+  const code = codeInput.value.trim();
+  if (!currentUser || !billingConfig?.voucherEnabled || !code) return;
+  const user = currentUser;
+  button.disabled = true;
+  status.dataset.state = '';
+  status.textContent = 'Checking voucher…';
+  try {
+    const redeemedEntitlement = await redeemBillingVoucher(user, code);
+    if (currentUser?.uid !== user.uid) return;
+    entitlement = redeemedEntitlement;
+    codeInput.value = '';
+    status.dataset.state = 'success';
+    status.textContent = `Voucher redeemed. Pro is active through ${new Date(entitlement.validUntil).toLocaleDateString()}.`;
+    accountStatus.textContent = `Pro voucher access is active through ${new Date(entitlement.validUntil).toLocaleDateString()}.`;
+    updatePurchaseControls();
+  } catch (error) {
+    if (currentUser?.uid !== user.uid) return;
+    status.dataset.state = 'error';
+    status.textContent = error.message || 'Could not redeem this voucher.';
+    updateVoucherControls();
+  }
+});
 
 async function loadRazorpayCheckout() {
   if (window.Razorpay) return;
@@ -240,6 +288,7 @@ yearlyButton.addEventListener('click', () => entitlement?.status === 'active' &&
 
 loadBillingConfig().then(config => {
   billingConfig = config;
+  $('#voucherSection').hidden = !config.voucherEnabled;
   if (!config.checkoutEnabled) {
     checkoutStatus.textContent = 'Pro checkout is temporarily unavailable. Please try again later.';
   }

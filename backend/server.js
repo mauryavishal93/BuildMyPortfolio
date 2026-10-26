@@ -6,12 +6,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   BILLING_PLANS,
   billingConfigured,
+  configuredVouchers,
   entitlementFromSubscription,
   firebaseAdminConfigured,
   planKeyForRazorpayPlanId,
   planMatchesRazorpay,
   validRazorpaySignature,
-  validWebhookSignature
+  validWebhookSignature,
+  voucherDocumentId
 } from './billing.js';
 
 const backendDir = path.dirname(fileURLToPath(import.meta.url));
@@ -170,6 +172,7 @@ app.get('/api/billing/config', (_request, response) => {
   response.json({
     checkoutEnabled: billingConfigured(),
     entitlementEnabled: firebaseAdminConfigured(),
+    voucherEnabled: firebaseAdminConfigured() && Boolean(configuredVouchers()),
     keyId: billingConfigured() ? process.env.RAZORPAY_KEY_ID : null,
     plans: Object.fromEntries(Object.entries(BILLING_PLANS).map(([key, plan]) => [
       key,
@@ -329,6 +332,93 @@ app.get('/api/billing/entitlement', requireEntitlementConfig, requireFirebaseUse
   } catch (error) {
     console.error('Could not load billing entitlement.', error);
     response.status(500).json({ error: 'Could not load your plan status.' });
+  }
+});
+
+app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFirebaseUser, async (request, response) => {
+  const code = typeof request.body?.code === 'string' ? request.body.code.trim().toUpperCase() : '';
+  if (!/^[A-Z0-9][A-Z0-9-]{5,39}$/.test(code)) {
+    response.status(400).json({ error: 'Enter a valid voucher code.' });
+    return;
+  }
+  const vouchers = configuredVouchers();
+  if (!vouchers) {
+    response.status(503).json({ error: 'Voucher redemption is not configured on this server.' });
+    return;
+  }
+  const voucher = vouchers.find(item => item.code === code);
+  if (!voucher) {
+    response.status(404).json({ error: 'That voucher code is invalid or unavailable.' });
+    return;
+  }
+
+  try {
+    const { db } = await getFirebaseAdmin();
+    const voucherId = voucherDocumentId(code);
+    const voucherRef = db.doc(`billingVouchers/${voucherId}`);
+    const userVoucherRef = db.doc(`users/${request.user.uid}/vouchers/${voucherId}`);
+    const entitlementRef = userEntitlementDocument(db, request.user.uid);
+    const now = Date.now();
+    let validUntil;
+    await db.runTransaction(async transaction => {
+      const [voucherSnapshot, userVoucherSnapshot, entitlementSnapshot] = await Promise.all([
+        transaction.get(voucherRef),
+        transaction.get(userVoucherRef),
+        transaction.get(entitlementRef)
+      ]);
+      if (userVoucherSnapshot.exists) {
+        const error = new Error('This account has already redeemed that voucher.');
+        error.status = 409;
+        throw error;
+      }
+      const currentEntitlement = entitlementSnapshot.data();
+      if (Number(currentEntitlement?.validUntil) > now) {
+        const error = new Error('Your current Pro access is still active. Redeem a voucher after it expires.');
+        error.status = 409;
+        throw error;
+      }
+      const redeemedCount = Number(voucherSnapshot.data()?.redeemedCount) || 0;
+      if (redeemedCount >= voucher.maxRedemptions) {
+        const error = new Error('That voucher has reached its redemption limit.');
+        error.status = 409;
+        throw error;
+      }
+      validUntil = now + voucher.durationDays * 24 * 60 * 60 * 1000;
+      transaction.set(voucherRef, {
+        redeemedCount: redeemedCount + 1,
+        updatedAt: now
+      }, { merge: true });
+      transaction.create(userVoucherRef, { redeemedAt: now });
+      transaction.set(entitlementRef, {
+        planId: 'pro',
+        billingPlan: 'voucher',
+        status: 'active',
+        source: 'server-verified',
+        validUntil,
+        subscriptionId: null,
+        cancelAtCycleEnd: false,
+        voucherId,
+        updatedAt: now
+      });
+    });
+    response.json({
+      entitlement: publicEntitlement({
+        planId: 'pro',
+        billingPlan: 'voucher',
+        status: 'active',
+        source: 'server-verified',
+        validUntil,
+        subscriptionId: null,
+        cancelAtCycleEnd: false
+      })
+    });
+  } catch (error) {
+    if (error.status === 409) {
+      response.status(409).json({ error: error.message });
+      return;
+    }
+    console.error('Could not redeem Pro voucher.', error);
+    response.status(500).json({ error: 'Could not redeem this voucher. Please try again.' });
   }
 });
 

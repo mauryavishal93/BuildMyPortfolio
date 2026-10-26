@@ -36,6 +36,14 @@ export async function loadBillingEntitlement(user) {
   return result.entitlement;
 }
 
+export async function redeemBillingVoucher(user, code) {
+  const result = await billingRequest('vouchers/redeem', user, {
+    method: 'POST',
+    body: { code }
+  });
+  return result.entitlement;
+}
+
 export async function createBillingSubscription(user, planKey) {
   return billingRequest('subscriptions', user, {
     method: 'POST',

@@ -19,7 +19,11 @@ const environment = {
   RAZORPAY_KEY_SECRET: 'test_key_secret',
   RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret',
   RAZORPAY_PLAN_MONTHLY_ID: 'plan_monthly_test',
-  RAZORPAY_PLAN_YEARLY_ID: 'plan_yearly_test'
+  RAZORPAY_PLAN_YEARLY_ID: 'plan_yearly_test',
+  PRO_VOUCHERS_JSON: JSON.stringify([
+    { code: 'WELCOME30', durationDays: 30, maxRedemptions: 20 },
+    { code: 'LIMITED7', durationDays: 7, maxRedemptions: 1 }
+  ])
 };
 const previousEnvironment = Object.fromEntries(
   Object.keys(environment).map(key => [key, process.env[key]])
@@ -71,8 +75,10 @@ before(async () => {
   app.locals.firebaseAdmin = {
     auth: {
       verifyIdToken: async token => {
-        if (token !== 'valid-test-token') throw new Error('Invalid token');
-        return { uid: 'user-1' };
+        if (token === 'valid-test-token') return { uid: 'user-1' };
+        if (token === 'other-test-token') return { uid: 'user-2' };
+        if (token === 'third-test-token') return { uid: 'user-3' };
+        throw new Error('Invalid token');
       }
     },
     db: fakeDatabase.db
@@ -158,6 +164,8 @@ test('billing routes reject unauthenticated and unapproved checkout requests', a
   const configBody = await config.json();
   assert.equal(configBody.checkoutEnabled, false);
   assert.equal(configBody.entitlementEnabled, true);
+  assert.equal(configBody.voucherEnabled, true);
+  assert.doesNotMatch(JSON.stringify(configBody), /WELCOME30|LIMITED7/);
   fakeDatabase.records.set('users/user-1/billing/entitlement', {
     planId: 'pro',
     billingPlan: 'yearly',
@@ -175,6 +183,64 @@ test('billing routes reject unauthenticated and unapproved checkout requests', a
   assert.equal(blocked.status, 503);
   fakeDatabase.records.delete('users/user-1/billing/entitlement');
   process.env.BILLING_TEST_MODE_VERIFIED = environment.BILLING_TEST_MODE_VERIFIED;
+});
+
+test('voucher redemption grants configured Pro access once, rejects active plans, and enforces global limits', async () => {
+  const unauthenticated = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    body: { code: 'WELCOME30' }
+  });
+  assert.equal(unauthenticated.status, 401);
+
+  const invalid = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'valid-test-token',
+    body: { code: 'NOT-A-CODE' }
+  });
+  assert.equal(invalid.status, 404);
+
+  const redeemed = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'valid-test-token',
+    body: { code: ' welcome30 ' }
+  });
+  assert.equal(redeemed.status, 200);
+  const entitlement = (await redeemed.json()).entitlement;
+  assert.equal(entitlement.planId, 'pro');
+  assert.equal(entitlement.billingPlan, 'voucher');
+  assert.equal(entitlement.source, 'server-verified');
+  assert.ok(entitlement.validUntil > Date.now());
+
+  const duplicate = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'valid-test-token',
+    body: { code: 'WELCOME30' }
+  });
+  assert.equal(duplicate.status, 409);
+
+  const activeAccount = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'valid-test-token',
+    body: { code: 'LIMITED7' }
+  });
+  assert.equal(activeAccount.status, 409);
+
+  const firstLimited = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'other-test-token',
+    body: { code: 'LIMITED7' }
+  });
+  assert.equal(firstLimited.status, 200);
+  const capped = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'third-test-token',
+    body: { code: 'LIMITED7' }
+  });
+  assert.equal(capped.status, 409);
+
+  for (const uid of ['user-1', 'user-2']) {
+    fakeDatabase.records.delete(`users/${uid}/billing/entitlement`);
+  }
 });
 
 test('subscription checkout, payment verification, and signed webhook lifecycle update server entitlements', async () => {

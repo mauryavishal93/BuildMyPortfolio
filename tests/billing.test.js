@@ -4,12 +4,14 @@ import { createHmac } from 'node:crypto';
 import {
   BILLING_PLANS,
   billingConfigured,
+  configuredVouchers,
   entitlementFromSubscription,
   firebaseAdminConfigured,
   planKeyForRazorpayPlanId,
   planMatchesRazorpay,
   validRazorpaySignature,
-  validWebhookSignature
+  validWebhookSignature,
+  voucherDocumentId
 } from '../backend/billing.js';
 
 test('server billing plans use the requested monthly and yearly INR amounts', () => {
@@ -116,4 +118,17 @@ test('Firebase Admin entitlement reads can be enabled while checkout remains dis
   assert.equal(firebaseAdminConfigured(env), true);
   assert.equal(billingConfigured(env), false);
   assert.equal(firebaseAdminConfigured({ FIREBASE_SERVICE_ACCOUNT_JSON: '{invalid' }), false);
+});
+
+test('voucher configuration validates durations and redemption caps without exposing codes in IDs', () => {
+  const env = {
+    PRO_VOUCHERS_JSON: JSON.stringify([
+      { code: 'WELCOME30', durationDays: 30, maxRedemptions: 20 }
+    ])
+  };
+  assert.deepEqual(configuredVouchers(env), [{ code: 'WELCOME30', durationDays: 30, maxRedemptions: 20 }]);
+  assert.equal(configuredVouchers({ PRO_VOUCHERS_JSON: JSON.stringify([{ code: 'WELCOME30', durationDays: 0, maxRedemptions: 20 }]) }), null);
+  assert.equal(configuredVouchers({ PRO_VOUCHERS_JSON: JSON.stringify([{ code: 'welcome30', durationDays: 30, maxRedemptions: 20 }]) }), null);
+  assert.equal(voucherDocumentId('WELCOME30'), voucherDocumentId('WELCOME30'));
+  assert.notEqual(voucherDocumentId('WELCOME30'), 'WELCOME30');
 });

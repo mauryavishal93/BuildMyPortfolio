@@ -213,6 +213,48 @@ async function recordBillingActivity(db, uid, activity) {
   return occurredAt;
 }
 
+function normalizePlanPrice(rawValue, fallback) {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric) || numeric < 0) return fallback;
+  return Math.round(numeric * 100) / 100;
+}
+
+function calculateDiscount(actualPrice, currentPrice) {
+  if (!Number.isFinite(actualPrice) || actualPrice <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round(((actualPrice - currentPrice) / actualPrice) * 100)));
+}
+
+function normalizePricingConfig(rawConfig = {}) {
+  const monthlyActual = normalizePlanPrice(rawConfig?.monthly?.actualPrice, BILLING_PLANS.monthly.amount / 100);
+  const monthlyCurrent = normalizePlanPrice(rawConfig?.monthly?.currentPrice, monthlyActual);
+  const yearlyActual = normalizePlanPrice(rawConfig?.yearly?.actualPrice, BILLING_PLANS.yearly.amount / 100);
+  const yearlyCurrent = normalizePlanPrice(rawConfig?.yearly?.currentPrice, yearlyActual);
+  return {
+    currency: 'INR',
+    monthly: {
+      actualPrice: monthlyActual,
+      currentPrice: Math.min(monthlyActual, monthlyCurrent),
+      discountPercent: calculateDiscount(monthlyActual, Math.min(monthlyActual, monthlyCurrent))
+    },
+    yearly: {
+      actualPrice: yearlyActual,
+      currentPrice: Math.min(yearlyActual, yearlyCurrent),
+      discountPercent: calculateDiscount(yearlyActual, Math.min(yearlyActual, yearlyCurrent))
+    },
+    updatedAt: Date.now()
+  };
+}
+
+async function loadPricingConfigFromStore() {
+  try {
+    const { db } = await getFirebaseAdmin();
+    const snapshot = await db.doc('appConfig/pricing').get();
+    return normalizePricingConfig(snapshot.exists ? snapshot.data() : {});
+  } catch {
+    return normalizePricingConfig({});
+  }
+}
+
 app.get('/api/health', (_request, response) => {
   response.json({ status: 'ok' });
 });
@@ -220,6 +262,58 @@ app.get('/api/health', (_request, response) => {
 app.use('/api/billing', (_request, response, next) => {
   response.set('Cache-Control', 'no-store');
   next();
+});
+
+app.get('/api/pricing/config', async (_request, response) => {
+  try {
+    response.json({ pricing: await loadPricingConfigFromStore() });
+  } catch (error) {
+    console.error('Could not load public pricing config.', error);
+    response.status(500).json({ error: 'Pricing configuration is temporarily unavailable.' });
+  }
+});
+
+app.get('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (_request, response) => {
+  try {
+    response.json({ pricing: await loadPricingConfigFromStore() });
+  } catch (error) {
+    console.error('Could not load admin pricing config.', error);
+    response.status(500).json({ error: 'Unable to load pricing configuration.' });
+  }
+});
+
+app.put('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (request, response) => {
+  const rawPricing = request.body?.pricing || request.body || {};
+  const monthlyActual = normalizePlanPrice(rawPricing?.monthly?.actualPrice, BILLING_PLANS.monthly.amount / 100);
+  const monthlyCurrent = normalizePlanPrice(rawPricing?.monthly?.currentPrice, monthlyActual);
+  const yearlyActual = normalizePlanPrice(rawPricing?.yearly?.actualPrice, BILLING_PLANS.yearly.amount / 100);
+  const yearlyCurrent = normalizePlanPrice(rawPricing?.yearly?.currentPrice, yearlyActual);
+
+  if (!Number.isFinite(monthlyActual) || !Number.isFinite(monthlyCurrent)
+    || !Number.isFinite(yearlyActual) || !Number.isFinite(yearlyCurrent)
+    || monthlyActual < 0 || monthlyCurrent < 0 || yearlyActual < 0 || yearlyCurrent < 0) {
+    response.status(400).json({ error: 'Price values must be non-negative numbers.' });
+    return;
+  }
+
+  try {
+    const { db } = await getFirebaseAdmin();
+    const pricing = normalizePricingConfig({
+      monthly: {
+        actualPrice: monthlyActual,
+        currentPrice: monthlyCurrent
+      },
+      yearly: {
+        actualPrice: yearlyActual,
+        currentPrice: yearlyCurrent
+      }
+    });
+    await db.doc('appConfig/pricing').set(pricing, { merge: true });
+    response.json({ pricing });
+  } catch (error) {
+    console.error('Could not save pricing configuration.', error);
+    response.status(500).json({ error: 'Unable to save pricing configuration.' });
+  }
 });
 
 app.get('/api/billing/config', (_request, response) => {

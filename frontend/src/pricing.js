@@ -33,9 +33,57 @@ const formatPrice = amount => new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 0
 }).format(amount);
 
-$('#freePrice').innerHTML = `${formatPrice(PLAN_CONFIG.free.price)} <span>always free</span>`;
-$('#monthlyPrice').innerHTML = `${formatPrice(PLAN_CONFIG.pro.monthly.price)} <span>per month, recurring</span>`;
-$('#yearlyPrice').innerHTML = `${formatPrice(PLAN_CONFIG.pro.yearly.price)} <span>per year, recurring</span>`;
+function getConfiguredPrice(planKey, fallback) {
+  const value = Number(window.__pricingConfig?.[planKey]?.currentPrice ?? fallback);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function getConfiguredActualPrice(planKey, fallback) {
+  const value = Number(window.__pricingConfig?.[planKey]?.actualPrice ?? fallback);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function renderStoredPricing() {
+  const monthlyActual = getConfiguredActualPrice('monthly', PLAN_CONFIG.pro.monthly.price);
+  const monthlyCurrent = getConfiguredPrice('monthly', PLAN_CONFIG.pro.monthly.price);
+  const yearlyActual = getConfiguredActualPrice('yearly', PLAN_CONFIG.pro.yearly.price);
+  const yearlyCurrent = getConfiguredPrice('yearly', PLAN_CONFIG.pro.yearly.price);
+
+  const renderPlanPrice = (node, currentPrice, actualPrice, suffixLabel) => {
+    const discount = actualPrice > currentPrice ? Math.round(((actualPrice - currentPrice) / actualPrice) * 100) : 0;
+    const actualMarkup = actualPrice > currentPrice
+      ? `<span class="price-original">${formatPrice(actualPrice)}</span>`
+      : '';
+    const discountMarkup = discount > 0
+      ? `<span class="price-discount">Save ${discount}%</span>`
+      : '';
+    node.innerHTML = `${actualMarkup}${formatPrice(currentPrice)} <span>${suffixLabel}${discountMarkup}</span>`;
+  };
+
+  renderPlanPrice($('#monthlyPrice'), monthlyCurrent, monthlyActual, 'per month, recurring');
+  renderPlanPrice($('#yearlyPrice'), yearlyCurrent, yearlyActual, 'per year, recurring');
+  $('#freePrice').innerHTML = `${formatPrice(PLAN_CONFIG.free.price)} <span>always free</span>`;
+}
+
+async function loadPublicPricingConfig() {
+  try {
+    const response = await fetch('/api/pricing/config', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Unable to load pricing configuration.');
+    const body = await response.json();
+    window.__pricingConfig = body.pricing || { monthly: { currentPrice: PLAN_CONFIG.pro.monthly.price, actualPrice: PLAN_CONFIG.pro.monthly.price }, yearly: { currentPrice: PLAN_CONFIG.pro.yearly.price, actualPrice: PLAN_CONFIG.pro.yearly.price } };
+    renderStoredPricing();
+  } catch (error) {
+    console.error('Pricing config could not be loaded.', error);
+    window.__pricingConfig = {
+      monthly: { currentPrice: PLAN_CONFIG.pro.monthly.price, actualPrice: PLAN_CONFIG.pro.monthly.price },
+      yearly: { currentPrice: PLAN_CONFIG.pro.yearly.price, actualPrice: PLAN_CONFIG.pro.yearly.price }
+    };
+    renderStoredPricing();
+  }
+}
+
+renderStoredPricing();
+void loadPublicPricingConfig();
 
 const tableBody = $('#pricingFeatures');
 for (const feature of PRICING_FEATURES) {

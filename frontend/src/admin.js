@@ -39,6 +39,7 @@ async function load() {
     $('#stat-earnings').textContent = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((dashboard.totals.earnings || 0) / 100);
     updateSummaryChips();
     renderUsers(); renderVouchers();
+    await loadPricingSettings();
     updateAdminMeta();
     $('#access').hidden = true;
     $('#admin-content').hidden = false;
@@ -93,6 +94,36 @@ function updateSummaryChips() {
     const node = $(`#chip-${key}`);
     if (node) node.textContent = summary[key] ?? 0;
   });
+}
+
+function calculateDiscount(actualPrice, currentPrice) {
+  const actual = Number(actualPrice) || 0;
+  const current = Number(currentPrice) || 0;
+  if (!actual || actual <= current) return 0;
+  return Math.round(((actual - current) / actual) * 100);
+}
+
+function renderPricingConfig(pricing) {
+  const config = pricing?.pricing || pricing || {};
+  const monthly = config.monthly || {};
+  const yearly = config.yearly || {};
+  $('#monthly-actual-price').value = Number(monthly.actualPrice ?? 99) || 99;
+  $('#monthly-current-price').value = Number(monthly.currentPrice ?? 99) || 99;
+  $('#yearly-actual-price').value = Number(yearly.actualPrice ?? 399) || 399;
+  $('#yearly-current-price').value = Number(yearly.currentPrice ?? 399) || 399;
+  const monthlyDiscount = calculateDiscount(monthly.actualPrice, monthly.currentPrice);
+  const yearlyDiscount = calculateDiscount(yearly.actualPrice, yearly.currentPrice);
+  $('#pricing-summary').textContent = `Monthly: ${monthlyDiscount}% off · Yearly: ${yearlyDiscount}% off`;
+}
+
+async function loadPricingSettings() {
+  try {
+    const result = await api('/api/admin/pricing');
+    renderPricingConfig(result.pricing || result);
+  } catch (error) {
+    $('#pricing-config-status').textContent = 'Unavailable';
+    console.error('Could not load pricing settings.', error);
+  }
 }
 
 function sortUsers(rows) {
@@ -225,6 +256,37 @@ document.querySelectorAll('[data-summary-filter]').forEach(button => {
     renderUsers();
   });
 });
+$('#save-pricing-config').addEventListener('click', async () => {
+  const monthlyActual = Number($('#monthly-actual-price').value || 0);
+  const monthlyCurrent = Number($('#monthly-current-price').value || 0);
+  const yearlyActual = Number($('#yearly-actual-price').value || 0);
+  const yearlyCurrent = Number($('#yearly-current-price').value || 0);
+
+  if ([monthlyActual, monthlyCurrent, yearlyActual, yearlyCurrent].some(value => Number.isNaN(value) || value < 0)) {
+    $('#pricing-config-status').textContent = 'Invalid pricing';
+    alert('Prices must be valid non-negative numbers.');
+    return;
+  }
+
+  try {
+    $('#pricing-config-status').textContent = 'Saving…';
+    const result = await api('/api/admin/pricing', {
+      method: 'PUT',
+      body: JSON.stringify({
+        pricing: {
+          monthly: { actualPrice: monthlyActual, currentPrice: monthlyCurrent },
+          yearly: { actualPrice: yearlyActual, currentPrice: yearlyCurrent }
+        }
+      })
+    });
+    renderPricingConfig(result.pricing || result);
+    $('#pricing-config-status').textContent = 'Saved';
+  } catch (error) {
+    $('#pricing-config-status').textContent = 'Failed';
+    alert(error.message);
+  }
+});
+
 $('#generate-voucher').addEventListener('click', async () => {
   try {
     const result = await api('/api/admin/vouchers', { method: 'POST', body: JSON.stringify({ plan: $('#voucher-plan').value, uid: $('#voucher-uid').value }) });

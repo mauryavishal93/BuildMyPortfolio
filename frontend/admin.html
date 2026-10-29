@@ -76,6 +76,36 @@
         </article>
       </div>
 
+      <section class="admin-card pricing-config-card" aria-labelledby="pricing-config-title">
+        <div class="admin-card-title">
+          <div>
+            <p class="eyebrow">Pricing</p>
+            <h2 id="pricing-config-title">Subscription pricing</h2>
+          </div>
+          <span id="pricing-config-status" class="user-count-label">Ready</span>
+        </div>
+        <div class="pricing-config-grid">
+          <label>
+            <span>Monthly actual price (₹)</span>
+            <input id="monthly-actual-price" type="number" min="0" step="1" placeholder="99">
+          </label>
+          <label>
+            <span>Monthly current price (₹)</span>
+            <input id="monthly-current-price" type="number" min="0" step="1" placeholder="79">
+          </label>
+          <label>
+            <span>Yearly actual price (₹)</span>
+            <input id="yearly-actual-price" type="number" min="0" step="1" placeholder="399">
+          </label>
+          <label>
+            <span>Yearly current price (₹)</span>
+            <input id="yearly-current-price" type="number" min="0" step="1" placeholder="319">
+          </label>
+        </div>
+        <div class="pricing-summary" id="pricing-summary">Discounts will be calculated automatically.</div>
+        <button id="save-pricing-config" class="admin-button" type="button">Save pricing</button>
+      </section>
+
       <div class="admin-filter-bar" aria-label="User filters">
         <div class="filter-group search-group">
           <label for="user-search">Search</label>

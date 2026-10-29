@@ -22,10 +22,14 @@ async function load() {
     renderUsers(); renderVouchers();
     $('#access').hidden = true;
     $('#admin-content').hidden = false;
+    $('#sign-in').hidden = true;
   } catch (error) {
     $('#access').hidden = false;
     $('#admin-content').hidden = true;
-    $('#access p').textContent = error.message;
+    $('#sign-in').hidden = !!currentUser;
+    $('#access p').textContent = currentUser
+      ? `Signed in as ${currentUser.email || currentUser.displayName || 'this Google account'}, but this account does not have administrator access.`
+      : error.message;
   }
 }
 
@@ -62,7 +66,19 @@ document.querySelectorAll('[data-voucher-tab]').forEach(button => button.addEven
 
 function escapeHtml(value) { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; }
 
-observeAuth(user => { currentUser = user; if (user) load(); else { $('#access').hidden = false; $('#admin-content').hidden = true; } });
+observeAuth(user => {
+  currentUser = user;
+  if (user) {
+    $('#sign-in').hidden = true;
+    void load();
+    return;
+  }
+
+  $('#access').hidden = false;
+  $('#admin-content').hidden = true;
+  $('#sign-in').hidden = false;
+  $('#access p').textContent = 'Sign in with an administrator account to unlock revenue, billing, and user controls.';
+});
 $('#sign-in').addEventListener('click', () => signInWithGoogle().catch(error => alert(error.message)));
 $('#refresh').addEventListener('click', load);
 $('#user-search').addEventListener('input', renderUsers);

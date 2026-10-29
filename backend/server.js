@@ -30,6 +30,14 @@ let firebaseAdmin;
 
 app.disable('x-powered-by');
 
+app.use((request, response, next) => {
+  const hostname = String(request.hostname || '').toLowerCase();
+  if (hostname === 'buildmyportfolio.onrender.com') {
+    return response.redirect(301, `https://personacraftpro.onrender.com${request.originalUrl || '/'}`);
+  }
+  next();
+});
+
 function requireBillingConfig(_request, response, next) {
   if (!billingConfigured()) {
     response.status(503).json({ error: 'Paid plans are not configured on this server yet.' });

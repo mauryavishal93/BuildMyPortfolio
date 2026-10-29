@@ -1384,8 +1384,15 @@ $('sheets').addEventListener('focusout',e=>{
  const before=directEditSnapshots.get(el);if(before&&JSON.stringify(before)!==JSON.stringify(state)){recordHistory(before);saveLocal();renderInspector();updateUndoButton();toast('Resume updated')}
  directEditSnapshots.delete(el);delete el.dataset.currentText;
 });
-$('sheets').addEventListener('keydown',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;if(e.key==='Enter'){e.preventDefault();el.blur()}});
-$('sheets').addEventListener('paste',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;e.preventDefault();document.execCommand('insertText',false,(e.clipboardData||window.clipboardData).getData('text/plain').replace(/[\r\n]+/g,' '))});
+$('sheets').addEventListener('keydown',e=>{
+ const el=e.target.closest('[contenteditable="true"]');if(!el)return;
+ if(e.key==='Enter'){
+  const multiline=el.dataset.entryField==='detail'||el.dataset.textSource!==undefined;
+  if(multiline){e.preventDefault();document.execCommand('insertText',false,'\n')}
+  else{e.preventDefault();el.blur()}
+ }
+});
+$('sheets').addEventListener('paste',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;e.preventDefault();const text=(e.clipboardData||window.clipboardData).getData('text/plain').replace(/\r/g,'').replace(/\n/g,el.dataset.entryField==='detail'||el.dataset.textSource!==undefined?'\n':' ');document.execCommand('insertText',false,text)});
 $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection)});
 $('sheets').addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch'){

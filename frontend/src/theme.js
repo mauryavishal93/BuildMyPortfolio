@@ -4,10 +4,10 @@ const themes = ['dark', 'light'];
 function readTheme() {
   try {
     const storedTheme = localStorage.getItem(THEME_KEY);
-    return themes.includes(storedTheme) ? storedTheme : 'dark';
+    return themes.includes(storedTheme) ? storedTheme : 'light';
   } catch (error) {
     console.error('Unable to read the saved theme preference.', error);
-    return 'dark';
+    return 'light';
   }
 }
 

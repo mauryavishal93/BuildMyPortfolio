@@ -2,6 +2,12 @@ import { getFirebaseIdToken, observeAuth, signInWithGoogle } from './firebase-cl
 
 let currentUser;
 let dashboard;
+const filters = {
+  search: '',
+  status: 'all',
+  plan: 'all',
+  sort: 'newest'
+};
 const $ = selector => document.querySelector(selector);
 
 async function api(path, options = {}) {
@@ -12,6 +18,18 @@ async function api(path, options = {}) {
   return body;
 }
 
+function updateAdminMeta() {
+  const badge = $('#admin-user-badge');
+  const lastUpdated = $('#admin-last-updated');
+  if (badge) {
+    badge.textContent = currentUser ? `Signed in as ${currentUser.email || currentUser.displayName || 'Admin'}` : 'Admin view';
+  }
+  if (lastUpdated) {
+    const timestamp = new Date();
+    lastUpdated.textContent = `Updated ${timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  }
+}
+
 async function load() {
   try {
     dashboard = await api('/api/admin/dashboard');
@@ -19,7 +37,9 @@ async function load() {
     $('#stat-pro').textContent = dashboard.totals.pro;
     $('#stat-regular').textContent = dashboard.totals.regular;
     $('#stat-earnings').textContent = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((dashboard.totals.earnings || 0) / 100);
+    updateSummaryChips();
     renderUsers(); renderVouchers();
+    updateAdminMeta();
     $('#access').hidden = true;
     $('#admin-content').hidden = false;
     $('#sign-in').hidden = true;
@@ -33,13 +53,95 @@ async function load() {
   }
 }
 
+function userIsActive(user) {
+  return Boolean(user.isPro || (Number(user.validUntil) > Date.now()));
+}
+
+function userMatchesStatus(user, status) {
+  const active = userIsActive(user);
+  if (status === 'active') return active;
+  if (status === 'inactive') return !active;
+  if (status === 'pro') return !!user.isPro;
+  if (status === 'free') return !user.isPro;
+  return true;
+}
+
+function userMatchesPlan(user, plan) {
+  const activation = user.activationSource || '';
+  const adminMatch = user.activationSource === 'admin' && String(user.email || '').toLowerCase() === String(dashboard?.adminEmail || '').toLowerCase();
+  if (plan === 'pro') return !!user.isPro;
+  if (plan === 'free') return !user.isPro;
+  if (plan === 'voucher') return activation === 'server-verified';
+  if (plan === 'admin') return adminMatch;
+  return true;
+}
+
+function summarizeUsers() {
+  const users = dashboard?.users || [];
+  return {
+    all: users.length,
+    active: users.filter(user => userIsActive(user)).length,
+    inactive: users.filter(user => !userIsActive(user)).length,
+    pro: users.filter(user => user.isPro).length,
+    free: users.filter(user => !user.isPro).length
+  };
+}
+
+function updateSummaryChips() {
+  const summary = summarizeUsers();
+  ['all', 'active', 'inactive', 'pro', 'free'].forEach(key => {
+    const node = $(`#chip-${key}`);
+    if (node) node.textContent = summary[key] ?? 0;
+  });
+}
+
+function sortUsers(rows) {
+  const copy = [...rows];
+  const pct = value => Number(value) || 0;
+  switch (filters.sort) {
+    case 'oldest':
+      copy.sort((a, b) => String(a.createdAt || 0).localeCompare(String(b.createdAt || 0)));
+      break;
+    case 'name':
+      copy.sort((a, b) => `${a.name || a.email || 'User'}`.localeCompare(`${b.name || b.email || 'User'}`));
+      break;
+    case 'paid':
+      copy.sort((a, b) => pct(b.paidAmount) - pct(a.paidAmount));
+      break;
+    case 'pro-first':
+      copy.sort((a, b) => Number(b.isPro) - Number(a.isPro) || String(a.name || a.email || 'User').localeCompare(String(b.name || b.email || 'User')));
+      break;
+    case 'newest':
+    default:
+      copy.sort((a, b) => String(b.createdAt || 0).localeCompare(String(a.createdAt || 0)));
+      break;
+  }
+  return copy;
+}
+
 function renderUsers() {
-  const query = ($('#user-search').value || '').toLowerCase();
-  const rows = (dashboard.users || []).filter(user => `${user.name} ${user.email} ${user.uid}`.toLowerCase().includes(query));
+  const query = filters.search.toLowerCase();
+  const allRows = (dashboard.users || []).filter(user => {
+    const haystack = `${user.name || ''} ${user.email || ''} ${user.uid || ''}`.toLowerCase();
+    return haystack.includes(query)
+      && userMatchesStatus(user, filters.status)
+      && userMatchesPlan(user, filters.plan);
+  });
+  const rows = sortUsers(allRows);
+  const totalLabel = $('#user-count-label');
+  if (totalLabel) totalLabel.textContent = `${rows.length} account${rows.length === 1 ? '' : 's'}`;
+
+  if (!rows.length) {
+    $('#user-list').innerHTML = '<tr><td colspan="5" class="empty-table-state">No accounts match the current filters.</td></tr>';
+    return;
+  }
+
   $('#user-list').innerHTML = rows.map(user => {
     const activation = user.activationSource === 'server-verified' ? 'Voucher' : user.activationSource === 'admin' && String(user.email).toLowerCase() === String(dashboard.adminEmail || '').toLowerCase() ? 'Admin granted' : user.isPro ? 'Payment plan' : '—';
     const paid = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((Number(user.paidAmount) || 0) / 100);
-    return `<tr><td><button class="account-link" data-user="${escapeHtml(user.uid)}"><span class="account-name">${escapeHtml(user.name || 'User')}</span><span class="account-email">${escapeHtml(user.email || user.uid)}</span></button></td><td><span class="status-pill ${user.isPro ? 'pro' : ''}">${user.isPro ? 'Pro' : 'Regular'}</span><div class="activation-label">${escapeHtml(activation)}</div></td><td><strong>${paid}</strong><div class="activation-label">${Number(user.paymentCount) || 0} payment(s)</div></td><td>${user.validUntil ? new Date(user.validUntil).toLocaleString() : '—'}</td><td><div class="row-actions">${user.isPro ? '' : `<button class="mini-button" data-action="grant" data-plan="monthly" data-uid="${escapeHtml(user.uid)}">Monthly Pro</button><button class="mini-button" data-action="grant" data-plan="yearly" data-uid="${escapeHtml(user.uid)}">Yearly Pro</button>`}${user.isPro ? `<button class="mini-button danger" data-action="cancel" data-uid="${escapeHtml(user.uid)}">Cancel Pro</button>` : ''}</div></td></tr>`;
+    const status = userIsActive(user) ? 'Active' : 'Inactive';
+    const activeClass = userIsActive(user) ? 'pro' : '';
+    return `<tr><td><button class="account-link" data-user="${escapeHtml(user.uid)}"><span class="account-name">${escapeHtml(user.name || 'User')}</span><span class="account-email">${escapeHtml(user.email || user.uid)}</span></button></td><td><span class="status-pill ${user.isPro ? 'pro' : activeClass}">${user.isPro ? 'Pro' : status}</span><div class="activation-label">${escapeHtml(activation)}</div></td><td><strong>${paid}</strong><div class="activation-label">${Number(user.paymentCount) || 0} payment(s)</div></td><td>${user.validUntil ? new Date(user.validUntil).toLocaleString() : '—'}</td><td><div class="row-actions">${user.isPro ? '' : `<button class="mini-button" data-action="grant" data-plan="monthly" data-uid="${escapeHtml(user.uid)}">Monthly Pro</button><button class="mini-button" data-action="grant" data-plan="yearly" data-uid="${escapeHtml(user.uid)}">Yearly Pro</button>`}${user.isPro ? `<button class="mini-button danger" data-action="cancel" data-uid="${escapeHtml(user.uid)}">Cancel Pro</button>` : ''}</div></td></tr>`;
   }).join('');
 }
 
@@ -68,6 +170,7 @@ function escapeHtml(value) { const div = document.createElement('div'); div.text
 
 observeAuth(user => {
   currentUser = user;
+  updateAdminMeta();
   if (user) {
     $('#sign-in').hidden = true;
     void load();
@@ -81,7 +184,47 @@ observeAuth(user => {
 });
 $('#sign-in').addEventListener('click', () => signInWithGoogle().catch(error => alert(error.message)));
 $('#refresh').addEventListener('click', load);
-$('#user-search').addEventListener('input', renderUsers);
+$('#user-search').addEventListener('input', event => {
+  filters.search = event.target.value.trim();
+  renderUsers();
+});
+$('#status-filter').addEventListener('change', event => {
+  filters.status = event.target.value;
+  renderUsers();
+});
+$('#plan-filter').addEventListener('change', event => {
+  filters.plan = event.target.value;
+  renderUsers();
+});
+$('#sort-by').addEventListener('change', event => {
+  filters.sort = event.target.value;
+  renderUsers();
+});
+$('#clear-filters').addEventListener('click', () => {
+  filters.search = '';
+  filters.status = 'all';
+  filters.plan = 'all';
+  filters.sort = 'newest';
+  $('#user-search').value = '';
+  $('#status-filter').value = 'all';
+  $('#plan-filter').value = 'all';
+  $('#sort-by').value = 'newest';
+  renderUsers();
+});
+document.querySelectorAll('[data-summary-filter]').forEach(button => {
+  button.addEventListener('click', () => {
+    const filter = button.dataset.summaryFilter;
+    ['all', 'active', 'inactive', 'pro', 'free'].forEach(key => {
+      const chip = document.querySelector(`[data-summary-filter="${key}"]`);
+      if (chip) chip.classList.toggle('active', filter === key);
+    });
+    filters.status = filter === 'all' ? 'all' : filter;
+    filters.plan = 'all';
+    $('#status-filter').value = filters.status;
+    $('#plan-filter').value = 'all';
+    renderUsers();
+  });
+});
 $('#generate-voucher').addEventListener('click', async () => {
   try {
     const result = await api('/api/admin/vouchers', { method: 'POST', body: JSON.stringify({ plan: $('#voucher-plan').value, uid: $('#voucher-uid').value }) });

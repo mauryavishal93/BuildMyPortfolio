@@ -15,6 +15,10 @@
         <p>Manage access, vouchers, and revenue in one streamlined workspace.</p>
       </div>
       <div class="admin-hero-actions">
+        <div class="admin-utility">
+          <span id="admin-user-badge" class="admin-user-badge">Admin view</span>
+          <span id="admin-last-updated" class="admin-last-updated">Not refreshed yet</span>
+        </div>
         <span class="dashboard-status"><span class="status-dot"></span>Live sync</span>
         <button id="refresh" class="admin-button secondary">Refresh</button>
       </div>
@@ -30,6 +34,29 @@
     </section>
 
     <section id="admin-content" hidden>
+      <div class="admin-summary-bar" aria-label="User summary filters">
+        <button type="button" class="summary-chip active" data-summary-filter="all">
+          <span class="summary-label">All users</span>
+          <strong id="chip-all">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="active">
+          <span class="summary-label">Active</span>
+          <strong id="chip-active">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="inactive">
+          <span class="summary-label">Inactive</span>
+          <strong id="chip-inactive">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="pro">
+          <span class="summary-label">Pro</span>
+          <strong id="chip-pro">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="free">
+          <span class="summary-label">Free</span>
+          <strong id="chip-free">0</strong>
+        </button>
+      </div>
+
       <div class="admin-stats">
         <article class="stat-card">
           <div class="stat-header"><span>Total sign-ins</span><span class="stat-trend up">+24%</span></div>
@@ -49,6 +76,44 @@
         </article>
       </div>
 
+      <div class="admin-filter-bar" aria-label="User filters">
+        <div class="filter-group search-group">
+          <label for="user-search">Search</label>
+          <input id="user-search" class="user-search" placeholder="Search email or UID">
+        </div>
+        <div class="filter-group">
+          <label for="status-filter">Status</label>
+          <select id="status-filter">
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="pro">Pro</option>
+            <option value="free">Free</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="plan-filter">Plan</label>
+          <select id="plan-filter">
+            <option value="all">All plans</option>
+            <option value="pro">Pro</option>
+            <option value="free">Free</option>
+            <option value="voucher">Voucher</option>
+            <option value="admin">Admin granted</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="sort-by">Sort</label>
+          <select id="sort-by">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="name">Name A–Z</option>
+            <option value="paid">Highest paid</option>
+            <option value="pro-first">Pro first</option>
+          </select>
+        </div>
+        <button type="button" id="clear-filters" class="mini-button secondary-filter">Clear</button>
+      </div>
+
       <div class="admin-grid">
         <section class="admin-card user-card">
           <div class="admin-card-title">
@@ -56,7 +121,9 @@
               <p class="eyebrow">Users</p>
               <h2>Accounts</h2>
             </div>
-            <input id="user-search" class="user-search" placeholder="Search email or UID">
+            <div class="user-toolbar">
+              <span id="user-count-label" class="user-count-label">0 accounts</span>
+            </div>
           </div>
           <div class="table-wrap">
             <table>
@@ -69,7 +136,11 @@
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody id="user-list"></tbody>
+              <tbody id="user-list">
+                <tr>
+                  <td colspan="5" class="empty-table-state">Loading users…</td>
+                </tr>
+              </tbody>
             </table>
           </div>
         </section>

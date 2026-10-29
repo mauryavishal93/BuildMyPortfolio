@@ -94,6 +94,24 @@
         </a>
       </nav>
     </main>
+    <dialog id="cancelSubscriptionDialog" class="billing-confirmation-dialog" aria-labelledby="cancelSubscriptionTitle">
+      <form id="cancelSubscriptionForm" method="dialog">
+        <div class="billing-dialog-header">
+          <div>
+            <p class="about-eyebrow">CONFIRM</p>
+            <h2 id="cancelSubscriptionTitle">Cancel your Pro subscription?</h2>
+          </div>
+          <button class="mini-link-button" type="button" data-close-cancel-dialog>Close</button>
+        </div>
+        <p class="billing-dialog-copy">Your Pro access stays active until the end of the current paid period. Future renewals will be stopped after you confirm.</p>
+        <label class="billing-dialog-label" for="cancelReason">Optional reason</label>
+        <textarea id="cancelReason" name="reason" rows="4" maxlength="500" placeholder="Tell us why you are cancelling (optional)"></textarea>
+        <div class="billing-dialog-actions">
+          <button class="btn outline" type="button" data-close-cancel-dialog>Keep subscription</button>
+          <button class="btn danger" type="submit">Confirm cancellation</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="/src/theme.js"></script>
     <script type="module" src="/src/auth-nav.js"></script>
     <script type="module" src="/src/billing.js"></script>

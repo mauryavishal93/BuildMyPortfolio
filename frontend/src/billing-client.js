@@ -74,9 +74,12 @@ export async function verifyBillingCheckout(user, checkoutResponse) {
   });
 }
 
-export async function cancelBillingSubscription(user, subscriptionId) {
+export async function cancelBillingSubscription(user, subscriptionId, reason = '') {
   return billingRequest('cancel', user, {
     method: 'POST',
-    body: { subscriptionId }
+    body: {
+      subscriptionId,
+      ...(reason ? { reason } : {})
+    }
   });
 }

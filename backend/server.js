@@ -1095,6 +1095,7 @@ app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, 
 
 app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async (request, response) => {
   const subscriptionId = request.body?.subscriptionId;
+  const reason = typeof request.body?.reason === 'string' ? request.body.reason.trim() : '';
   if (typeof subscriptionId !== 'string' || !/^sub_[A-Za-z0-9]+$/.test(subscriptionId)) {
     response.status(400).json({ error: 'A valid subscription ID is required.' });
     return;
@@ -1153,9 +1154,13 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
         updatedAt: Date.now()
       }, { merge: true });
     });
+    const cancellationDetail = reason
+      ? `Future renewals have been stopped. ${reason}`
+      : 'Future renewals have been stopped. Access remains available through the paid period.';
     await recordBillingActivity(db, request.user.uid, {
       type: 'subscription', status: 'cancelled', title: 'Subscription cancelled by user',
-      detail: 'Future renewals have been stopped. Access remains available through the paid period.',
+      detail: cancellationDetail,
+      reason,
       planKey: snapshot.data().planKey, providerSubscriptionId: subscriptionId,
       actorType: 'user', actorUid: request.user.uid
     });

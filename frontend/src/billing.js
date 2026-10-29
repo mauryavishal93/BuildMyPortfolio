@@ -17,6 +17,9 @@ const billingStatus = $('#billingServiceStatus');
 const voucherInput = $('#voucherCode');
 const redeemButton = $('#redeemVoucher');
 const cancelButton = $('#cancelBilling');
+const cancelDialog = $('#cancelSubscriptionDialog');
+const cancelDialogForm = $('#cancelSubscriptionForm');
+const cancelReasonInput = $('#cancelReason');
 const yearlyButton = $('#switchBillingYearly');
 let currentUser = null;
 let entitlement = null;
@@ -158,18 +161,43 @@ async function refreshBillingPage(user, authError = null) {
   updateVoucherControls();
 }
 
-cancelButton.addEventListener('click', async () => {
+async function finalizeCancellation() {
   if (!currentUser || !entitlement?.subscriptionId) return;
-  if (!window.confirm('Cancel future renewals? Pro remains active until the current paid period ends.')) return;
   cancelButton.disabled = true;
   try {
-    await cancelBillingSubscription(currentUser, entitlement.subscriptionId);
+    const reason = cancelReasonInput.value.trim();
+    await cancelBillingSubscription(currentUser, entitlement.subscriptionId, reason);
     billingStatus.textContent = 'Cancellation scheduled. Pro remains active through the current paid period.';
+    cancelDialog?.close?.();
     await refreshBillingPage(currentUser);
   } catch (error) {
     billingStatus.textContent = error.message || 'Could not cancel this subscription.';
+  } finally {
     cancelButton.disabled = false;
   }
+}
+
+cancelButton.addEventListener('click', () => {
+  if (!currentUser || !entitlement?.subscriptionId) return;
+  if (cancelDialog && typeof cancelDialog.showModal === 'function') {
+    cancelReasonInput.value = '';
+    cancelDialog.showModal();
+    return;
+  }
+  if (!window.confirm('Cancel future renewals? Pro remains active until the current paid period ends.')) return;
+  void finalizeCancellation();
+});
+
+cancelDialogForm?.addEventListener('submit', event => {
+  event.preventDefault();
+  void finalizeCancellation();
+});
+
+document.querySelectorAll('[data-close-cancel-dialog]').forEach(button => {
+  button.addEventListener('click', () => {
+    cancelDialog?.close?.();
+    cancelReasonInput.value = '';
+  });
 });
 
 yearlyButton.addEventListener('click', async () => {

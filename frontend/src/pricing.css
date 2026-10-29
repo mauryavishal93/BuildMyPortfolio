@@ -292,6 +292,21 @@
   opacity:1;
   cursor:not-allowed;
 }
+.billing-confirmation-dialog{width:min(480px,calc(100vw - 32px));margin:auto;padding:0;border:1px solid rgba(184,148,86,.42);border-radius:18px;background:var(--panel,#151a17);color:var(--ink,#f3ead7);box-shadow:0 24px 72px rgba(0,0,0,.42)}
+.billing-confirmation-dialog::backdrop{background:rgba(3,7,13,.7);backdrop-filter:blur(3px)}
+.billing-confirmation-dialog form{padding:24px 24px 20px}
+.billing-dialog-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.billing-dialog-header h2{margin:6px 0 0;font-size:1.65rem;line-height:1.2}
+.billing-dialog-copy{margin:16px 0 18px;color:var(--muted,#c9c7bd);font-size:14px;line-height:1.6}
+.billing-dialog-label{display:block;margin-bottom:8px;color:var(--muted,#c9c7bd);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.billing-confirmation-dialog textarea{width:100%;min-height:88px;resize:vertical;padding:12px 14px;border:1px solid rgba(210,184,126,.28);border-radius:12px;background:rgba(255,255,255,.03);color:var(--ink,#f3ead7);font:inherit}
+.billing-confirmation-dialog textarea:focus-visible{outline:3px solid rgba(197,166,106,.38);outline-offset:1px}
+.billing-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.mini-link-button{padding:0;background:transparent;border:none;color:var(--muted,#c9c7bd);font:inherit;font-weight:700;cursor:pointer}
+.mini-link-button:hover,.mini-link-button:focus-visible{text-decoration:underline}
+:root[data-theme=light] .billing-confirmation-dialog{background:#fffefa;color:#292820;box-shadow:0 24px 72px rgba(48,43,32,.24)}
+:root[data-theme=light] .billing-confirmation-dialog textarea{background:#fff;border-color:#e2d8c5;color:#292820}
+:root[data-theme=light] .mini-link-button{color:#5f4b2d}
 .support-dialog{width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;margin:auto;padding:30px;border:1px solid rgba(184,148,86,.42);border-radius:16px;background:#151a17;color:#f3ead7;box-shadow:0 24px 70px rgba(0,0,0,.4)}
 .support-dialog::backdrop{background:rgba(5,9,8,.68);backdrop-filter:blur(3px)}
 .support-dialog-content{position:relative;padding-right:26px}

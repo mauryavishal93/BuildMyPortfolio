@@ -71,7 +71,7 @@ function normalizeState(d){
  if(pos&&typeof pos==='object')for(const [k,p] of Object.entries(pos)){if(!seen.has(k)||!p||typeof p!=='object')continue;const x=Number(p.x),y=Number(p.y),w=Number(p.w);if(![x,y,w].every(Number.isFinite))continue;if(ver<3&&x===0&&w===610)continue;out.positions[k]={x:clamp(x,0,PAGE_W,0),y:clamp(y,0,PAGE_H,0),w:clamp(w,120,PAGE_W,610)}}
  return out;
 }
-let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null;
+let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null;
@@ -79,7 +79,33 @@ let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGener
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 const detailLines=v=>String(v||'').replace(/\r\n?/g,'\n').split('\n');
-function renderDetailInputs(entry,index){return detailLines(entry.details).map((line,lineIndex)=>`<div class="detail-bullet-row"><span class="detail-bullet-marker" aria-hidden="true">•</span><input aria-label="Detail bullet ${lineIndex+1}" data-entry-detail-line data-index="${index}" data-line="${lineIndex}" value="${$esc(line)}"><button class="detail-bullet-remove" type="button" data-remove-detail-line="${lineIndex}" data-index="${index}" aria-label="Remove bullet ${lineIndex+1}" title="Remove bullet">×</button></div>`).join('')}
+function pointerMarker(style,index){return style==='number'?`${index+1}.`:({bullet:'•',arrow:'→',check:'✓',dash:'–',diamond:'◆'}[style]||'')}
+function renderDetailInputs(entry,index){const style=sectionById(selectedId)?.listStyle||'bullet';return detailLines(entry.details).map((line,lineIndex)=>`<div class="detail-bullet-row"><span class="detail-bullet-marker" aria-hidden="true">${pointerMarker(style,lineIndex)}</span><input aria-label="Detail bullet ${lineIndex+1}" data-entry-detail-line data-index="${index}" data-line="${lineIndex}" value="${$esc(line)}"><button class="detail-bullet-remove" type="button" data-remove-detail-line="${lineIndex}" data-index="${index}" aria-label="Remove bullet ${lineIndex+1}" title="Remove bullet">×</button></div>`).join('')}
+function renderPointerInputs(section){return detailLines(section.content).map((line,lineIndex)=>`<div class="detail-bullet-row"><span class="detail-bullet-marker" aria-hidden="true">${pointerMarker(section.listStyle,lineIndex)}</span><input aria-label="Pointer line ${lineIndex+1}" data-section-pointer-line data-section-id="${$esc(section.id)}" data-line="${lineIndex}" value="${$esc(line)}"><button class="detail-bullet-remove" type="button" data-remove-pointer-line="${lineIndex}" data-section-id="${$esc(section.id)}" aria-label="Remove line ${lineIndex+1}" title="Remove line">×</button></div>`).join('')}
+function insertEntryDetailLine(index,afterLine){
+ const section=sectionById(selectedId),entry=section?.entries?.[index];if(!entry)return;
+ const details=detailLines(entry.details);
+ let lineIndex;
+ if(Number.isInteger(afterLine)){lineIndex=Math.min(afterLine+1,details.length);details.splice(lineIndex,0,'')}
+ else if(details.length===1&&!details[0])lineIndex=0;
+ else{lineIndex=details.length;details.push('')}
+ entry.details=details.join('\n');saveLocal();
+ const list=$('inspector').querySelector(`[data-entry-details="${index}"]`);if(list)list.innerHTML=renderDetailInputs(entry,index);
+ renderSheets();
+ requestAnimationFrame(()=>$('inspector').querySelector(`[data-entry-detail-line][data-index="${index}"][data-line="${lineIndex}"]`)?.focus());
+}
+function insertPointerLine(sectionId,afterLine){
+ const section=sectionById(sectionId);if(!section)return;
+ const contentLines=detailLines(section.content);
+ let lineIndex;
+ if(Number.isInteger(afterLine)){lineIndex=Math.min(afterLine+1,contentLines.length);contentLines.splice(lineIndex,0,'')}
+ else if(contentLines.length===1&&!contentLines[0])lineIndex=0;
+ else{lineIndex=contentLines.length;contentLines.push('')}
+ section.content=contentLines.join('\n');saveLocal();
+ const list=$('inspector').querySelector(`[data-pointer-lines="${sectionId}"]`);if(list)list.innerHTML=renderPointerInputs(section);
+ renderSheets();
+ requestAnimationFrame(()=>$('inspector').querySelector(`[data-section-pointer-line][data-section-id="${sectionId}"][data-line="${lineIndex}"]`)?.focus());
+}
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
 function updateProLabel(){const isPro=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);const badge=$('proBrandBadge');if(badge)badge.hidden=!isPro;document.title=isPro?`${baseDocumentTitle} | Pro`:baseDocumentTitle}
 function authErrorMessage(error){
@@ -601,10 +627,12 @@ function renderInspector(){
    if(s.entries){
     h+=s.entries.map((e,i)=>`<details class="inspector-entry"${i===0?' open':''}><summary><span>Entry ${i+1}</span><span class="inspector-entry-title" data-entry-summary="${i}">${$esc(e.role||e.company||'Add entry details')}</span></summary><div class="inspector-entry-content"><div class="field"><label>Role / qualification</label><input data-entry="role" data-index="${i}" value="${$esc(e.role)}"></div><div class="field"><label>Company / institution</label><input data-entry="company" data-index="${i}" value="${$esc(e.company)}"></div><div class="field"><label>Date</label><input data-entry="date" data-index="${i}" value="${$esc(e.date)}"></div><div class="field"><label>Details</label><div class="detail-bullet-list" data-entry-details="${i}">${renderDetailInputs(e,i)}</div><button class="btn outline small" type="button" data-add-detail-line="${i}">＋ Add bullet</button></div><button class="btn danger small" data-remove-entry="${i}">Remove entry</button></div></details>`).join('');
      h+='<button class="btn outline small" id="addEntry">＋ Add entry</button>';
-   }else h+=`<div class="field"><label>Content (use new lines for paragraphs; comma-separated skills work too)</label><textarea id="sectionContent">${$esc(s.content||'')}</textarea></div>`;
+  }else if(s.type!=='skills'&&s.listStyle!=='none')h+=`<div class="field"><label>Pointer lines</label><div class="detail-bullet-list" data-pointer-lines="${$esc(s.id)}">${renderPointerInputs(s)}</div><button class="btn outline small" type="button" data-add-pointer-line="${$esc(s.id)}">＋ Add line</button></div>`;
+  else h+=`<div class="field"><label>Content (use new lines for paragraphs; comma-separated skills work too)</label><textarea id="sectionContent">${$esc(s.content||'')}</textarea></div>`;
    h+='<div class="field-row" style="margin-top:12px"><button class="btn outline small" id="duplicateSection">Duplicate section</button><button class="btn danger small" id="deleteSection">Delete section</button></div>';
  }else if(rightTab==='section')h+='<div class="small-note">Choose a section in the list or click a section on the resume to edit its content.</div>';
  $('inspector').innerHTML=h;
+ $('inspector').querySelectorAll('.inspector-entry').forEach((entry,index)=>{entry.open=inspectorEntriesExpanded||index===0});
  $('inspector').querySelectorAll('[data-profile]').forEach(el=>el.addEventListener('input',()=>{state.profile[el.dataset.profile]=el.value;saveLocal();document.querySelectorAll('[data-profile-field]').forEach(sheetField=>{if(sheetField.dataset.profileField===el.dataset.profile&&sheetField!==document.activeElement)sheetField.textContent=el.value})}));
  $('inspector').querySelectorAll('[data-design]').forEach(el=>el.addEventListener('change',()=>{
   const k=el.dataset.design;let v;
@@ -616,12 +644,30 @@ function renderInspector(){
  const photo=$('photoInput');photo?.addEventListener('change',()=>{const f=photo.files&&photo.files[0];if(!f)return;if(!f.type.startsWith('image/')||f.size>8*1024*1024){toast('Choose an image under 8 MB');return}const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const scale=Math.min(1,500/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,im.width*scale);c.height=Math.max(1,im.height*scale);c.getContext('2d').drawImage(im,0,0,c.width,c.height);transact(()=>state.profile.photo=c.toDataURL('image/jpeg',.84))};im.onerror=()=>toast('That image could not be read');im.src=String(r.result)};r.readAsDataURL(f)});
  $('removePhoto')?.addEventListener('click',()=>transact(()=>state.profile.photo=''));
  $('sectionTitle')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.title=e.target.value||'Untitled section';saveLocal();syncSheetFields();});
- $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();});
+ $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();renderInspector();});
  $('sectionContent')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.content=e.target.value;saveLocal();syncSheetFields();});
  $('inspector').querySelectorAll('[data-entry]').forEach(el=>el.addEventListener('input',()=>{const x=sectionById(selectedId),i=+el.dataset.index;if(!x?.entries?.[i])return;x.entries[i][el.dataset.entry]=el.value;if(el.dataset.entry==='role'||el.dataset.entry==='company')updateInspectorEntryTitle(i,x.entries[i]);saveLocal();syncSheetFields();}));
- $('inspector').oninput=event=>{const el=event.target.closest('[data-entry-detail-line]');if(!el)return;const x=sectionById(selectedId),i=+el.dataset.index,lineIndex=+el.dataset.line;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details[lineIndex]=el.value;x.entries[i].details=details.join('\n');saveLocal();renderSheets()};
- $('inspector').onclick=event=>{const button=event.target.closest('[data-remove-detail-line]');if(!button)return;const x=sectionById(selectedId),i=+button.dataset.index,lineIndex=+button.dataset.removeDetailLine;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details.splice(lineIndex,1);if(!details.length)details.push('');x.entries[i].details=details.join('\n');saveLocal();const list=$('inspector').querySelector(`[data-entry-details="${i}"]`);if(list)list.innerHTML=renderDetailInputs(x.entries[i],i);renderSheets();$('inspector').querySelector(`[data-entry-detail-line][data-index="${i}"][data-line="${Math.min(lineIndex,details.length-1)}"]`)?.focus()};
- $('inspector').querySelectorAll('[data-add-detail-line]').forEach(button=>button.addEventListener('click',()=>{const x=sectionById(selectedId),i=+button.dataset.addDetailLine;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);if(details.length===1&&!details[0])details[0]='';details.push('');x.entries[i].details=details.join('\n');saveLocal();const list=$('inspector').querySelector(`[data-entry-details="${i}"]`);if(list)list.innerHTML=renderDetailInputs(x.entries[i],i);renderSheets();$('inspector').querySelector(`[data-entry-detail-line][data-index="${i}"][data-line="${details.length-1}"]`)?.focus();}));
+ $('inspector').oninput=event=>{
+  const detailInput=event.target.closest('[data-entry-detail-line]');
+  if(detailInput){const x=sectionById(selectedId),i=+detailInput.dataset.index,lineIndex=+detailInput.dataset.line;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details[lineIndex]=detailInput.value;x.entries[i].details=details.join('\n');saveLocal();renderSheets();return}
+  const pointerInput=event.target.closest('[data-section-pointer-line]');
+  if(pointerInput){const section=sectionById(pointerInput.dataset.sectionId),lineIndex=+pointerInput.dataset.line;if(!section)return;const contentLines=detailLines(section.content);contentLines[lineIndex]=pointerInput.value;section.content=contentLines.join('\n');saveLocal();renderSheets()}
+ };
+ $('inspector').onkeydown=event=>{
+  if(event.key!=='Enter')return;
+  const detailInput=event.target.closest('[data-entry-detail-line]');
+  if(detailInput){event.preventDefault();const x=sectionById(selectedId),i=+detailInput.dataset.index,lineIndex=+detailInput.dataset.line;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details[lineIndex]=detailInput.value;x.entries[i].details=details.join('\n');insertEntryDetailLine(i,lineIndex);return}
+  const pointerInput=event.target.closest('[data-section-pointer-line]');
+  if(pointerInput){event.preventDefault();const section=sectionById(pointerInput.dataset.sectionId),lineIndex=+pointerInput.dataset.line;if(!section)return;const contentLines=detailLines(section.content);contentLines[lineIndex]=pointerInput.value;section.content=contentLines.join('\n');insertPointerLine(section.id,lineIndex)}
+ };
+ $('inspector').onclick=event=>{
+  const detailButton=event.target.closest('[data-remove-detail-line]');
+  if(detailButton){const x=sectionById(selectedId),i=+detailButton.dataset.index,lineIndex=+detailButton.dataset.removeDetailLine;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details.splice(lineIndex,1);if(!details.length)details.push('');x.entries[i].details=details.join('\n');saveLocal();const list=$('inspector').querySelector(`[data-entry-details="${i}"]`);if(list)list.innerHTML=renderDetailInputs(x.entries[i],i);renderSheets();$('inspector').querySelector(`[data-entry-detail-line][data-index="${i}"][data-line="${Math.min(lineIndex,details.length-1)}"]`)?.focus();return}
+  const pointerButton=event.target.closest('[data-remove-pointer-line]');
+  if(pointerButton){const section=sectionById(pointerButton.dataset.sectionId),lineIndex=+pointerButton.dataset.removePointerLine;if(!section)return;const contentLines=detailLines(section.content);contentLines.splice(lineIndex,1);if(!contentLines.length)contentLines.push('');section.content=contentLines.join('\n');saveLocal();const list=$('inspector').querySelector(`[data-pointer-lines="${section.id}"]`);if(list)list.innerHTML=renderPointerInputs(section);renderSheets();$('inspector').querySelector(`[data-section-pointer-line][data-section-id="${section.id}"][data-line="${Math.min(lineIndex,contentLines.length-1)}"]`)?.focus();}
+ };
+ $('inspector').querySelectorAll('[data-add-pointer-line]').forEach(button=>button.addEventListener('click',()=>insertPointerLine(button.dataset.addPointerLine)));
+ $('inspector').querySelectorAll('[data-add-detail-line]').forEach(button=>button.addEventListener('click',()=>insertEntryDetailLine(+button.dataset.addDetailLine)));
  $('inspector').querySelectorAll('[data-remove-entry]').forEach(el=>el.addEventListener('click',()=>transact(()=>{const x=sectionById(selectedId);if(x)x.entries.splice(+el.dataset.removeEntry,1)})));
  $('addEntry')?.addEventListener('click',()=>transact(()=>{const x=sectionById(selectedId);if(x)x.entries.push({role:'New role',company:'Organization',date:'Year',details:'Add details here.'})}));
  $('duplicateSection')?.addEventListener('click',()=>transact(()=>{const i=state.sections.findIndex(x=>x.id===selectedId);if(i>=0){const n=deep(state.sections[i]);n.id=uid();n.title+=' (copy)';state.sections.splice(i+1,0,n);selectedId=n.id}}));
@@ -644,7 +690,7 @@ function savePrefs(){try{localStorage.setItem('resumeStudioUI',JSON.stringify({l
 function loadPrefs(){try{const u=JSON.parse(localStorage.getItem('resumeStudioUI')||'null');if(u){leftWidth=clamp(u.leftWidth,LW[0],LW[1],260);panelWidth=clamp(u.panelWidth,RW[0],RW[1],300);leftCollapsed=!!u.leftCollapsed;collapsed=!!u.collapsed;leftTab=u.leftTab==='sections'?'sections':'templates';rightTab=u.rightTab==='section'?'section':'design';onboardingDismissed=u.onboardingDismissed===true}}catch(e){}}
 function render(){renderTemplates();renderSectionList();renderSheets();renderInspector();$('docName').value=state.docName;$('pageLayout').value=state.layout;$('editMode').value=state.mode;updateUndoButton()}
 /* Selecting only toggles highlight classes: no re-layout, so the page never jumps while you click around. */
-function selectSection(id){selectedId=id;rightTab='section';renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
+function selectSection(id,expandEntries=false){selectedId=id;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
 function addSection(type,title,content){const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};if(['experience','education','projects'].includes(type))s.entries=[{role:type==='education'?'Degree / qualification':type==='projects'?'Project name':'Job title',company:'Organization',date:'Year',details:'Add one detail per line.'}];else s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');state.sections.push(s);selectedId=s.id}
 function download(filename,blob){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
 function exportJSON(){download((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.json',new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));toast('JSON backup downloaded')}
@@ -1385,7 +1431,9 @@ function syncInspectorForInlineEdit(el,value){
   if(panel&&entry&&!panel.contains(document.activeElement))panel.innerHTML=renderDetailInputs(entry,Number(el.dataset.entry));
  }
  else if(el.dataset.textSource!==undefined){
-  const panel=$('inspector')?.querySelector('#sectionContent');if(panel&&document.activeElement!==panel)panel.value=String(sectionById(el.dataset.sectionId)?.content||'');
+  const section=sectionById(el.dataset.sectionId),list=$('inspector')?.querySelector(`[data-pointer-lines="${el.dataset.sectionId}"]`);
+  if(list&&section&&!list.contains(document.activeElement))list.innerHTML=renderPointerInputs(section);
+  else{const panel=$('inspector')?.querySelector('#sectionContent');if(panel&&document.activeElement!==panel)panel.value=String(section?.content||'')}
  }
 }
 function directEditValue(el){
@@ -1579,7 +1627,7 @@ $('sheets').addEventListener('keydown',e=>{
 });
 $('sheets').addEventListener('paste',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;e.preventDefault();const text=(e.clipboardData||window.clipboardData).getData('text/plain').replace(/\r/g,'').replace(/\n/g,el.dataset.entryField==='detail'||el.dataset.textSource!==undefined?'\n':' ');document.execCommand('insertText',false,text)});
 $('sheets').addEventListener('cut',()=>{requestAnimationFrame(()=>{document.querySelectorAll('#sheets [contenteditable="true"]').forEach(editable=>editable.dispatchEvent(new Event('input',{bubbles:true})));saveLocal();renderInspector();updateUndoButton()})});
-$('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection)});
+ $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection,Boolean(e.target.closest('[contenteditable="true"]')))});
 $('sheets').addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch'){
   touchPoints.set(e.pointerId,{x:e.clientX,y:e.clientY});

@@ -17,10 +17,21 @@ const accountStatus = $('#billingAccountStatus');
 const checkoutStatus = $('#checkoutStatus');
 const monthlyButton = $('#purchaseMonthly');
 const yearlyButton = $('#purchaseYearly');
+const supportDialog = $('#supportDialog');
 let currentUser = null;
 let billingConfig = null;
 let entitlement = null;
 let voucherSignInPromise = null;
+
+$('#supportLink')?.addEventListener('click', event => {
+  event.preventDefault();
+  if (typeof supportDialog?.showModal === 'function') supportDialog.showModal();
+  else window.location.href = 'mailto:mauryavishal93@gmail.com';
+});
+$('#closeSupportDialog')?.addEventListener('click', () => supportDialog?.close());
+supportDialog?.addEventListener('click', event => {
+  if (event.target === supportDialog) supportDialog.close();
+});
 
 const formatPrice = amount => new Intl.NumberFormat('en-IN', {
   style: 'currency',

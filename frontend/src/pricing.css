@@ -265,3 +265,30 @@
   opacity:1;
   cursor:not-allowed;
 }
+.support-dialog{width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;margin:auto;padding:30px;border:1px solid rgba(184,148,86,.42);border-radius:16px;background:#151a17;color:#f3ead7;box-shadow:0 24px 70px rgba(0,0,0,.4)}
+.support-dialog::backdrop{background:rgba(5,9,8,.68);backdrop-filter:blur(3px)}
+.support-dialog-content{position:relative;padding-right:26px}
+.support-dialog-close{position:absolute;top:-12px;right:-16px;width:36px;height:36px;border:1px solid rgba(210,184,126,.36);border-radius:9px;background:transparent;color:inherit;font-size:23px;line-height:1}
+.support-dialog-close:hover{background:rgba(255,255,255,.08)}
+.support-dialog .about-eyebrow{margin:0 0 8px;color:#c4a66a;font-size:10px;font-weight:800;letter-spacing:.1em}
+.support-dialog h2{margin:0 0 8px;font-size:26px;line-height:1.2}
+.support-dialog p:not(.about-eyebrow){margin:0;color:#c9c7bd;font-size:14px;line-height:1.5}
+.support-dialog-actions{display:grid;gap:10px;margin-top:22px}
+.support-contact-method{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px 16px;border:1px solid rgba(210,184,126,.24);border-radius:10px;background:rgba(255,255,255,.035);color:inherit;text-decoration:none;transition:transform .16s ease,border-color .16s ease,background-color .16s ease}
+.support-contact-method:hover,.support-contact-method:focus-visible{transform:translateY(-1px);border-color:#b89456;background:rgba(197,166,106,.1)}
+.support-contact-method:focus-visible,.support-dialog-close:focus-visible{outline:3px solid rgba(197,166,106,.55);outline-offset:3px}
+.support-contact-copy{display:grid;gap:3px;min-width:0}
+.support-contact-label{color:#c4a66a;font-size:9px;font-weight:800;letter-spacing:.1em}
+.support-contact-copy strong{font-size:15px}
+.support-contact-detail{overflow-wrap:anywhere;color:#c9c7bd;font-size:12px}
+.support-contact-action{color:#e1c88f;font-size:11px;font-weight:750;white-space:nowrap}
+:root[data-theme=light] .support-dialog{border-color:#e2d8c5;background:#fffefa;color:#292820;box-shadow:0 24px 64px rgba(48,43,32,.24)}
+:root[data-theme=light] .support-dialog .about-eyebrow,:root[data-theme=light] .support-contact-label{color:#765b2e}
+:root[data-theme=light] .support-contact-method{border-color:#e2d8c5;background:#fffefa;color:#292820;box-shadow:0 6px 16px rgba(48,43,32,.045)}
+:root[data-theme=light] .support-contact-method:hover,:root[data-theme=light] .support-contact-method:focus-visible{border-color:#bd9b5b;background:#faf5eb}
+:root[data-theme=light] .support-contact-detail{color:#68665d}
+:root[data-theme=light] .support-contact-action{color:#765b2e}
+:root[data-theme=light] .support-dialog-close{border-color:#e2d8c5}
+:root[data-theme=light] .support-dialog-close:hover{background:#f4eee1}
+@media(max-width:520px){.support-dialog{padding:24px 20px}.support-dialog h2{font-size:23px}.support-contact-method{padding:13px 12px}}
+@media(prefers-reduced-motion:reduce){.support-contact-method{transition:none}.support-contact-method:hover{transform:none}}

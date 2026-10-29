@@ -6,7 +6,7 @@ const $ = selector => document.querySelector(selector);
 
 async function api(path, options = {}) {
   const token = await getFirebaseIdToken(currentUser);
-  const response = await fetch(path, { ...options, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(options.headers || {}) } });
+  const response = await fetch(path, { ...options, headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json', ...(options.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || 'Request failed');
   return body;

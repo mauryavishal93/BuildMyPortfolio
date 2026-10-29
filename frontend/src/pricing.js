@@ -101,22 +101,37 @@ function updateVoucherControls() {
   const section = $('#voucherSection');
   const button = $('#redeemVoucher');
   const input = $('#voucherCode');
-  if (!section || !button) return;
-  section.hidden = !billingConfig?.voucherEnabled;
+  const status = $('#voucherStatus');
+  if (!section || !button || !input || !status) return;
+  section.hidden = false;
   const proActive = entitlement?.status === 'active';
-  const unavailable = !billingConfig?.voucherEnabled || proActive;
+  const signInRequired = !currentUser;
+  const unavailable = signInRequired || proActive;
+
   button.disabled = unavailable;
   input.disabled = unavailable;
+  section.classList.toggle('voucher-disabled', signInRequired || proActive);
   section.classList.toggle('voucher-pro-active', proActive);
+
+  if (signInRequired) {
+    input.value = '';
+    input.placeholder = 'Sign in to redeem a voucher';
+    status.dataset.state = 'error';
+    status.textContent = 'Sign in with Google before redeeming a voucher.';
+    return;
+  }
+
   if (proActive) {
     input.value = '';
     input.placeholder = 'Pro access is already active';
-    const status = $('#voucherStatus');
     status.dataset.state = 'success';
     status.textContent = 'Pro is active — voucher redemption is unavailable while your plan is active.';
-  } else {
-    input.placeholder = 'Enter voucher code';
+    return;
   }
+
+  input.placeholder = 'Enter voucher code';
+  status.dataset.state = '';
+  status.textContent = 'Enter a voucher code to check it for this account.';
 }
 
 function promptVoucherSignIn() {
@@ -232,11 +247,20 @@ $('#voucherForm').addEventListener('submit', async event => {
   const status = $('#voucherStatus');
   const button = $('#redeemVoucher');
   const code = codeInput.value.trim();
+
   if (!currentUser) {
-    void promptVoucherSignIn();
+    status.dataset.state = 'error';
+    status.textContent = 'Sign in with Google before redeeming a voucher.';
     return;
   }
-  if (!billingConfig?.voucherEnabled || !code) return;
+
+  if (entitlement?.status === 'active') {
+    status.dataset.state = 'success';
+    status.textContent = 'Pro is already active — voucher redemption is unavailable while your plan is active.';
+    return;
+  }
+
+  if (!code) return;
   const user = currentUser;
   button.disabled = true;
   status.dataset.state = '';
@@ -377,7 +401,6 @@ yearlyButton.addEventListener('click', () => entitlement?.status === 'active' &&
 
 loadBillingConfig().then(config => {
   billingConfig = config;
-  $('#voucherSection').hidden = !config.voucherEnabled;
   if (!config.checkoutEnabled) {
     checkoutStatus.textContent = 'Pro checkout is temporarily unavailable. Please try again later.';
   }
@@ -385,6 +408,8 @@ loadBillingConfig().then(config => {
 }).catch(error => {
   console.error('Could not load checkout configuration.', error);
   checkoutStatus.textContent = error.message;
+  updateVoucherControls();
+  $('#voucherStatus').textContent = 'Voucher redemption is unavailable because the billing service could not be reached.';
 });
 
 if (!cloudConfigured) {

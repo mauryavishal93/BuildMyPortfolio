@@ -1345,7 +1345,7 @@ $('sectionList').addEventListener('dragend',e=>{const row=e.target.closest('[dat
 $('sectionList').addEventListener('dragover',e=>{if(e.target.closest('[data-section-row]')){e.preventDefault();e.dataTransfer.dropEffect='move'}});
 $('sectionList').addEventListener('drop',e=>{e.preventDefault();const row=e.target.closest('[data-section-row]'),id=e.dataTransfer.getData('text/plain');if(!row||!id||id===row.dataset.sectionRow)return;transact(()=>{const from=state.sections.findIndex(x=>x.id===id),to=state.sections.findIndex(x=>x.id===row.dataset.sectionRow);if(from<0||to<0)return;const [item]=state.sections.splice(from,1);state.sections.splice(to,0,item)})});
 const directEditSnapshots=new WeakMap();
-function directEditValue(el){return String(el.innerText||'').replace(/\n{2,}/g,'\n').trim()}
+function directEditValue(el){return String(el.innerText||'').replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim()}
 $('sheets').addEventListener('focusin',e=>{
  const el=e.target.closest('[contenteditable="true"]');if(!el)return;
  directEditSnapshots.set(el,deep(state));

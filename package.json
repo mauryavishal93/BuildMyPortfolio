@@ -8,23 +8,13 @@
   },
   "scripts": {
     "dev": "vite --open /editor.html",
-    "backend": "node backend/server.js",
     "build": "vite build",
     "test": "node --test",
-    "preview": "vite preview --host 0.0.0.0",
-    "start": "node backend/server.js"
+    "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "firebase": "^13.0.0",
-    "firebase-admin": "^14.5.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1"
-  },
-  "overrides": {
-    "@firebase/firestore": {
-      "@grpc/grpc-js": "^1.13.6"
-    }
   },
   "devDependencies": {
     "vite": "^7.0.0"

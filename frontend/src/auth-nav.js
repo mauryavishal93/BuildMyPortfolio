@@ -1,7 +1,16 @@
-import { cloudConfigured, observeAuth, signInWithGoogle, signOutUser } from './firebase-cloud.js';
-import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
-import { canUseFeature, FEATURE_IDS } from './plan-access.js';
-import { confirmSignOut } from './signout-modal.js';
+// Authentication and billing are intentionally unavailable in the static website.
+document.querySelectorAll('[data-auth-sign-in], [data-auth-sign-out], [data-auth-status]').forEach(element => {
+  element.hidden = true;
+});
+const cloudConfigured=false;
+const FEATURE_IDS={ALL_TEMPLATES:'all_templates'};
+const canUseFeature=()=>true;
+const loadBillingConfig=async()=>({entitlementEnabled:false});
+const loadBillingEntitlement=async()=>null;
+const confirmSignOut=async()=>true;
+const observeAuth=()=>()=>{};
+const signInWithGoogle=async()=>{};
+const signOutUser=async()=>{};
 
 const signInButton = document.querySelector('[data-auth-sign-in]');
 const signOutButton = document.querySelector('[data-auth-sign-out]');

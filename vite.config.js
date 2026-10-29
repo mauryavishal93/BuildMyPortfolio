@@ -5,11 +5,6 @@ const frontendRoot = fileURLToPath(new URL('./frontend', import.meta.url));
 
 export default defineConfig({
   root: frontendRoot,
-  server: {
-    proxy: {
-      '/api': 'http://127.0.0.1:3000'
-    }
-  },
   build: {
     chunkSizeWarningLimit: 1000,
     outDir: fileURLToPath(new URL('./dist', import.meta.url)),
@@ -17,11 +12,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: fileURLToPath(new URL('./frontend/index.html', import.meta.url)),
-        admin: fileURLToPath(new URL('./frontend/admin.html', import.meta.url)),
         editor: fileURLToPath(new URL('./frontend/editor.html', import.meta.url)),
         about: fileURLToPath(new URL('./frontend/about.html', import.meta.url)),
         privacy: fileURLToPath(new URL('./frontend/privacy.html', import.meta.url)),
-        pricing: fileURLToPath(new URL('./frontend/pricing.html', import.meta.url)),
         terms: fileURLToPath(new URL('./frontend/terms.html', import.meta.url)),
         refunds: fileURLToPath(new URL('./frontend/refunds.html', import.meta.url))
       }

@@ -1,16 +1,25 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
-import { confirmSignOut } from './signout-modal.js';
-import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
-import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
 import { readSavedProject } from './project-storage.js';
 import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from './resume-pdf.js';
-import {
- cloudConfigured, consumeProTemplateDownload, deleteResume, getProTemplateDownloadStatus, listResumes, observeAuth, saveResume,
- signInWithGoogle, signOutUser
-} from './firebase-cloud.js';
 import { zoomFromPinch } from './zoom.js';
+
+const cloudConfigured=false;
+const FEATURE_IDS={ALL_TEMPLATES:'all_templates',JOB_DESCRIPTION_ATS:'job_description_ats'};
+const PLAN_CONFIG={pro:{monthly:{price:0},yearly:{price:0}}};
+const canUseFeature=()=>true;
+const isProTemplate=()=>false;
+const loadBillingConfig=async()=>({entitlementEnabled:false});
+const loadBillingEntitlement=async()=>null;
+const getProTemplateDownloadStatus=async()=>({remaining:null});
+const consumeProTemplateDownload=async()=>true;
+const saveResume=async()=>({ok:false});
+const listResumes=async()=>[];
+const deleteResume=async()=>true;
+const observeAuth=()=>()=>{};
+const signInWithGoogle=async()=>{throw new Error('Cloud sign-in is not available in the static site.')};
+const signOutUser=async()=>{};
 
 (()=>{'use strict';
 const $=id=>document.getElementById(id),deep=x=>JSON.parse(JSON.stringify(x)),uid=()=>Math.random().toString(36).slice(2,10);
@@ -1609,20 +1618,6 @@ $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.
 $('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
 $('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
- $('googleSignInBtn').addEventListener('click',async()=>{
-  try{await signInWithGoogle()}
-  catch(error){toast(authErrorMessage(error))}
- });
- $('googleSignOutBtn').addEventListener('click',async()=>{
-  if(!await confirmSignOut())return;
-  try{await signOutUser();toast('Signed out. Your local browser copy is unchanged.')}
-  catch(error){toast(error.message||'Could not sign out.')}
- });
- $('cloudResumesBtn').addEventListener('click',openCloudModal);
- $('closeCloudModal').addEventListener('click',closeCloudModal);
- $('closeCloudModalAction').addEventListener('click',closeCloudModal);
- $('cloudModalBg').addEventListener('click',event=>{if(event.target===$('cloudModalBg'))closeCloudModal()});
- $('refreshCloudResumes').addEventListener('click',refreshCloudResumes);
  $('closeUpgrade').addEventListener('click',closeUpgrade);
  $('cancelUpgrade').addEventListener('click',closeUpgrade);
  $('previewUpgrade').addEventListener('click',previewPendingTemplate);
@@ -1632,13 +1627,6 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
  $('closeTemplatePreviewAction').addEventListener('click',closeTemplatePreview);
  $('exportProTemplatePreview').addEventListener('click',exportProTemplatePreview);
  $('templatePreviewModalBg').addEventListener('click',event=>{if(event.target===$('templatePreviewModalBg'))closeTemplatePreview()});
- $('saveCloudCopy').addEventListener('click',saveCurrentAsCloudCopy);
- $('cloudResumeList').addEventListener('click',event=>{
-  const load=event.target.closest('[data-cloud-load]');
-  const remove=event.target.closest('[data-cloud-delete]');
-  if(load)openCloudResume(load.dataset.cloudLoad);
-  if(remove)removeCloudResume(remove.dataset.cloudDelete);
- });
  $('downloadRecoveryBackup').addEventListener('click',downloadRecoveryData);
  $('resolveRecovery').addEventListener('click',resolveLocalRecovery);
  $('pdfBtn').addEventListener('click',()=>exportPDF());$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(()=>runAtsChecks({promptUpgrade:false}),250)});
@@ -1664,5 +1652,5 @@ const savedProject=readSavedProject(localStorage,normalizeState);
 if(savedProject.state)state=savedProject.state;
 showRecoveryNotice(savedProject);
 addEventListener('pagehide',()=>{if(localPersistenceBlocked)return;try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(error){console.error('Could not save the resume while closing the page.',error)}});
-loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
+loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
 })();

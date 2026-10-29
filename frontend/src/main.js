@@ -4,14 +4,11 @@ import { buildCoverLetterPdf } from './cover-letter-pdf.js';
 import { readSavedProject } from './project-storage.js';
 import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from './resume-pdf.js';
 import { zoomFromPinch } from './zoom.js';
+import { FEATURE_IDS, PLAN_CONFIG, canUseFeature, isProTemplate, getStaticEntitlement } from './plan-access.js';
 
 const cloudConfigured=false;
-const FEATURE_IDS={ALL_TEMPLATES:'all_templates',JOB_DESCRIPTION_ATS:'job_description_ats'};
-const PLAN_CONFIG={pro:{monthly:{price:0},yearly:{price:0}}};
-const canUseFeature=()=>true;
-const isProTemplate=()=>false;
-const loadBillingConfig=async()=>({entitlementEnabled:false});
-const loadBillingEntitlement=async()=>null;
+const loadBillingConfig=async()=>({entitlementEnabled:true});
+const loadBillingEntitlement=async()=>getStaticEntitlement();
 const getProTemplateDownloadStatus=async()=>({remaining:null});
 const consumeProTemplateDownload=async()=>true;
 const saveResume=async()=>({ok:false});

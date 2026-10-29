@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Plan options and voucher activation for PersonaCraftPro.">
+    <title>Plans & Voucher | PersonaCraftPro</title>
+    <link rel="stylesheet" href="/src/about.css">
+    <script src="/legacy-redirect.js"></script>
+  </head>
+  <body class="about-page">
+    <header class="about-header">
+      <a class="about-brand" href="/editor.html" aria-label="PersonaCraftPro home">
+        <span class="about-logo" aria-hidden="true">P</span>
+        <span>PersonaCraftPro</span>
+      </a>
+      <nav class="about-nav" aria-label="Main navigation">
+        <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme">
+          <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
+          <span class="theme-switch-label">Dark</span>
+        </button>
+        <a class="btn outline" href="/editor.html">Open editor</a>
+      </nav>
+    </header>
+
+    <main class="about-main">
+      <section class="about-intro">
+        <p class="about-eyebrow">PRO ACCESS</p>
+        <h1>Plans & voucher codes</h1>
+        <p class="about-lead">Use a voucher to unlock Pro features in this static build without a backend server. Pricing is shown for reference, and the voucher flow is handled locally in your browser.</p>
+      </section>
+
+      <div class="about-grid">
+        <section class="about-section">
+          <h2>Monthly Pro</h2>
+          <p class="pricing-price">₹99<span>/month</span></p>
+          <ul class="about-feature-list">
+            <li>Everything in the free editor.</li>
+            <li>All premium templates.</li>
+            <li>Job-description ATS comparison.</li>
+            <li>Unlimited static access with a valid voucher.</li>
+          </ul>
+        </section>
+
+        <section class="about-section">
+          <h2>Yearly Pro</h2>
+          <p class="pricing-price">₹399<span>/year</span></p>
+          <ul class="about-feature-list">
+            <li>Same Pro features as monthly.</li>
+            <li>Better value for long-term users.</li>
+            <li>Works with a local voucher in the browser.</li>
+            <li>Perfect for static deployments and local testing.</li>
+          </ul>
+        </section>
+
+        <section class="about-section about-feedback" id="voucherSection">
+          <h2>Redeem voucher</h2>
+          <p>Try one of these demo voucher codes: <strong>WELCOME10</strong>, <strong>PRO30</strong>, or <strong>LIFETIMEVIP</strong>.</p>
+
+          <form id="voucherForm" class="feedback-form" novalidate>
+            <div class="feedback-field">
+              <label for="voucherCode">Voucher code</label>
+              <input id="voucherCode" name="voucherCode" type="text" autocomplete="off" placeholder="Enter voucher code" maxlength="30">
+            </div>
+
+            <div class="feedback-actions">
+              <button class="feedback-button" type="submit">Apply voucher</button>
+              <button class="btn outline" type="button" id="clearVoucherBtn">Clear voucher</button>
+            </div>
+          </form>
+
+          <div class="feedback-message" id="voucherStatus" aria-live="polite">
+            No active voucher yet.
+          </div>
+          <div class="feedback-message" id="voucherDetails" aria-live="polite"></div>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="/src/pricing.js"></script>
+  </body>
+</html>

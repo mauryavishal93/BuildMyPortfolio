@@ -16,7 +16,8 @@ export default defineConfig({
         about: fileURLToPath(new URL('./frontend/about.html', import.meta.url)),
         privacy: fileURLToPath(new URL('./frontend/privacy.html', import.meta.url)),
         terms: fileURLToPath(new URL('./frontend/terms.html', import.meta.url)),
-        refunds: fileURLToPath(new URL('./frontend/refunds.html', import.meta.url))
+        refunds: fileURLToPath(new URL('./frontend/refunds.html', import.meta.url)),
+        pricing: fileURLToPath(new URL('./frontend/pricing.html', import.meta.url))
       }
     }
   }

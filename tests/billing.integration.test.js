@@ -188,6 +188,32 @@ test('billing routes reject unauthenticated and unapproved checkout requests', a
   process.env.BILLING_TEST_MODE_VERIFIED = environment.BILLING_TEST_MODE_VERIFIED;
 });
 
+test('admin pricing stores distinct actual and current values', async () => {
+  const save = await request('/api/admin/pricing', {
+    method: 'PUT',
+    token: 'admin-test-token',
+    body: {
+      pricing: {
+        monthly: { actualPrice: 199, currentPrice: 149 },
+        yearly: { actualPrice: 499, currentPrice: 399 }
+      }
+    }
+  });
+  assert.equal(save.status, 200);
+  const saved = await save.json();
+  assert.equal(saved.pricing.monthly.actualPrice, 199);
+  assert.equal(saved.pricing.monthly.currentPrice, 149);
+  assert.equal(saved.pricing.yearly.actualPrice, 499);
+  assert.equal(saved.pricing.yearly.currentPrice, 399);
+
+  const load = await request('/api/admin/pricing', { token: 'admin-test-token' });
+  const loaded = await load.json();
+  assert.equal(loaded.pricing.monthly.actualPrice, 199);
+  assert.equal(loaded.pricing.monthly.currentPrice, 149);
+  assert.equal(loaded.pricing.yearly.actualPrice, 499);
+  assert.equal(loaded.pricing.yearly.currentPrice, 399);
+});
+
 test('voucher redemption grants configured Pro access once, rejects active plans, and enforces global limits', async () => {
   const unauthenticated = await request('/api/billing/vouchers/redeem', {
     method: 'POST',

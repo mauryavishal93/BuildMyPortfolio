@@ -233,13 +233,13 @@ function normalizePricingConfig(rawConfig = {}) {
     currency: 'INR',
     monthly: {
       actualPrice: monthlyActual,
-      currentPrice: Math.min(monthlyActual, monthlyCurrent),
-      discountPercent: calculateDiscount(monthlyActual, Math.min(monthlyActual, monthlyCurrent))
+      currentPrice: monthlyCurrent,
+      discountPercent: calculateDiscount(monthlyActual, monthlyCurrent)
     },
     yearly: {
       actualPrice: yearlyActual,
-      currentPrice: Math.min(yearlyActual, yearlyCurrent),
-      discountPercent: calculateDiscount(yearlyActual, Math.min(yearlyActual, yearlyCurrent))
+      currentPrice: yearlyCurrent,
+      discountPercent: calculateDiscount(yearlyActual, yearlyCurrent)
     },
     updatedAt: Date.now()
   };
@@ -258,6 +258,9 @@ async function loadPricingConfigFromStore() {
 app.get('/api/health', (_request, response) => {
   response.json({ status: 'ok' });
 });
+
+app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '256kb' }));
+app.use(express.json({ limit: '32kb' }));
 
 app.use('/api/billing', (_request, response, next) => {
   response.set('Cache-Control', 'no-store');
@@ -329,10 +332,7 @@ app.get('/api/billing/config', (_request, response) => {
   });
 });
 
-app.post(
-  '/api/billing/webhook',
-  express.raw({ type: 'application/json', limit: '256kb' }),
-  async (request, response) => {
+app.post('/api/billing/webhook', async (request, response) => {
     if (!billingConfigured()
       || !validWebhookSignature(request.body, request.get('x-razorpay-signature'), process.env.RAZORPAY_WEBHOOK_SECRET)) {
       response.status(400).json({ error: 'Invalid webhook signature.' });
@@ -469,8 +469,6 @@ app.post(
     }
   }
 );
-
-app.use(express.json({ limit: '32kb' }));
 
 app.get('/api/billing/activity', requireEntitlementConfig, requireFirebaseUser, async (request, response) => {
   try {

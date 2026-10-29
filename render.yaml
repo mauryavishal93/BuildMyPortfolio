@@ -13,6 +13,8 @@ services:
         sync: false
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
+      - key: ADMIN_EMAILS
+        sync: false
       - key: PRO_VOUCHERS_JSON
         sync: false
       - key: RAZORPAY_KEY_ID

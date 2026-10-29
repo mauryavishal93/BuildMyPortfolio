@@ -49,7 +49,7 @@ const fresh=()=>({version:3,docName:'Untitled resume',template:'classic',layout:
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
 function normalizeState(d){
- if(!d||typeof d!=='object'||!d.profile||typeof d.profile!=='object'||!Array.isArray(d.sections)||!d.design||typeof d.design!=='object')throw Error('This is not a valid BuildMyPortfolio project.');
+ if(!d||typeof d!=='object'||!d.profile||typeof d.profile!=='object'||!Array.isArray(d.sections)||!d.design||typeof d.design!=='object')throw Error('This is not a valid PersonaCraftPro project.');
  const base=fresh(),ver=Number(d.version)||1,out={...base,version:3};
  out.docName=str(d.docName).trim()?str(d.docName).slice(0,120):base.docName;
  out.template=templateDefs.some(t=>t.id===d.template)?d.template:base.template;
@@ -503,7 +503,7 @@ async function openTemplatePreview(templateId){
    page.append(image);
    const watermark=document.createElement('span');
    watermark.className='template-preview-watermark';
-   watermark.textContent='BuildMyPortfolio · PREVIEW';
+   watermark.textContent='PersonaCraftPro · PREVIEW';
    watermark.setAttribute('aria-hidden','true');
    page.append(watermark);
    pages.append(page);

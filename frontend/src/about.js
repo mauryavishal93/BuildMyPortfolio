@@ -13,6 +13,6 @@ feedbackForm?.addEventListener('submit', event => {
     'Feedback:',
     message
   ].filter((line, index, lines) => line || (index > 0 && lines[index - 1])).join('\n');
-  const subject = encodeURIComponent('BuildMyPortfolio feedback');
+  const subject = encodeURIComponent('PersonaCraftPro feedback');
   window.location.href = `mailto:mauryavishal93@gmail.com?subject=${subject}&body=${encodeURIComponent(body)}`;
 });

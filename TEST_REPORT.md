@@ -1,4 +1,4 @@
-# BuildMyPortfolio Test Report
+# PersonaCraftPro Test Report
 
 **Date:** 2026-10-15
 **Overall result:** Not ready for a general production release. Core desktop and tested mobile workflows pass, but there is no repeatable automated regression suite or server-backed resume persistence.

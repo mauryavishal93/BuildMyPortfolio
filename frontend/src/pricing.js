@@ -289,7 +289,7 @@ async function startCheckout(planKey) {
     const checkout = new window.Razorpay({
       key: created.keyId,
       subscription_id: created.subscriptionId,
-      name: 'BuildMyPortfolio',
+      name: 'PersonaCraftPro',
       description: `${created.plan.label} subscription`,
       prefill: {
         name: checkoutUser.displayName || '',

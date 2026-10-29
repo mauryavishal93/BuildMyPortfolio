@@ -1126,6 +1126,10 @@ function openAts(){
  runAtsChecks({promptUpgrade:false});
 }
 function closeAts(){
+ ++atsCheckGeneration;
+ window.clearTimeout(window.atsDebounce);
+ $('runAtsBtn').disabled=false;
+ $('runAtsBtn').textContent='Run checks';
  $('atsModalBg').classList.remove('show');
  $('atsModalBg').setAttribute('aria-hidden','true');
 }
@@ -1272,17 +1276,60 @@ function exportProTemplatePreview(){
  closeTemplatePreview();
  void exportPDF(templateId);
 }
+let atsCheckGeneration=0;
+function renderAtsProcessing(stageIndex,stages){
+ const stage=stages[stageIndex];
+ const progress=[18,42,69,91][stageIndex];
+ $('atsResults').innerHTML=`<div class="ats-processing" role="status" aria-live="polite">
+  <div class="ats-processing-spinner" aria-hidden="true"></div>
+  <strong>${stage.label}</strong>
+  <p>${stage.detail}</p>
+  <div class="ats-processing-track" role="progressbar" aria-label="ATS analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
+   <span style="width:${progress}%"></span>
+  </div>
+  <ol class="ats-processing-steps">${stages.map((item,index)=>`<li class="${index<stageIndex?'complete':index===stageIndex?'current':''}">${item.label}</li>`).join('')}</ol>
+ </div>`;
+}
 function runAtsChecks({promptUpgrade=true}={}){
+ const generation=++atsCheckGeneration;
+ const runButton=$('runAtsBtn');
  const jobText=$('jobDescription').value.trim();
  const hasAdvancedAccess=canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS,verifiedEntitlement);
- if(jobText&&!hasAdvancedAccess){
-  if(promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Compare resume skills with a target role, review matched and missing terms, and see role-specific diagnostics.');
-  const report=computeAtsChecks('');
-  report.jobMatchLocked=true;
-  renderAtsResults(report);
-  return;
- }
- renderAtsResults(computeAtsChecks());
+ const lockedJobMatch=Boolean(jobText&&!hasAdvancedAccess);
+ if(lockedJobMatch&&promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Compare resume skills with a target role, review matched and missing terms, and see role-specific diagnostics.');
+ const stages=[
+  {label:'Reading resume sections',detail:'Collecting the details available in your resume.'},
+  {label:'Checking structure and completeness',detail:'Reviewing contact details, sections, and formatting.'},
+  {label:lockedJobMatch?'Reviewing resume skills':'Evaluating skills and experience',detail:'Checking the content against resume-readiness factors.'},
+  {label:'Preparing your recommendations',detail:'Organizing the findings into a clear report.'}
+ ];
+ const delays=[300,340,360,300];
+ runButton.disabled=true;
+ runButton.textContent='Analyzing…';
+ const wait=milliseconds=>new Promise(resolve=>setTimeout(resolve,milliseconds));
+ void (async()=>{
+  try{
+   for(let index=0;index<stages.length;index+=1){
+    if(generation!==atsCheckGeneration)return;
+    renderAtsProcessing(index,stages);
+    await wait(delays[index]);
+   }
+   if(generation!==atsCheckGeneration)return;
+   const report=computeAtsChecks(lockedJobMatch?'':undefined);
+   if(lockedJobMatch)report.jobMatchLocked=true;
+   renderAtsResults(report);
+  }catch(error){
+   console.error('Could not complete the ATS analysis.',error);
+   if(generation===atsCheckGeneration){
+    $('atsResults').innerHTML=`<div class="ats-empty" role="alert">Could not complete the ATS analysis: ${$esc(error.message||'Please try again.')}</div>`;
+   }
+  }finally{
+   if(generation===atsCheckGeneration){
+    runButton.disabled=false;
+    runButton.textContent='Run checks';
+   }
+  }
+ })();
 }
 $('templates').addEventListener('click',e=>{
  const b=e.target.closest('[data-template]');

@@ -1,13 +1,14 @@
 import {
   cancelBillingSubscription,
   createBillingSubscription,
+  loadBillingActivity,
   loadBillingConfig,
   loadBillingEntitlement,
   redeemBillingVoucher,
   scheduleBillingPlanChange,
   verifyBillingCheckout
 } from './billing-client.js';
-import { cloudConfigured, observeAuth } from './firebase-cloud.js';
+import { cloudConfigured, observeAuth, signInWithGoogle } from './firebase-cloud.js';
 import { PLAN_CONFIG, PRICING_FEATURES } from './plan-access.js';
 
 const $ = selector => document.querySelector(selector);
@@ -19,6 +20,7 @@ const yearlyButton = $('#purchaseYearly');
 let currentUser = null;
 let billingConfig = null;
 let entitlement = null;
+let voucherSignInPromise = null;
 
 const formatPrice = amount => new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -101,9 +103,69 @@ function updateVoucherControls() {
   const input = $('#voucherCode');
   if (!section || !button) return;
   section.hidden = !billingConfig?.voucherEnabled;
-  const unavailable = !currentUser || !billingConfig?.voucherEnabled || entitlement?.status === 'active';
+  const proActive = entitlement?.status === 'active';
+  const unavailable = !billingConfig?.voucherEnabled || proActive;
   button.disabled = unavailable;
   input.disabled = unavailable;
+  section.classList.toggle('voucher-pro-active', proActive);
+  if (proActive) {
+    input.value = '';
+    input.placeholder = 'Pro access is already active';
+    const status = $('#voucherStatus');
+    status.dataset.state = 'success';
+    status.textContent = 'Pro is active — voucher redemption is unavailable while your plan is active.';
+  } else {
+    input.placeholder = 'Enter voucher code';
+  }
+}
+
+function promptVoucherSignIn() {
+  if (currentUser || voucherSignInPromise) return voucherSignInPromise;
+
+  const status = $('#voucherStatus');
+  if (!cloudConfigured) {
+    status.dataset.state = 'error';
+    status.textContent = 'Google sign-in is not configured on this site.';
+    return Promise.resolve();
+  }
+
+  status.dataset.state = '';
+  status.textContent = 'Sign in with Google to redeem a voucher.';
+  voucherSignInPromise = signInWithGoogle()
+    .catch(error => {
+      console.error('Google sign-in for voucher redemption failed.', error);
+      status.dataset.state = 'error';
+      status.textContent = error.message || 'Could not sign in with Google.';
+    })
+    .finally(() => {
+      voucherSignInPromise = null;
+    });
+  return voucherSignInPromise;
+}
+
+function formatBillingDate(value) {
+  if (!Number(value)) return 'Date unavailable';
+  return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(Number(value)));
+}
+
+async function refreshBillingHistory(user) {
+  const container = $('#billingHistory');
+  try {
+    const activity = await loadBillingActivity(user);
+    if (currentUser?.uid !== user.uid) return;
+    if (!activity.length) {
+      container.innerHTML = '<p class="billing-history-empty">No billing activity yet.</p>';
+      return;
+    }
+    container.innerHTML = activity.map(item => `
+      <article class="billing-history-item">
+        <span class="billing-history-icon" aria-hidden="true">${item.status === 'success' || item.status === 'active' ? '✓' : '•'}</span>
+        <div><strong>${item.title}</strong><p>${item.detail || 'Billing activity updated.'}</p></div>
+        <time datetime="${new Date(Number(item.occurredAt)).toISOString()}">${formatBillingDate(item.occurredAt)}</time>
+      </article>`).join('');
+  } catch (error) {
+    container.innerHTML = `<p class="billing-history-empty">${error.message || 'Billing activity is temporarily unavailable.'}</p>`;
+  }
 }
 
 async function refreshBillingState(user) {
@@ -113,15 +175,24 @@ async function refreshBillingState(user) {
 
   if (!user) {
     accountStatus.textContent = 'Sign in with Google before you can purchase or manage a subscription.';
+    $('#billingHistory').textContent = 'Sign in to view billing activity.';
     return;
   }
+  $('#billingHistory').textContent = 'Loading billing activity…';
 
+  const voucherStatus = $('#voucherStatus');
+  if (voucherStatus.textContent === 'Sign in with Google to redeem a voucher.') {
+    voucherStatus.dataset.state = '';
+    voucherStatus.textContent = 'Signed in. Enter your voucher code and redeem.';
+  }
   accountStatus.textContent = `Signed in as ${user.email || user.displayName || 'Google user'}. Purchases are attached to this account.`;
   try {
     if (!billingConfig) billingConfig = await loadBillingConfig();
     $('#voucherSection').hidden = !billingConfig.voucherEnabled;
     if (billingConfig.entitlementEnabled) entitlement = await loadBillingEntitlement(user);
     if (currentUser?.uid !== user.uid) return;
+
+    await refreshBillingHistory(user);
 
     if (entitlement?.status === 'active') {
       const date = entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleDateString() : 'the current paid period';
@@ -141,13 +212,31 @@ async function refreshBillingState(user) {
   }
 }
 
+const voucherInput = $('#voucherCode');
+const voucherButton = $('#redeemVoucher');
+voucherInput.addEventListener('focus', () => {
+  if (!currentUser) void promptVoucherSignIn();
+});
+voucherInput.addEventListener('click', () => {
+  if (!currentUser) void promptVoucherSignIn();
+});
+voucherButton.addEventListener('click', event => {
+  if (currentUser) return;
+  event.preventDefault();
+  void promptVoucherSignIn();
+});
+
 $('#voucherForm').addEventListener('submit', async event => {
   event.preventDefault();
   const codeInput = $('#voucherCode');
   const status = $('#voucherStatus');
   const button = $('#redeemVoucher');
   const code = codeInput.value.trim();
-  if (!currentUser || !billingConfig?.voucherEnabled || !code) return;
+  if (!currentUser) {
+    void promptVoucherSignIn();
+    return;
+  }
+  if (!billingConfig?.voucherEnabled || !code) return;
   const user = currentUser;
   button.disabled = true;
   status.dataset.state = '';

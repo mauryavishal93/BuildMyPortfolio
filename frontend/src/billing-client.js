@@ -6,7 +6,7 @@ async function billingRequest(path, user, options = {}) {
     method: options.method || 'GET',
     cache: 'no-store',
     headers: {
-      authorization: `Bearer ${token}`,
+      authorization: 'Bearer ' + token,
       ...(options.body ? { 'content-type': 'application/json' } : {})
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {})
@@ -29,6 +29,11 @@ export async function loadBillingConfig() {
   const config = await response.json();
   if (!response.ok) throw new Error(config.error || 'Could not load paid plan configuration.');
   return config;
+}
+
+export async function loadBillingActivity(user) {
+  const result = await billingRequest('activity', user);
+  return result.activity;
 }
 
 export async function loadBillingEntitlement(user) {

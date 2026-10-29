@@ -289,10 +289,21 @@ test('subscription checkout, payment verification, and signed webhook lifecycle 
   assert.equal((await signedWebhook(activatedEvent)).status, 200);
   assert.equal(fakeDatabase.records.get('billingWebhookEvents/evt_activation_1').subscriptionId, 'sub_test1');
 
+  fakeDatabase.records.set('users/user-1/billing/entitlement', {
+    planId: 'pro',
+    billingPlan: 'monthly',
+    status: 'active',
+    validUntil: Date.now() + 60_000,
+    subscriptionId: null,
+    cancelAtCycleEnd: false
+  });
+  const entitlementResponse = await request('/api/billing/entitlement', { token: 'valid-test-token' });
+  assert.equal((await entitlementResponse.json()).entitlement.subscriptionId, 'sub_test1');
+
   const cancelled = await request('/api/billing/cancel', {
     method: 'POST',
     token: 'valid-test-token',
-    body: { subscriptionId: 'sub_test1' }
+    body: { reason: 'Changing to a different plan' }
   });
   assert.equal(cancelled.status, 200);
   assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').cancelAtCycleEnd, true);

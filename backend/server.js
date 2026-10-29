@@ -171,10 +171,12 @@ function userCheckoutDocument(db, uid) {
 
 function publicEntitlement(data) {
   const validUntil = Number(data?.validUntil) || 0;
+  const hasLiveSubscription = Boolean(data?.subscriptionId) || data?.status === 'active';
+  const status = hasLiveSubscription || validUntil > Date.now() ? 'active' : 'inactive';
   return {
     planId: data?.planId || 'free',
     billingPlan: data?.billingPlan || null,
-    status: validUntil > Date.now() ? 'active' : 'inactive',
+    status,
     source: 'server-verified',
     validUntil,
     subscriptionId: data?.subscriptionId || null,
@@ -403,7 +405,15 @@ app.get('/api/billing/entitlement', requireEntitlementConfig, requireFirebaseUse
   try {
     const { db } = await getFirebaseAdmin();
     const snapshot = await userEntitlementDocument(db, request.user.uid).get();
-    response.json({ entitlement: publicEntitlement(snapshot.data()) });
+    const entitlement = publicEntitlement(snapshot.data());
+    if (!entitlement.subscriptionId) {
+      const checkoutSnapshot = await userCheckoutDocument(db, request.user.uid).get();
+      const checkoutSubscriptionId = typeof checkoutSnapshot.data()?.subscriptionId === 'string'
+        ? checkoutSnapshot.data().subscriptionId.trim()
+        : '';
+      if (checkoutSubscriptionId) entitlement.subscriptionId = checkoutSubscriptionId;
+    }
+    response.json({ entitlement });
   } catch (error) {
     console.error('Could not load billing entitlement.', error);
     response.status(500).json({ error: 'Could not load your plan status.' });
@@ -1094,15 +1104,21 @@ app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, 
 });
 
 app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async (request, response) => {
-  const subscriptionId = request.body?.subscriptionId;
   const reason = typeof request.body?.reason === 'string' ? request.body.reason.trim() : '';
-  if (typeof subscriptionId !== 'string' || !/^sub_[A-Za-z0-9]+$/.test(subscriptionId)) {
-    response.status(400).json({ error: 'A valid subscription ID is required.' });
-    return;
-  }
+  let subscriptionId = typeof request.body?.subscriptionId === 'string' ? request.body.subscriptionId.trim() : '';
 
   try {
     const { db } = await getFirebaseAdmin();
+    if (!subscriptionId) {
+      const checkoutSnapshot = await userCheckoutDocument(db, request.user.uid).get();
+      subscriptionId = typeof checkoutSnapshot.data()?.subscriptionId === 'string'
+        ? checkoutSnapshot.data().subscriptionId.trim()
+        : '';
+    }
+    if (!subscriptionId || !/^sub_[A-Za-z0-9]+$/.test(subscriptionId)) {
+      response.status(400).json({ error: 'A valid subscription ID is required.' });
+      return;
+    }
     const ref = subscriptionDocument(db, subscriptionId);
     const snapshot = await ref.get();
     if (!snapshot.exists || snapshot.data().uid !== request.user.uid) {

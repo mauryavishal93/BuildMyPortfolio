@@ -246,6 +246,32 @@
 @media(prefers-reduced-motion:reduce){.plan-card{transition:none}.plan-card:hover{transform:none}}
 
 .billing-history{margin:28px 0; padding:24px; border:1px solid var(--line); border-radius:18px; background:var(--panel-soft,var(--panel));}
+.billing-plan-summary{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:26px 0;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 12px 28px rgba(0,0,0,.08)}
+.billing-plan-summary h2{margin:0 0 6px;color:var(--ink);font-size:20px}
+.billing-plan-summary p:not(.about-eyebrow){margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.billing-plan-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+.billing-plan-actions .btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:9px 14px;border:1px solid rgba(210,184,126,.3);border-radius:8px;font-size:12px;font-weight:750;text-decoration:none;transition:transform .16s ease,border-color .16s ease,background-color .16s ease,box-shadow .16s ease}
+.billing-plan-actions .btn:hover:not(:disabled){transform:translateY(-1px)}
+.billing-plan-actions .btn:focus-visible{outline:3px solid rgba(197,166,106,.48);outline-offset:3px}
+.billing-plan-actions .btn.primary{border-color:transparent;background:linear-gradient(135deg,#8bbcf2,#bd9b5b);color:#1a1914;box-shadow:0 8px 18px rgba(174,139,76,.18)}
+.billing-plan-actions .btn.primary:hover:not(:disabled){background:linear-gradient(135deg,#dfc58d,#b89456);box-shadow:0 11px 22px rgba(174,139,76,.25)}
+.billing-plan-actions .btn.outline{background:rgba(255,255,255,.035);color:#f3ead7}
+.billing-plan-actions .btn.outline:hover:not(:disabled){border-color:#b89456;background:rgba(197,166,106,.1)}
+.billing-plan-actions .btn:disabled{opacity:.55;cursor:not-allowed}
+.billing-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:24px 0}
+.billing-link-card{display:grid;grid-template-columns:38px minmax(0,1fr) 18px;align-items:center;gap:12px;min-width:0;padding:14px;border:1px solid rgba(210,184,126,.25);border-radius:8px;background:linear-gradient(130deg,rgba(197,166,106,.11),rgba(13,20,16,.72));color:#f3ead7;text-decoration:none;transition:transform .16s ease,border-color .16s ease,background-color .16s ease,box-shadow .16s ease}
+.billing-link-card:hover,.billing-link-card:focus-visible{transform:translateY(-2px);border-color:#b89456;background:linear-gradient(130deg,rgba(197,166,106,.2),rgba(13,20,16,.82));box-shadow:0 10px 24px rgba(0,0,0,.16)}
+.billing-link-card:focus-visible{outline:3px solid rgba(197,166,106,.48);outline-offset:2px}
+.billing-link-icon{display:grid;place-items:center;width:36px;height:36px;border:1px solid rgba(210,184,126,.25);border-radius:8px;background:rgba(197,166,106,.12);color:#e1c88f;font-size:19px;font-weight:750}
+.billing-link-copy{display:grid;min-width:0;gap:3px}.billing-link-copy strong{font-size:13px}.billing-link-copy small{color:#c9c7bd;font-size:11px;line-height:1.4}.billing-link-arrow{color:#e1c88f;font-size:18px;text-align:right;transition:transform .16s ease}.billing-link-card:hover .billing-link-arrow{transform:translateX(3px)}
+:root[data-theme=light] .billing-link-card{border-color:#e2d8c5;background:linear-gradient(130deg,#fffefa,#f6f1e7);color:#292820;box-shadow:0 5px 16px rgba(48,43,32,.045)}
+:root[data-theme=light] .billing-link-card:hover,:root[data-theme=light] .billing-link-card:focus-visible{border-color:#bd9b5b;background:linear-gradient(130deg,#fffefa,#f4eddd);box-shadow:0 10px 24px rgba(105,79,35,.11)}
+:root[data-theme=light] .billing-link-icon{border-color:#e2d8c5;background:#f4eee1;color:#765b2e}
+:root[data-theme=light] .billing-link-copy small{color:#68665d}
+:root[data-theme=light] .billing-link-arrow{color:#765b2e}
+:root[data-theme=light] .billing-plan-actions .btn.primary{background:linear-gradient(135deg,#c3a366,#bd9b5b);color:#fff}
+:root[data-theme=light] .billing-plan-actions .btn.outline{border-color:#e2d8c5;background:#fffefa;color:#5e4b2c}
+:root[data-theme=light] .billing-plan-actions .btn.outline:hover:not(:disabled){border-color:#bd9b5b;background:#faf5eb}
 .billing-history-list{display:grid; gap:10px; margin-top:16px;}
 .billing-history-item{display:grid; grid-template-columns:34px minmax(0,1fr) auto; gap:12px; align-items:start; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--panel);}
 .billing-history-icon{display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:rgba(174,139,76,.16); color:#765b2e; font-weight:800;}
@@ -253,7 +279,8 @@
 .billing-history-item p{margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.5;}
 .billing-history-item time{color:var(--muted); font-size:11px; white-space:nowrap;}
 .billing-history-empty{margin:0; padding:16px; border:1px dashed var(--line); border-radius:12px; color:var(--muted);}
-@media(max-width:640px){.billing-history-item{grid-template-columns:34px minmax(0,1fr);}.billing-history-item time{grid-column:2;}.billing-history{padding:18px 14px}}
+@media(max-width:640px){.billing-plan-summary{align-items:stretch;flex-direction:column;padding:18px 14px}.billing-plan-actions{display:grid;grid-template-columns:1fr}.billing-links{grid-template-columns:1fr}.billing-history-item{grid-template-columns:34px minmax(0,1fr);}.billing-history-item time{grid-column:2;}.billing-history{padding:18px 14px}}
+@media(prefers-reduced-motion:reduce){.billing-link-card,.billing-link-arrow{transition:none}.billing-link-card:hover{transform:none}}
 
 :root[data-theme=light] .voucher-pro-active .voucher-form input:disabled,
 :root[data-theme=light] .voucher-pro-active .voucher-card .btn.primary:disabled{

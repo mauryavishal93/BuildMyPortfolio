@@ -74,7 +74,7 @@ function normalizeState(d){
 let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
-let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null;
+let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
@@ -248,6 +248,15 @@ async function updateCloudAccount(user,error){
   $('googleSignInBtn').disabled=true;
   $('googleSignInLabel').textContent='Cloud setup needed';
   $('googleSignInBtn').title=error.message;
+  $('cloudActions').hidden=false;
+  $('accountMenu').hidden=false;
+  $('cloudResumesBtn').hidden=true;
+  $('googleSignOutBtn').hidden=true;
+  $('accountUserName').textContent='Guest';
+  $('accountUserEmail').textContent='';
+  $('accountAvatar').textContent='G';
+  $('accountAvatarLarge').textContent='G';
+  $('accountMenu').querySelector('summary').setAttribute('aria-label','Account menu');
   $('cloudAccount').textContent=error.message;
   renderCloudResumes();
   renderTemplates();
@@ -259,8 +268,25 @@ async function updateCloudAccount(user,error){
  updateProTemplatePreviewAllowance({checking:!!user});
  updateProLabel();
  $('googleSignInBtn').hidden=!!user;
+ $('cloudActions').hidden=!!user;
+ $('accountMenu').hidden=false;
  $('cloudResumesBtn').hidden=!user;
  $('googleSignOutBtn').hidden=!user;
+ if(user){
+  const accountName=user.displayName?.trim()||user.email?.split('@')[0]||'Google user';
+  const initial=Array.from(accountName)[0]?.toLocaleUpperCase()||'U';
+  $('accountMenu').querySelector('summary').setAttribute('aria-label',`Account menu for ${accountName}`);
+  $('accountUserName').textContent=accountName;
+  $('accountUserEmail').textContent=user.email||'';
+  $('accountAvatar').textContent=initial;
+  $('accountAvatarLarge').textContent=initial;
+ }else{
+  $('accountUserName').textContent='Guest';
+  $('accountUserEmail').textContent='';
+  $('accountAvatar').textContent='G';
+  $('accountAvatarLarge').textContent='G';
+  $('accountMenu').querySelector('summary').setAttribute('aria-label','Account menu');
+ }
  $('cloudAccount').textContent=user?`Signed in as ${user.email||user.displayName||'Google user'}. Cloud saves are private to this account.`:'Sign in to access your resumes across devices.';
  if(!user){
   clearTimeout(cloudSaveTimer);
@@ -271,6 +297,7 @@ async function updateCloudAccount(user,error){
  }
  renderCloudResumes();
  renderTemplates();
+ if(user&&openCloudOnAuth){openCloudOnAuth=false;history.replaceState(null,'',location.pathname+location.hash);openCloudModal()}
  if(user){
   try{
    if(!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
@@ -339,7 +366,14 @@ function renderTemplates(){
  $('templates').innerHTML=templateDefs.map(templateCardMarkup).join('');
 }
 function renderSectionList(){
- $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${s.id}"><span class="grip">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" data-toggle="${s.id}" title="${s.visible?'Hide':'Show'} section">${s.visible?'◉':'○'}</button></div>`).join('');
+ $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${$esc(s.id)}"><span class="grip" aria-hidden="true">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" type="button" data-toggle="${$esc(s.id)}" title="${s.visible?'Hide':'Show'} section" aria-label="${s.visible?'Hide':'Show'} ${$esc(s.title)}">${s.visible?'◉':'○'}</button><button class="section-delete" type="button" data-delete-section="${$esc(s.id)}" title="Delete ${$esc(s.title)}" aria-label="Delete ${$esc(s.title)}">×</button></div>`).join('');
+}
+function deleteSectionById(id){
+ const section=state.sections.find(item=>item.id===id);
+ if(!section)return;
+ if(!window.confirm(`Delete “${section.title}” from this resume? This removes the section and its contents.`))return;
+ transact(()=>{state.sections=state.sections.filter(item=>item.id!==id);delete state.positions[id];if(selectedId===id)selectedId=null});
+ toast('Section deleted.');
 }
 
 /* ---------- Sheet construction ---------- */
@@ -671,7 +705,7 @@ function renderInspector(){
  $('inspector').querySelectorAll('[data-remove-entry]').forEach(el=>el.addEventListener('click',()=>transact(()=>{const x=sectionById(selectedId);if(x)x.entries.splice(+el.dataset.removeEntry,1)})));
  $('addEntry')?.addEventListener('click',()=>transact(()=>{const x=sectionById(selectedId);if(x)x.entries.push({role:'New role',company:'Organization',date:'Year',details:'Add details here.'})}));
  $('duplicateSection')?.addEventListener('click',()=>transact(()=>{const i=state.sections.findIndex(x=>x.id===selectedId);if(i>=0){const n=deep(state.sections[i]);n.id=uid();n.title+=' (copy)';state.sections.splice(i+1,0,n);selectedId=n.id}}));
- $('deleteSection')?.addEventListener('click',()=>{if(confirm('Delete this section?'))transact(()=>{state.sections=state.sections.filter(x=>x.id!==selectedId);delete state.positions[selectedId];selectedId=null})});
+ $('deleteSection')?.addEventListener('click',()=>deleteSectionById(selectedId));
  $('inspector').querySelectorAll('[data-panel-size]').forEach(b=>b.addEventListener('click',()=>resizePanel(+b.dataset.panelSize)));
  $('collapsePanel')?.addEventListener('click',togglePanel);
  $('inspector').querySelectorAll('[data-rtab]').forEach(b=>b.addEventListener('click',()=>setRightTab(b.dataset.rtab)));
@@ -1396,7 +1430,7 @@ $('templates').addEventListener('click',e=>{
  if(isProTemplate(b.dataset.template)&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){void requestProTemplate(b.dataset.template);return}
  if(b.dataset.template===state.template)return;
  transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
-$('sectionList').addEventListener('click',e=>{const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
+$('sectionList').addEventListener('click',e=>{const deleteButton=e.target.closest('[data-delete-section]');if(deleteButton){e.preventDefault();e.stopPropagation();deleteSectionById(deleteButton.dataset.deleteSection);return}const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
 $('sectionList').addEventListener('dragstart',e=>{const row=e.target.closest('[data-section-row]');if(!row)return;draggingId=row.dataset.sectionRow;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggingId);row.style.opacity='.5'});
 $('sectionList').addEventListener('dragend',e=>{const row=e.target.closest('[data-section-row]');if(row)row.style.opacity='1';draggingId=null});
 $('sectionList').addEventListener('dragover',e=>{if(e.target.closest('[data-section-row]')){e.preventDefault();e.dataTransfer.dropEffect='move'}});
@@ -1674,11 +1708,14 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
   catch(error){toast(authErrorMessage(error))}
  });
  $('googleSignOutBtn').addEventListener('click',async()=>{
+  $('accountMenu').open=false;
   if(!await confirmSignOut())return;
   try{await signOutUser();toast('Signed out. Your local browser copy is unchanged.')}
   catch(error){toast(error.message||'Could not sign out.')}
  });
- $('cloudResumesBtn').addEventListener('click',openCloudModal);
+ $('cloudResumesBtn').addEventListener('click',()=>{$('accountMenu').open=false;openCloudModal()});
+ document.addEventListener('click',event=>{if(!$('accountMenu').contains(event.target))$('accountMenu').open=false});
+ $('accountMenu').addEventListener('keydown',event=>{if(event.key==='Escape'&&$('accountMenu').open){$('accountMenu').open=false;$('accountMenu').querySelector('summary').focus()}});
  $('closeCloudModal').addEventListener('click',closeCloudModal);
  $('closeCloudModalAction').addEventListener('click',closeCloudModal);
  $('cloudModalBg').addEventListener('click',event=>{if(event.target===$('cloudModalBg'))closeCloudModal()});

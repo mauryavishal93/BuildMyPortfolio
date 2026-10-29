@@ -201,6 +201,8 @@ async function recordBillingActivity(db, uid, activity) {
       planKey: activity.planKey || null,
       amount: activity.amount || null,
       providerSubscriptionId: activity.providerSubscriptionId || null,
+      actorType: ['user', 'admin'].includes(activity.actorType) ? activity.actorType : null,
+      actorUid: activity.actorUid || null,
       occurredAt
     });
   } catch (error) {
@@ -670,7 +672,8 @@ app.post('/api/admin/users/:uid/cancel-pro', requireFirebaseUser, requireAdmin, 
       type: 'pro_cancelled', status: 'cancelled', title: 'Pro access cancelled by admin',
       detail: reason, reason, planKey: entitlement.billingPlan || 'pro',
       previousPlan: entitlement.billingPlan || 'pro', previousSource: entitlement.source || null,
-      previousValidUntil: entitlement.validUntil || null, cancelledBy: request.user.uid,
+      previousValidUntil: entitlement.validUntil || null, actorType: 'admin', actorUid: request.user.uid,
+      cancelledBy: request.user.uid, cancelledByEmail: request.user.email || null,
       createdAt: cancelledAt, occurredAt: cancelledAt
     });
     response.json({ uid, isPro: false, reason, cancelledAt });
@@ -1151,9 +1154,10 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
       }, { merge: true });
     });
     await recordBillingActivity(db, request.user.uid, {
-      type: 'subscription', status: 'success', title: 'Subscription cancellation scheduled',
+      type: 'subscription', status: 'cancelled', title: 'Subscription cancelled by user',
       detail: 'Future renewals have been stopped. Access remains available through the paid period.',
-      planKey: snapshot.data().planKey, providerSubscriptionId: subscriptionId
+      planKey: snapshot.data().planKey, providerSubscriptionId: subscriptionId,
+      actorType: 'user', actorUid: request.user.uid
     });
     response.json({ cancelled: true, status: result.status || 'cancelled' });
   } catch (error) {

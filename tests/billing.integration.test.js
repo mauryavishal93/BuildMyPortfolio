@@ -9,6 +9,7 @@ const environment = {
   BILLING_REFUNDS_PUBLISHED: 'true',
   BILLING_TEST_MODE_VERIFIED: 'true',
   BILLING_LIVE_LAUNCH_APPROVED: 'true',
+  ADMIN_EMAILS: 'admin@example.com',
   FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({
     type: 'service_account',
     project_id: 'test-project',
@@ -60,6 +61,7 @@ function createFakeDatabase() {
       delete: ref => records.delete(ref.key)
     })
   };
+  db.records = records;
   return { db, records };
 }
 
@@ -78,6 +80,7 @@ before(async () => {
         if (token === 'valid-test-token') return { uid: 'user-1' };
         if (token === 'other-test-token') return { uid: 'user-2' };
         if (token === 'third-test-token') return { uid: 'user-3' };
+        if (token === 'admin-test-token') return { uid: 'admin-1', email: 'admin@example.com' };
         throw new Error('Invalid token');
       }
     },
@@ -293,6 +296,28 @@ test('subscription checkout, payment verification, and signed webhook lifecycle 
   });
   assert.equal(cancelled.status, 200);
   assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').cancelAtCycleEnd, true);
+  const userActivityResponse = await request('/api/billing/activity', { token: 'valid-test-token' });
+  const userActivity = (await userActivityResponse.json()).activity;
+  const userCancellation = userActivity.find(item => item.title === 'Subscription cancelled by user');
+  assert.equal(userCancellation.actorType, 'user');
+  assert.equal(userCancellation.actorUid, 'user-1');
+  assert.ok(Number.isFinite(userCancellation.occurredAt));
+
+  fakeDatabase.records.set('users/user-2/billing/entitlement', {
+    planId: 'pro', billingPlan: 'monthly', status: 'active', validUntil: Date.now() + 60_000,
+    subscriptionId: 'sub_admin_cancel'
+  });
+  const adminCancelled = await request('/api/admin/users/user-2/cancel-pro', {
+    method: 'POST', token: 'admin-test-token', body: { reason: 'User requested cancellation' }
+  });
+  assert.equal(adminCancelled.status, 200);
+  const adminActivityResponse = await request('/api/billing/activity', { token: 'other-test-token' });
+  const adminActivity = (await adminActivityResponse.json()).activity;
+  const adminCancellation = adminActivity.find(item => item.title === 'Pro access cancelled by admin');
+  assert.equal(adminCancellation.actorType, 'admin');
+  assert.equal(adminCancellation.actorUid, 'admin-1');
+  assert.equal(adminCancellation.detail, 'User requested cancellation');
+  assert.ok(Number.isFinite(adminCancellation.occurredAt));
 
   const expiredEvent = {
     id: 'evt_expired_1',

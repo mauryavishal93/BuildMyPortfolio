@@ -106,16 +106,15 @@ test('photo templates show an accessible avatar placeholder when no photo is upl
   assert.match(styles, /\.photo-placeholder::after/);
 });
 
-test('pricing exposes voucher entry and labels sample codes as non-redeemable examples', () => {
-  const html = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
-  const source = readFileSync(new URL('../frontend/src/pricing.js', import.meta.url), 'utf8');
+test('billing exposes voucher entry and labels sample codes as non-redeemable examples', () => {
+  const html = readFileSync(new URL('../frontend/billing.html', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../frontend/src/billing.js', import.meta.url), 'utf8');
   assert.match(html, /id="voucherForm"/);
   assert.match(html, /id="voucherSection"[^>]*aria-labelledby="voucherTitle">/);
   assert.match(html, /Example formats only — these are not valid codes/);
-  assert.match(source, /redeemBillingVoucher\(user, code\)/);
-  assert.match(source, /voucherEnabled/);
-  assert.match(source, /const unavailable = signInRequired \|\| proActive/);
-  assert.doesNotMatch(source, /if \(!billingConfig\?\.voucherEnabled \|\| !code\) return/);
+  assert.match(source, /redeemBillingVoucher\(currentUser, code\)/);
+  assert.match(source, /const disabled = signInRequired \|\| proActive/);
+  assert.doesNotMatch(readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8'), /id="voucherForm"/);
 });
 
 test('Firestore rules restrict the lifetime Pro-template trial to two owner-only increments', () => {

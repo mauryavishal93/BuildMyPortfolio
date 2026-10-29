@@ -316,9 +316,9 @@ function renderSectionList(){
 function sheetHTML(index,cols){
  const p=state.profile,tmpl=activeTemplate();
  const hasPhoto=!!tmpl.photo,photoPos=['left','center','right'].includes(state.design.photoAlign)?state.design.photoAlign:(tmpl.photoPos||'right');
- const contact=[p.email?`<a href="mailto:${$esc(p.email)}">${$esc(p.email)}</a>`:'',p.phone,p.location,p.website?(websiteHref(p.website)?`<a href="${$esc(websiteHref(p.website))}" target="_blank" rel="noopener noreferrer">${$esc(p.website)}</a>`:$esc(p.website)):''].filter(Boolean).join(' · ');
+ const contact=[p.email?`<span contenteditable="true" spellcheck="true" data-profile-field="email" title="Click to edit email">${$esc(p.email)}</span>`:'',p.phone?`<span contenteditable="true" spellcheck="true" data-profile-field="phone" title="Click to edit phone">${$esc(p.phone)}</span>`:'',p.location?`<span contenteditable="true" spellcheck="true" data-profile-field="location" title="Click to edit location">${$esc(p.location)}</span>`:'',p.website?`<span contenteditable="true" spellcheck="true" data-profile-field="website" title="Click to edit website">${$esc(p.website)}</span>`:''].filter(Boolean).join('<span class="contact-separator"> · </span>');
  const photoMarkup=p.photo?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:'<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded"></span>';
- const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?photoMarkup:''}<div class="header-text"><h1 class="name">${$esc(p.name||'Your Name')}</h1><div class="headline">${$esc(p.headline||'Professional Title')}</div><div class="contact">${contact}</div></div></header>`:'';
+ const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?photoMarkup:''}<div class="header-text"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="contact" contenteditable="false" title="Edit contact details in the right panel">${contact}</div></div></header>`:'';
  return `<div class="sheet-inner">${head}<div class="sections-area">${cols?'<div class="section-columns"><div class="section-column"></div><div class="section-column"></div></div>':''}</div></div><div class="page-number"></div>`;
 }
 function createSheet(index,tmpl,cols){
@@ -354,25 +354,27 @@ function sectionAtoms(s){
 }
 function makeShell(s,cont){
  const sec=document.createElement('section');sec.className='resume-section'+(selectedId===s.id?' selected':'');sec.dataset.resumeSection=s.id;
- sec.innerHTML=`${cont?'':`<h2 class="section-heading">${$esc(s.title)}</h2>`}<div class="section-body"></div>`;return sec;
+ sec.innerHTML=`${cont?'':`<h2 class="section-heading" contenteditable="true" spellcheck="true" data-section-title="${$esc(s.id)}" title="Click to edit this section title">${$esc(s.title)}</h2>`}<div class="section-body"></div>`;return sec;
 }
 /* Appends one atom and returns the element it created (so a failed fit can be undone). */
-function appendAtom(shell,a,st){
+function appendAtom(shell,a,st,s){
  const body=shell.lastElementChild;let el;
+ const entryIndex=a.e&&s.entries?s.entries.indexOf(a.e):-1;
  if(a.k==='entry'){
   el=document.createElement('div');el.className='entry';
-  el.innerHTML=`<div class="entry-top"><span class="entry-title">${$esc(a.e.role)}</span><span class="entry-date">${$esc(a.e.date)}</span></div>${a.e.company?`<div class="entry-sub">${$esc(a.e.company)}</div>`:''}${a.first?`<ul><li>${$esc(a.first)}</li></ul>`:''}`;
+  el.innerHTML=`<div class="entry-top"><span class="entry-title" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="role" title="Click to edit role">${$esc(a.e.role)}</span><span class="entry-date" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="date" title="Click to edit dates">${$esc(a.e.date)}</span></div>${a.e.company?`<div class="entry-sub" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="company" title="Click to edit organization">${$esc(a.e.company)}</div>`:''}${a.first?`<ul><li contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="detail" data-detail-source="${$esc(a.first)}">${$esc(a.first)}</li></ul>`:''}`;
   body.appendChild(el);st.ul=el.querySelector('ul');
  }else if(a.k==='li'){
   if(!st.ul){const last=body.lastElementChild;st.ul=document.createElement('ul');(last||body).appendChild(st.ul)}
-  el=document.createElement('li');el.textContent=a.t;st.ul.appendChild(el);
+  el=document.createElement('li');el.contentEditable='true';el.spellcheck=true;el.title='Click to edit bullet';el.dataset.sectionId=s.id;el.dataset.entry=entryIndex;el.dataset.entryField='detail';el.dataset.detailSource=a.t;el.textContent=a.t;st.ul.appendChild(el);
  }else if(a.k==='chip'){
   let l=body.querySelector('.skill-list');if(!l){l=document.createElement('div');l.className='skill-list';body.appendChild(l)}
-  el=document.createElement('span');el.className='skill';el.textContent=a.t;l.appendChild(el);
- }else{el=document.createElement('p');if(a.cont)el.className='cont';el.textContent=a.t;body.appendChild(el)}
+  const skills=String(s.content||'').split(/[,\n]/).map(x=>x.trim()).filter(Boolean),skillIndex=skills.indexOf(a.t);
+  el=document.createElement('span');el.className='skill';el.contentEditable='true';el.spellcheck=true;el.title='Click to edit skill';el.dataset.sectionId=s.id;el.dataset.skillIndex=String(skillIndex);el.textContent=a.t;l.appendChild(el);
+ }else{el=document.createElement('p');if(a.cont)el.className='cont';el.contentEditable='true';el.spellcheck=true;el.title='Click to edit text';el.dataset.sectionId=s.id;el.dataset.textSource=a.t;el.textContent=a.t;body.appendChild(el)}
  return el;
 }
-function renderWhole(s){const shell=makeShell(s,false),st={};sectionAtoms(s).forEach(a=>appendAtom(shell,a,st));return shell}
+function renderWhole(s){const shell=makeShell(s,false),st={};sectionAtoms(s).forEach(a=>appendAtom(shell,a,st,s));return shell}
 
 /* ---------- Structured (flow) layout ----------
    Single column: one stream of content.  Two columns: two independent streams (wide / narrow),
@@ -388,8 +390,8 @@ function flowSections(root,tmpl){
  const fits=(si,pi)=>{const l=colOf(si,pi).lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi)+.5};
  const fill=si=>{const st=streams[si],c=colOf(si,st.page),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
  const attempt=(si,pi,s,cont,first,force)=>{
-  const shell=makeShell(s,cont),st={};colOf(si,pi).appendChild(shell);appendAtom(shell,first,st);
-  if(fits(si,pi)||force)return {si,pi,shell,st};
+  const shell=makeShell(s,cont),st={};colOf(si,pi).appendChild(shell);appendAtom(shell,first,st,s);
+  if(fits(si,pi)||force)return {si,pi,shell,st,s};
   shell.remove();return null;
  };
  for(const s of state.sections.filter(x=>x.visible)){
@@ -398,7 +400,7 @@ function flowSections(root,tmpl){
   while(i<atoms.length){
    const a=atoms[i];
    if(cur){
-    const el=appendAtom(cur.shell,a,cur.st);
+    const el=appendAtom(cur.shell,a,cur.st,cur.s || s);
     if(fits(cur.si,cur.pi)){i++;continue}
     el.remove();lastSi=cur.si;cur=null;cont=true;
    }
@@ -436,7 +438,7 @@ function renderSheets(){
   sh.querySelector('.page-number').textContent=state.design.pageNumbers?`Page ${i+1} of ${all.length}`:'';
   sh.style.transform=zoom===1?'':`scale(${zoom})`;sh.style.marginBottom=zoom===1?'':((zoom-1)*PAGE_H)+'px';
  });
- $('hint').textContent=state.mode==='free'?'Free position mode: drag sections on the sheet. Pagination is manual in this mode.':all.length>1?`${all.length} A4 pages · page breaks shown between sheets`:'A4 sheet · select any section to edit';
+ $('hint').textContent=state.mode==='free'?'Free position: drag sections · Click text directly to edit':'Click any name, heading, bullet, skill, or paragraph on the page to edit · Use the right panel for design and photo details';
  $('zoomLabel').textContent=Math.round(zoom*100)+'%';
 }
 function closeTemplatePreview(){
@@ -1342,6 +1344,48 @@ $('sectionList').addEventListener('dragstart',e=>{const row=e.target.closest('[d
 $('sectionList').addEventListener('dragend',e=>{const row=e.target.closest('[data-section-row]');if(row)row.style.opacity='1';draggingId=null});
 $('sectionList').addEventListener('dragover',e=>{if(e.target.closest('[data-section-row]')){e.preventDefault();e.dataTransfer.dropEffect='move'}});
 $('sectionList').addEventListener('drop',e=>{e.preventDefault();const row=e.target.closest('[data-section-row]'),id=e.dataTransfer.getData('text/plain');if(!row||!id||id===row.dataset.sectionRow)return;transact(()=>{const from=state.sections.findIndex(x=>x.id===id),to=state.sections.findIndex(x=>x.id===row.dataset.sectionRow);if(from<0||to<0)return;const [item]=state.sections.splice(from,1);state.sections.splice(to,0,item)})});
+const directEditSnapshots=new WeakMap();
+function directEditValue(el){return String(el.innerText||'').replace(/\n{2,}/g,'\n').trim()}
+$('sheets').addEventListener('focusin',e=>{
+ const el=e.target.closest('[contenteditable="true"]');if(!el)return;
+ directEditSnapshots.set(el,deep(state));
+ if(!el.dataset.currentText)el.dataset.currentText=el.dataset.detailSource||el.dataset.textSource||directEditValue(el);
+});
+$('sheets').addEventListener('input',e=>{
+ const el=e.target.closest('[contenteditable="true"]');if(!el)return;
+ const value=directEditValue(el);
+ if(el.dataset.profileField){state.profile[el.dataset.profileField]=value}
+ else if(el.dataset.sectionTitle){const section=sectionById(el.dataset.sectionTitle);if(section)section.title=value||'Untitled section'}
+ else if(el.dataset.sectionId){
+  const section=sectionById(el.dataset.sectionId),entryIndex=Number(el.dataset.entry);
+  if(el.dataset.entryField==='role'&&section?.entries?.[entryIndex])section.entries[entryIndex].role=value;
+  else if(el.dataset.entryField==='date'&&section?.entries?.[entryIndex])section.entries[entryIndex].date=value;
+  else if(el.dataset.entryField==='company'&&section?.entries?.[entryIndex])section.entries[entryIndex].company=value;
+  else if(el.dataset.entryField==='detail'&&section?.entries?.[entryIndex]){
+   const entry=section.entries[entryIndex],details=lines(entry.details),source=el.dataset.currentText||el.dataset.detailSource||'';
+   const detailIndex=details.indexOf(source);if(detailIndex>=0)details[detailIndex]=value;else details.push(value);
+   entry.details=details.join('\n');el.dataset.currentText=value;
+  }
+  else if(el.dataset.skillIndex!==undefined){
+   const skills=String(section?.content||'').split(/[,:\n]/).map(x=>x.trim()).filter(Boolean),index=Number(el.dataset.skillIndex);
+   if(skills[index]!==undefined)skills[index]=value;section.content=skills.join(', ');
+  }
+  else if(el.dataset.textSource!==undefined){
+   const source=el.dataset.currentText||el.dataset.textSource||'';
+   if(String(section?.content||'').includes(source))section.content=String(section.content).replace(source,value);
+   else section.content=value;
+   el.dataset.currentText=value;
+  }
+ }
+ saveLocal();
+});
+$('sheets').addEventListener('focusout',e=>{
+ const el=e.target.closest('[contenteditable="true"]');if(!el)return;
+ const before=directEditSnapshots.get(el);if(before&&JSON.stringify(before)!==JSON.stringify(state)){recordHistory(before);saveLocal();renderInspector();updateUndoButton();toast('Resume updated')}
+ directEditSnapshots.delete(el);delete el.dataset.currentText;
+});
+$('sheets').addEventListener('keydown',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;if(e.key==='Enter'){e.preventDefault();el.blur()}});
+$('sheets').addEventListener('paste',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;e.preventDefault();document.execCommand('insertText',false,(e.clipboardData||window.clipboardData).getData('text/plain').replace(/[\r\n]+/g,' '))});
 $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection)});
 $('sheets').addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch'){

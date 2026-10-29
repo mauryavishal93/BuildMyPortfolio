@@ -11,6 +11,7 @@ export default defineConfig({
     }
   },
   build: {
+    chunkSizeWarningLimit: 1000,
     outDir: fileURLToPath(new URL('./dist', import.meta.url)),
     emptyOutDir: true,
     rollupOptions: {

@@ -256,7 +256,11 @@ async function loadPricingConfigFromStore() {
 }
 
 app.get('/api/health', (_request, response) => {
-  response.json({ status: 'ok' });
+  response
+    .status(200)
+    .type('text/plain')
+    .set('Cache-Control', 'no-store')
+    .send('OK');
 });
 
 app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '256kb' }));

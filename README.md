@@ -53,7 +53,7 @@ Paid plan purchases require a signed-in Google account. The backend verifies the
 
 ## Free and Pro plans
 
-Core resume editing, six templates, two lifetime Pro-template PDF downloads after Google sign-in, standard PDF export, resume-only ATS checks, basic cover-letter tools, JSON backup, and browser autosave remain free. Pro costs ₹99 per month or ₹399 per year as a recurring subscription until canceled. Pro includes all 17 templates, unlimited Pro-template PDF downloads, and job-description ATS matching.
+Core resume editing, six templates, two lifetime Pro-template PDF downloads after Google sign-in, standard PDF export, resume-only ATS checks, basic cover-letter tools, JSON backup, and browser autosave remain free. Pro costs ₹99 per month or ₹399 per year as a recurring subscription until canceled. Pro includes all 20 templates, unlimited Pro-template PDF downloads, and job-description ATS matching.
 
 Checkout fails closed until the server is fully configured. Start in Razorpay test mode and:
 

@@ -98,22 +98,31 @@ for (const feature of PRICING_FEATURES) {
 }
 
 function updatePurchaseControls() {
+  const checkoutReady = Boolean(billingConfig?.checkoutEnabled);
   const active = entitlement?.status === 'active';
   const activePlan = active ? entitlement.billingPlan : null;
-  const canPurchase = Boolean(currentUser && billingConfig?.checkoutEnabled && !active);
-  monthlyButton.disabled = !(canPurchase || active);
-  yearlyButton.disabled = !(canPurchase || active);
 
-  monthlyButton.textContent = !currentUser
-    ? 'Sign in to purchase monthly'
-    : !active
-      ? billingConfig?.checkoutEnabled ? 'Start monthly subscription' : 'Checkout unavailable'
-      : 'Manage billing';
-  yearlyButton.textContent = !currentUser
-    ? 'Sign in to purchase yearly'
-    : !active
-      ? billingConfig?.checkoutEnabled ? 'Start yearly subscription' : 'Checkout unavailable'
-      : 'Manage billing';
+  monthlyButton.disabled = true;
+  yearlyButton.disabled = true;
+
+  if (!checkoutReady) {
+    monthlyButton.textContent = 'Coming soon';
+    yearlyButton.textContent = 'Coming soon';
+    checkoutStatus.textContent = 'Checkout is coming soon. Please check back later.';
+  } else if (!currentUser) {
+    monthlyButton.textContent = 'Sign in to purchase monthly';
+    yearlyButton.textContent = 'Sign in to purchase yearly';
+    monthlyButton.disabled = false;
+    yearlyButton.disabled = false;
+  } else if (active) {
+    monthlyButton.textContent = 'Manage billing';
+    yearlyButton.textContent = 'Manage billing';
+  } else {
+    monthlyButton.textContent = 'Start monthly subscription';
+    yearlyButton.textContent = 'Start yearly subscription';
+    monthlyButton.disabled = false;
+    yearlyButton.disabled = false;
+  }
 
   const monthlyBadge = $('#monthlyPlanBadge');
   const yearlyBadge = $('#yearlyPlanBadge');
@@ -157,12 +166,12 @@ async function loadRazorpayCheckout() {
 }
 
 async function startCheckout(planKey) {
-  if (!currentUser) {
-    checkoutStatus.textContent = 'Sign in with Google before starting a purchase.';
+  if (!billingConfig?.checkoutEnabled) {
+    checkoutStatus.textContent = 'Checkout is coming soon. Please check back later.';
     return;
   }
-  if (!billingConfig?.checkoutEnabled) {
-    checkoutStatus.textContent = 'Checkout is not enabled on this server yet.';
+  if (!currentUser) {
+    checkoutStatus.textContent = 'Sign in with Google before starting a purchase.';
     return;
   }
 

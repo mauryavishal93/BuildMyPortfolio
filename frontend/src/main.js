@@ -3,6 +3,7 @@ import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
 import { confirmSignOut } from './signout-modal.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
+import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
 import { readSavedProject } from './project-storage.js';
 import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from './resume-pdf.js';
@@ -35,7 +36,10 @@ const templateDefs=[
 {id:'portrait',name:'Portrait Left',sub:'Photo + rule',accent:'#2f4a7a',cls:'layout-portrait',layout:'single',photo:true,photoPos:'left'},
 {id:'card',name:'Centered Card',sub:'Photo on top',accent:'#6a4c7d',cls:'layout-card',layout:'single',photo:true,photoPos:'center'},
 {id:'photobanner',name:'Photo Banner',sub:'Banner + photo',accent:'#1f5d73',cls:'layout-photobanner',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'studio',name:'Studio',sub:'Serif + frame',accent:'#8a4b2d',cls:'layout-studio',layout:'single',banner:true,photo:true,photoPos:'right'}
+{id:'studio',name:'Studio',sub:'Serif + frame',accent:'#8a4b2d',cls:'layout-studio',layout:'single',banner:true,photo:true,photoPos:'right'},
+{id:'luxe',name:'Luxe',sub:'Luxury serif',accent:'#7b4b42',cls:'layout-luxe',layout:'single',banner:true},
+{id:'verve',name:'Verve',sub:'Vibrant modern',accent:'#6d28d9',cls:'layout-verve',layout:'single',banner:true},
+{id:'arc',name:'Arc',sub:'Rounded profile',accent:'#0f766e',cls:'layout-arc',layout:'single',banner:true,photo:true,photoPos:'right'}
 ];
 const makeSections=()=>[
 {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
@@ -118,6 +122,20 @@ function authErrorMessage(error){
  }
  return error?.message||'Could not sign in with Google.';
 }
+function setSaveState(message){
+  const node=$('saveState');
+  if(!node)return;
+  node.textContent=message;
+  const wrap=node.closest('.save-state');
+  if(wrap){
+    const reduced=String(message).toLowerCase();
+    wrap.dataset.state=reduced.includes('saving')?'saving':reduced.includes('cloud')||reduced.includes('browser')||reduced.includes('saved')?'saved':'warning';
+  }
+}
+function currentSaveStateLabel(){
+  if(cloudUser&&activeCloudResumeId) return 'Saved in browser and cloud';
+  return 'Saved in this browser only';
+}
 function scheduleCloudSave(){
  if(!cloudUser||!activeCloudResumeId||cloudSaveBlocked)return;
  clearTimeout(cloudSaveTimer);
@@ -132,12 +150,12 @@ async function persistCloudResume(){
   const result=await saveResume(uid,id,snapshot.docName,snapshot,expectedRevision);
   if(activeCloudResumeId===id&&cloudUser?.uid===uid){
    activeCloudRevision=result.revision;
-   if(JSON.stringify(snapshot)===JSON.stringify(state))$('saveState').textContent='Saved in cloud and browser';
+   if(JSON.stringify(snapshot)===JSON.stringify(state))setSaveState('Saved in browser and cloud');
   }
  }catch(error){
   if(activeCloudResumeId===id){
    cloudSaveBlocked=true;
-   $('saveState').textContent='Cloud save stopped—check message';
+   setSaveState('Cloud save paused — review the message');
    toast(error.message||'Could not save this resume to the cloud.');
   }
  }finally{
@@ -146,15 +164,15 @@ async function persistCloudResume(){
  }
 }
 function saveLocal(syncCloud=true){
- if(localPersistenceBlocked){$('saveState').textContent='Local recovery needed';return}
- $('saveState').textContent='Saving…';
+ if(localPersistenceBlocked){setSaveState('Local recovery needed');return}
+ setSaveState('Saving…');
  clearTimeout(saveTimer);
  saveTimer=setTimeout(()=>{
   try{
    localStorage.setItem('resumeStudioV2',JSON.stringify(state));
-   $('saveState').textContent='Saved in this browser';
+   setSaveState(currentSaveStateLabel());
    if(syncCloud)scheduleCloudSave();
-  }catch(error){$('saveState').textContent='Local save unavailable';toast('Could not save this resume in this browser.')}
+  }catch(error){setSaveState('Local save unavailable');toast('Could not save this resume in this browser.')}
  },250);
 }
 function renderCloudResumes(){
@@ -192,9 +210,16 @@ function closeCloudModal(){
 async function saveCurrentAsCloudCopy(){
  if(!cloudUser){toast('Sign in with Google before saving to the cloud.');return}
  const suggested=state.docName||'Untitled resume';
- const name=window.prompt('Name this cloud resume:',suggested);
+ const name=await promptModern({
+  title:'Name this cloud resume',
+  message:'Choose a name for this saved cloud copy.',
+  defaultValue:suggested,
+  placeholder:'Resume name',
+  confirmText:'Save',
+  cancelText:'Cancel'
+ });
  if(name===null)return;
- const cleanName=name.trim().slice(0,120)||'Untitled resume';
+ const cleanName=String(name).trim().slice(0,120)||'Untitled resume';
  const copy=deep(state);
  copy.docName=cleanName;
  try{
@@ -222,7 +247,7 @@ function openCloudResume(id){
   selectedId=null;
   render();
   saveLocal(false);
-  $('saveState').textContent='Loaded from cloud';
+  setSaveState('Loaded from cloud');
   closeCloudModal();
   toast('Cloud resume opened. Future edits will sync automatically.');
  }catch(error){toast(`Could not open this cloud resume: ${error.message}`)}
@@ -230,7 +255,13 @@ function openCloudResume(id){
 async function removeCloudResume(id){
  const item=cloudResumes.find(resume=>resume.id===id);
  if(!item||!cloudUser)return;
- if(!window.confirm(`Delete "${item.name||'Untitled resume'}" from your cloud resumes? This cannot be undone.`))return;
+ const confirmed=await confirmModern({
+  title:'Delete cloud resume?',
+  message:`Delete "${item.name||'Untitled resume'}" from your cloud resumes? This cannot be undone.`,
+  confirmText:'OK',
+  cancelText:'Cancel'
+ });
+ if(!confirmed)return;
  try{
   await deleteResume(cloudUser.uid,id);
   if(activeCloudResumeId===id){activeCloudResumeId=null;activeCloudRevision=null;cloudSaveBlocked=false}
@@ -293,7 +324,7 @@ async function updateCloudAccount(user,error){
   activeCloudResumeId=null;
   activeCloudRevision=null;
   cloudSaveBlocked=false;
-  $('saveState').textContent='Saved in this browser';
+ setSaveState('Saved in this browser only');
  }
  renderCloudResumes();
  renderTemplates();
@@ -366,6 +397,10 @@ function renderTemplates(){
  $('templates').innerHTML=templateDefs.map(templateCardMarkup).join('');
 }
 function renderSectionList(){
+ if(!state.sections.length){
+  $('sectionList').innerHTML=`<div class="section-empty"><strong>No sections yet</strong><p>Start with a Summary or Experience section to build your first resume.</p><div class="section-empty-actions"><button class="btn soft small" type="button" data-add="summary">Add Summary</button><button class="btn soft small" type="button" data-add="experience">Add Experience</button></div></div>`;
+  return;
+ }
  $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${$esc(s.id)}"><span class="grip" aria-hidden="true">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" type="button" data-toggle="${$esc(s.id)}" title="${s.visible?'Hide':'Show'} section" aria-label="${s.visible?'Hide':'Show'} ${$esc(s.title)}">${s.visible?'◉':'○'}</button><button class="section-delete" type="button" data-delete-section="${$esc(s.id)}" title="Delete ${$esc(s.title)}" aria-label="Delete ${$esc(s.title)}">×</button></div>`).join('');
 }
 function deleteSectionById(id){
@@ -725,26 +760,52 @@ function loadPrefs(){try{const u=JSON.parse(localStorage.getItem('resumeStudioUI
 function render(){renderTemplates();renderSectionList();renderSheets();renderInspector();$('docName').value=state.docName;$('pageLayout').value=state.layout;$('editMode').value=state.mode;updateUndoButton()}
 /* Selecting only toggles highlight classes: no re-layout, so the page never jumps while you click around. */
 function selectSection(id,expandEntries=false){selectedId=id;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
-function addSection(type,title,content){const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};if(['experience','education','projects'].includes(type))s.entries=[{role:type==='education'?'Degree / qualification':type==='projects'?'Project name':'Job title',company:'Organization',date:'Year',details:'Add one detail per line.'}];else s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');state.sections.push(s);selectedId=s.id}
+function addSection(type,title,content){const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};if(['experience','education','projects'].includes(type))s.entries=[{role:type==='education'?'Degree / qualification':type==='projects'?'Project name':'Job title',company:'Organization',date:'Year',details:'Add one detail per line.'}];else s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');state.sections.push(s);selectedId=s.id;rightTab='section';return s;}
 function download(filename,blob){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
 function exportJSON(){download((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.json',new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));toast('JSON backup downloaded')}
-function importJSON(file){if(file.size>5*1024*1024){alert('Could not load project: JSON backups must be smaller than 5 MB.');return}const r=new FileReader();r.onload=()=>{try{const next=normalizeState(JSON.parse(r.result));localPersistenceBlocked=false;recoverySnapshot=null;$('recoveryBanner').hidden=true;transact(()=>{state=next;selectedId=null});toast('Project loaded')}catch(e){alert('Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message))}};r.onerror=()=>alert('Could not read that file.');r.readAsText(file)}
+async function importJSON(file){
+ if(file.size>5*1024*1024){
+  await alertModern({ title: 'Import failed', message: 'Could not load project: JSON backups must be smaller than 5 MB.' });
+  return;
+ }
+ const r=new FileReader();
+ r.onload=async()=>{
+  try{
+   const next=normalizeState(JSON.parse(r.result));
+   localPersistenceBlocked=false;
+   recoverySnapshot=null;
+   $('recoveryBanner').hidden=true;
+   transact(()=>{state=next;selectedId=null});
+   toast('Project loaded');
+  }catch(e){
+   await alertModern({ title: 'Import failed', message: 'Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message) });
+  }
+ };
+ r.onerror=async()=>{
+  await alertModern({ title: 'Import failed', message: 'Could not read that file.' });
+ };
+ r.readAsText(file);
+}
 function showRecoveryNotice(recovery){
  if(!recovery.error)return;
  recoverySnapshot=recovery;
  localPersistenceBlocked=true;
  const recoveredOlder=Boolean(recovery.state);
- $('recoveryTitle').textContent=recovery.storageUnavailable?'Browser storage is unavailable':recoveredOlder?'A saved resume could not be read':'Saved resume could not be recovered';
- $('recoveryMessage').textContent=recovery.storageUnavailable
-  ?'The browser did not allow access to saved resume data. Autosave is paused. Check your browser storage settings and reload before continuing.'
+ $('recoveryTitle').textContent=recovery.storageUnavailable
+  ?'Browser backup is unavailable'
   :recoveredOlder
-  ?'A valid older browser copy was loaded. Autosave is paused so it will not overwrite the unreadable saved data. Download the saved data or explicitly continue with the recovered copy.'
-  :'Your saved browser data could not be read. Autosave is paused to protect it. Download a copy before starting again or importing a backup.';
- $('resolveRecovery').textContent=recoveredOlder?'Continue with recovered resume':'Start with a new resume';
+   ?'Recovered a saved draft'
+   :'Found an older saved draft';
+ $('recoveryMessage').textContent=recovery.storageUnavailable
+  ?'This browser cannot read or write local backups right now. Export a JSON copy before continuing so your work is not lost.'
+  :recoveredOlder
+   ?'We found a saved draft from this browser. Continue with it or start fresh, and keep this backup if you want a safety copy.'
+   :'A browser copy was found, but it could not be read cleanly. Continue with the recovered draft or create a fresh resume.';
+ $('resolveRecovery').textContent=recoveredOlder?'Use recovered draft':'Start fresh';
  $('resolveRecovery').hidden=Boolean(recovery.storageUnavailable);
  $('downloadRecoveryBackup').hidden=!recovery.raw;
  $('recoveryBanner').hidden=false;
- $('saveState').textContent='Local recovery needed';
+ setSaveState('Recovered draft ready');
 }
 function resolveLocalRecovery(){
  if(!recoverySnapshot)return;
@@ -757,7 +818,7 @@ function resolveLocalRecovery(){
   localPersistenceBlocked=false;
   $('recoveryBanner').hidden=true;
   render();
-  $('saveState').textContent='Saved in this browser';
+  setSaveState(currentSaveStateLabel());
   scheduleCloudSave();
  }catch(error){
   console.error('Unable to replace unreadable resume data in this browser.',error);
@@ -894,8 +955,9 @@ function showPdfPreview(blob,filename,pageCount,title){
     ? ' · Free Pro-template allowance will be checked when downloading'
     : ` · ${proTemplateDownloadsRemaining} free Pro-template PDF download${proTemplateDownloadsRemaining===1?'':'s'} remaining`
   : '';
- $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading.`;
+ $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading — the button is ready when you are.`;
  $('downloadPdfPreview').disabled=false;
+ $('downloadPdfPreview').textContent='Download PDF';
 }
 function closePdfPreview(){
  pdfPreviewGeneration++;
@@ -913,6 +975,7 @@ async function downloadPreviewPdf(){
  const button=$('downloadPdfPreview');
  const usesProTemplate=pdfPreviewUsesProTemplate;
  button.disabled=true;
+ button.textContent='Preparing download…';
  try{
   if(usesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
    if(!cloudUser){
@@ -941,6 +1004,7 @@ async function downloadPreviewPdf(){
    ? `${proTemplateDownloadsRemaining} free Pro-template PDF downloads remaining`
    : 'PDF downloaded');
  }finally{
+  button.textContent='Download PDF';
   if(pdfPreviewBlob)button.disabled=false;
  }
 }
@@ -1694,7 +1758,23 @@ const finishTouchPointer=e=>{
 $('sheets').addEventListener('pointerup',finishTouchPointer);
 $('sheets').addEventListener('pointercancel',finishTouchPointer);
 function closeCustomSectionDialog(){const bg=$('modalBg');bg.classList.remove('show');bg.setAttribute('aria-hidden','true');customSectionTrigger?.focus();customSectionTrigger=null}
-document.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.add==='custom'){customSectionTrigger=b;$('modalBg').classList.add('show');$('modalBg').setAttribute('aria-hidden','false');$('customTitle').focus();return}transact(()=>addSection(b.dataset.add))}));
+function triggerQuickSectionAdd(type){
+  if(type==='custom'){customSectionTrigger=document.activeElement||null;$('modalBg').classList.add('show');$('modalBg').setAttribute('aria-hidden','false');$('customTitle').focus();return}
+  leftTab='sections';
+  setTab('sections');
+  transact(()=>addSection(type));
+  toast(type==='summary'?'Summary section added':type==='experience'?'Experience section added':'Section added');
+}
+document.addEventListener('click',event=>{
+ const trigger=event.target.closest('[data-add]');
+ if(trigger){
+  if(trigger.dataset.add==='custom'){customSectionTrigger=trigger;$('modalBg').classList.add('show');$('modalBg').setAttribute('aria-hidden','false');$('customTitle').focus();return}
+  triggerQuickSectionAdd(trigger.dataset.add);
+  return;
+ }
+ const quickTrigger=event.target.closest('[data-quick-add]');
+ if(quickTrigger){triggerQuickSectionAdd(quickTrigger.dataset.quickAdd);}
+});
 $('confirmCustom').addEventListener('click',()=>{transact(()=>addSection('custom',$('customTitle').value.trim()||'Additional information',$('customContent').value));closeCustomSectionDialog()});
 $('cancelCustom').addEventListener('click',closeCustomSectionDialog);
 $('modalBg').addEventListener('click',e=>{if(e.target===$('modalBg'))closeCustomSectionDialog()});
@@ -1741,6 +1821,8 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
  $('pdfBtn').addEventListener('click',()=>exportPDF());$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(()=>runAtsChecks({promptUpgrade:false}),250)});
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 $('dismissOnboarding').addEventListener('click',()=>{$('onboardingCard').hidden=true;onboardingDismissed=true;savePrefs()});
+$('undoBtn')?.addEventListener('click',undo);
+$('redoBtn')?.addEventListener('click',redo);
 let resizing=null;
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
 $('panelGrip').addEventListener('pointerdown',gripDown('r'));$('leftGrip').addEventListener('pointerdown',gripDown('l'));

@@ -1284,7 +1284,11 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
 });
 
 app.get('/', (_request, response) => {
-  response.sendFile(path.join(distDir, 'editor.html'));
+  response.redirect(302, '/home.html');
+});
+
+app.get('/home.html', (_request, response) => {
+  response.sendFile(path.join(distDir, 'home.html'));
 });
 
 app.use(express.static(distDir));

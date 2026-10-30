@@ -13,7 +13,7 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
 </head>
 <body>
 <header class="topbar">
- <div class="brand"><span class="logo">P</span><span>PersonaCraftPro</span><span id="proBrandBadge" class="pro-brand-badge" hidden>Pro</span></div>
+ <a class="brand" href="/home.html" aria-label="PersonaCraftPro home"><span class="logo">P</span><span>PersonaCraftPro</span><span id="proBrandBadge" class="pro-brand-badge" hidden>Pro</span></a>
  <input id="docName" class="docname" aria-label="Project name" value="Untitled resume">
  <div class="spacer"></div><span class="save-state"><span class="dot"></span><span id="saveState">Saved in this browser</span></span>
  <div class="cloud-actions" id="cloudActions">
@@ -68,9 +68,10 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
   </section>
 </div>
 <div class="layout" id="layout">
- <aside class="left" id="leftPanel"><div class="panel-grip left-grip" id="leftGrip" title="Drag to resize panel"></div>
-  <button class="size-btn strip-btn" id="expandLeft" title="Expand sidebar" aria-label="Expand sidebar">⇥</button>
-  <div class="left-scroll"><div class="left-head"><div class="tabs" role="tablist" aria-label="Sidebar"><button class="tab active" id="tabTemplates" role="tab" aria-selected="true" aria-controls="paneTemplates" data-tab="templates">Templates</button><button class="tab" id="tabSections" role="tab" aria-selected="false" aria-controls="paneSections" data-tab="sections">Sections</button></div><button class="size-btn" id="collapseLeft" title="Collapse / expand" aria-label="Collapse sidebar">⇤</button></div>
+ <aside class="left" id="leftPanel">
+  <div class="panel-grip left-grip" id="leftGrip" title="Drag to resize panel"></div>
+  <button class="panel-toggle left-toggle" id="toggleLeftPanel" type="button" aria-label="Hide left panel" title="Hide left panel"><span></span><span></span></button>
+  <div class="left-scroll"><div class="left-head"><div class="tabs" role="tablist" aria-label="Sidebar"><button class="tab active" id="tabTemplates" role="tab" aria-selected="true" aria-controls="paneTemplates" data-tab="templates">Templates</button><button class="tab" id="tabSections" role="tab" aria-selected="false" aria-controls="paneSections" data-tab="sections">Sections</button></div></div>
   <div class="tabpanel" id="paneTemplates" role="tabpanel" aria-labelledby="tabTemplates"><div class="eyebrow">Choose a template</div><div id="templates" class="templates"></div><a class="plans-inline-link" href="/pricing.html">Compare Free and Pro plans</a></div>
   <div class="tabpanel" id="paneSections" role="tabpanel" aria-labelledby="tabSections" hidden>
    <div class="eyebrow">Resume sections · drag to reorder</div><div id="sectionList" class="section-list"></div>
@@ -156,7 +157,7 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
   <div class="hint" id="hint">A4 preview · Select a section to edit it</div>
   <div class="sheets" id="sheets"></div>
  </main>
- <aside class="right" id="rightPanel"><div class="panel-grip" id="panelGrip" title="Drag to resize panel"></div><div id="inspector"></div></aside>
+ <aside class="right" id="rightPanel"><button class="panel-toggle right-toggle" id="toggleRightPanel" type="button" aria-label="Hide right panel" title="Hide right panel"><span></span><span></span></button><div class="panel-grip" id="panelGrip" title="Drag to resize panel"></div><div id="inspector"></div></aside>
 </div>
 <div class="toast" id="toast" role="status"></div>
 <div class="modal-bg" id="modalBg" aria-hidden="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="customSectionTitle"><h2 id="customSectionTitle">Add custom section</h2><div class="field"><label for="customTitle">Section title</label><input id="customTitle" value="Additional information"></div><div class="field"><label for="customContent">Content</label><textarea id="customContent" placeholder="Write the section content"></textarea></div><div class="modal-actions"><button class="btn soft" id="cancelCustom" type="button">Cancel</button><button class="btn primary" id="confirmCustom" type="button">Add section</button></div></section></div>

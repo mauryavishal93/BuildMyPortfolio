@@ -7,7 +7,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "dev": "vite --open /editor.html",
+    "dev": "vite --open /home.html",
     "backend": "node backend/server.js",
     "build": "vite build",
     "test": "node --test",

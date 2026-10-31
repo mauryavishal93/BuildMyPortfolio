@@ -7,6 +7,10 @@ const firebaseConfig = {
 
 export const cloudConfigured = Object.values(firebaseConfig).every(value => typeof value === 'string' && value.length > 0);
 
+export function isGoogleSignInCancellation(error) {
+  return error?.code === 'auth/cancelled-popup-request';
+}
+
 export function googleSignInErrorMessage(error, hostname = globalThis.location?.hostname || 'this domain') {
   switch (error?.code) {
     case 'auth/configuration-not-found':

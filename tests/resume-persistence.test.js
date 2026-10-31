@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chooseAuthenticatedResume,
+  createAccountResumeStorage,
   createGuestResumeStorage,
+  findResumeByName,
   GUEST_RESUME_KEYS,
   GUEST_RESUME_PREFERENCE_KEY,
   resolveAuthTransition,
@@ -98,6 +100,32 @@ test('storage quota and preference write failures are surfaced', () => {
   assert.equal(persistence.enabled, false);
 });
 
+test('signed-in resumes autosave in a browser cache isolated per account', () => {
+  const storage = createStorage();
+  const persistence = createAccountResumeStorage(storage, normalize);
+  const firstResume = { name: 'Account one resume' };
+  const secondResume = { name: 'Account two resume' };
+
+  persistence.save('account/one', firstResume);
+  persistence.save('account-two', secondResume);
+
+  assert.deepEqual(persistence.load('account/one').state, firstResume);
+  assert.deepEqual(persistence.load('account-two').state, secondResume);
+  persistence.clear('account/one');
+  assert.equal(persistence.load('account/one').state, null);
+  assert.deepEqual(persistence.load('account-two').state, secondResume);
+});
+
+test('invalid signed-in browser copies are reported without replacing saved data', () => {
+  const storage = createStorage({ 'resumeAccountV1:account-1': '{"version":1,"state":null}' });
+  const persistence = createAccountResumeStorage(storage, normalize);
+  const result = persistence.load('account-1');
+
+  assert.equal(result.state, null);
+  assert.equal(result.raw, '{"version":1,"state":null}');
+  assert.ok(result.error);
+});
+
 test('authenticated session reopens the last-worked resume before considering a guest draft', () => {
   assert.deepEqual(chooseAuthenticatedResume({
     hasGuestDraft: true,
@@ -106,12 +134,26 @@ test('authenticated session reopens the last-worked resume before considering a 
   }), { type: 'open-cloud-resume', resumeId: 'last-worked-resume' });
   assert.deepEqual(chooseAuthenticatedResume({
     hasGuestDraft: true,
+    guestDraftName: '  My   Resume ',
+    resumes: [{ id: 'matching-resume', name: 'my resume' }, { id: 'last-worked-resume', name: 'Other resume' }],
+    lastWorkedResumeId: 'last-worked-resume'
+  }), { type: 'sync-guest-copy', resumeId: 'matching-resume' });
+  assert.deepEqual(chooseAuthenticatedResume({
+    hasGuestDraft: true,
     resumes: []
   }), { type: 'migrate-guest-copy' });
   assert.deepEqual(chooseAuthenticatedResume({
     hasGuestDraft: false,
     resumes: []
   }), { type: 'create-cloud-resume' });
+});
+
+test('automatic cloud upserts match resume names without duplicating them', () => {
+  const resumes = [{ id: 'saved-resume', name: 'My Resume' }];
+
+  assert.equal(findResumeByName(resumes, ' my   resume ')?.id, 'saved-resume');
+  assert.equal(findResumeByName(resumes, 'Different Resume'), null);
+  assert.equal(findResumeByName(resumes, '   '), null);
 });
 
 test('authenticated persistence stays in cloud with browser saving either on or off', () => {

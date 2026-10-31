@@ -5,13 +5,15 @@ import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import {
  chooseAuthenticatedResume,
  createGuestResumeStorage,
+ createAccountResumeStorage,
+ findResumeByName,
  resolveAuthTransition,
  resumeStorageMode,
  shouldShowBrowserSaveToggle
 } from './resume-persistence.js';
 import { buildResumePdf, drawPdfText } from './resume-pdf.js';
 import {
- cloudConfigured, deleteResume, getLastWorkedResumeId, googleSignInErrorMessage, listResumes, observeAuth, saveResume, setLastWorkedResumeId,
+ cloudConfigured, deleteResume, getLastWorkedResumeId, googleSignInErrorMessage, isGoogleSignInCancellation, listResumes, observeAuth, saveResume, setLastWorkedResumeId,
  signInWithGoogle, signOutUser
 } from './firebase-cloud.js';
 import { zoomFromPinch } from './zoom.js';
@@ -63,9 +65,11 @@ let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=nu
 let localPersistenceBlocked=false,recoverySnapshot=null;
 const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
 const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
+const accountResumeStorage=createAccountResumeStorage(browserStorage,normalizeState);
 let lastWorkedResumeWrite=Promise.resolve();
 let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
+let accountSaveTimer=null,accountLocalSaveBlocked=false,accountLocalSavePending=false;
 let signOutPending=false;
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -113,7 +117,10 @@ function setSaveState(message){
   }
 }
 function currentSaveStateLabel(){
-  if(cloudUser)return cloudSaveBlocked?'Unable to save changes':'All changes saved';
+  if(cloudUser){
+   if(cloudSaveBlocked||accountLocalSaveBlocked)return 'Unable to save changes';
+   return cloudDraftDirty||cloudSavePending||accountLocalSavePending?'Saving…':'All changes saved';
+  }
   return guestResumeStorage.enabled?'Saved locally':'Browser saving is off. Refreshing will discard your resume.';
 }
 function updateBrowserPersistenceUI(){
@@ -126,6 +133,49 @@ function scheduleCloudSave(){
  if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
  clearTimeout(cloudSaveTimer);
  cloudSaveTimer=setTimeout(persistCloudResume,700);
+}
+function persistAccountResume(uid,snapshot,generation=cloudSessionGeneration){
+ try{
+  accountResumeStorage.save(uid,snapshot);
+  if(cloudUser?.uid===uid&&cloudSessionGeneration===generation){
+   accountLocalSaveBlocked=false;
+   accountLocalSavePending=false;
+   $('saveState').title='';
+   setSaveState(currentSaveStateLabel());
+  }
+  return true;
+ }catch(error){
+  if(cloudUser?.uid===uid&&cloudSessionGeneration===generation){
+   accountLocalSaveBlocked=true;
+   accountLocalSavePending=false;
+   setSaveState('Unable to save changes');
+   $('saveState').title=error.message||'Could not save this resume in this browser.';
+  }
+  console.error('Could not save the signed-in resume in this browser.',error);
+  return false;
+ }
+}
+function scheduleAccountResumeSave(uid,snapshot,generation=cloudSessionGeneration){
+ clearTimeout(accountSaveTimer);
+ accountLocalSavePending=true;
+ accountSaveTimer=setTimeout(()=>{
+  accountSaveTimer=null;
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  persistAccountResume(uid,snapshot,generation);
+ },250);
+}
+function clearAccountResume(uid){
+ try{
+  accountResumeStorage.clear(uid);
+  if(cloudUser?.uid===uid){accountLocalSaveBlocked=false;accountLocalSavePending=false}
+ }catch(error){
+  console.error('Could not clear the signed-in resume from this browser.',error);
+  if(cloudUser?.uid===uid){
+   accountLocalSaveBlocked=true;
+   setSaveState('Unable to save changes');
+   $('saveState').title=error.message||'Could not clear this resume from this browser.';
+  }
+ }
 }
 async function rememberLastWorkedResume(uid,resumeId,generation=cloudSessionGeneration){
  if(!resumeId||cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
@@ -145,7 +195,10 @@ async function rememberLastWorkedResume(uid,resumeId,generation=cloudSessionGene
 async function persistCloudResume(){
  if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
  if(cloudSaving){cloudSavePending=true;return}
- const uid=cloudUser.uid,id=activeCloudResumeId,generation=cloudSessionGeneration,snapshot=deep(state),expectedRevision=id?activeCloudRevision:null;
+ const uid=cloudUser.uid,generation=cloudSessionGeneration,snapshot=deep(state);
+ const matchingResume=activeCloudResumeId?null:findResumeByName(cloudResumes,snapshot.docName);
+ const id=activeCloudResumeId||matchingResume?.id||null;
+ const expectedRevision=activeCloudResumeId?activeCloudRevision:matchingResume?.revision??null;
  cloudSaving=true;
  setSaveState('Saving…');
  try{
@@ -154,7 +207,7 @@ async function persistCloudResume(){
    activeCloudResumeId=result.id;
    activeCloudRevision=result.revision;
    void rememberLastWorkedResume(uid,result.id,generation);
-   if(JSON.stringify(snapshot)===JSON.stringify(state)){cloudDraftDirty=false;setSaveState('All changes saved')}
+   if(JSON.stringify(snapshot)===JSON.stringify(state)){cloudDraftDirty=false;setSaveState(currentSaveStateLabel())}
    else cloudSavePending=true;
   }
  }catch(error){
@@ -172,8 +225,9 @@ function saveLocal(syncCloud=true){
  const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
  if(persistenceMode==='cloud'){
   cloudDraftDirty=true;
+  scheduleAccountResumeSave(cloudUser.uid,deep(state));
   if(syncCloud)scheduleCloudSave();
-  if(cloudSaveBlocked)setSaveState('Unable to save changes');
+  if(cloudSaveBlocked||accountLocalSaveBlocked)setSaveState('Unable to save changes');
   else setSaveState('Saving…');
   if(cloudReady&&syncCloud)scheduleCloudSave();
   return;
@@ -253,8 +307,9 @@ async function saveCurrentAsCloudCopy(){
   selectedId=null;
   history=[];redoHistory=[];
   render();
+  persistAccountResume(uid,copy,cloudSessionGeneration);
   void rememberLastWorkedResume(uid,result.id,cloudSessionGeneration);
-  setSaveState('All changes saved');
+  setSaveState(currentSaveStateLabel());
   await refreshCloudResumes();
   toast('Cloud resume saved. Future edits will sync automatically.');
  }catch(error){toast(error.message||'Could not save this resume to the cloud.')}
@@ -273,8 +328,9 @@ function openCloudResume(id){
   history=[];redoHistory=[];
   selectedId=null;
   render();
+  persistAccountResume(cloudUser.uid,state,cloudSessionGeneration);
   void rememberLastWorkedResume(cloudUser.uid,item.id,cloudSessionGeneration);
-  setSaveState('All changes saved');
+  setSaveState(currentSaveStateLabel());
   closeCloudModal();
   toast('Cloud resume opened. Future edits will sync automatically.');
  }catch(error){toast(`Could not open this cloud resume: ${error.message}`)}
@@ -298,8 +354,11 @@ async function removeCloudResume(id){
    cloudSessionGeneration++;
    clearTimeout(cloudSaveTimer);
    activeCloudResumeId=null;activeCloudRevision=null;cloudSaveBlocked=false;
+   clearTimeout(accountSaveTimer);accountSaveTimer=null;
+   accountLocalSavePending=false;
+   clearAccountResume(uid);
    state=fresh();selectedId=null;history=[];redoHistory=[];render();
-   setSaveState('All changes saved');
+   setSaveState(currentSaveStateLabel());
   }
   await refreshCloudResumes();
   toast('Cloud resume deleted.');
@@ -335,13 +394,17 @@ async function updateCloudAccount(user,error){
  const hasGuestDraft=guestLogin&&(guestResumeLoaded||guestResumeDirty);
  const generation=accountChanged?++authGeneration:authGeneration;
  if(accountChanged){
+  if((loggingOut||accountSwitch)&&previousUser)persistAccountResume(previousUser.uid,state,cloudSessionGeneration);
   clearTimeout(saveTimer);
   clearTimeout(cloudSaveTimer);
+  clearTimeout(accountSaveTimer);accountSaveTimer=null;
   cloudSessionGeneration++;
   cloudReady=false;
   cloudDraftDirty=false;
   cloudSavePending=false;
   cloudSaveBlocked=false;
+  accountLocalSaveBlocked=false;
+  accountLocalSavePending=false;
   activeCloudResumeId=null;
   activeCloudRevision=null;
   cloudResumes=[];
@@ -418,18 +481,25 @@ async function updateCloudAccount(user,error){
    }
    const decision=chooseAuthenticatedResume({
     hasGuestDraft:hasGuestDraft||cloudDraftDirty,
-    resumes,
-    lastWorkedResumeId
-   });
-   if(decision.type==='open-cloud-resume'){
-    const selectedResume=resumes.find(resume=>resume.id===decision.resumeId);
-    state=normalizeState(selectedResume.state);
+     guestDraftName:state.docName,
+     resumes,
+     lastWorkedResumeId
+    });
+    if(decision.type==='open-cloud-resume'){
+     const selectedResume=resumes.find(resume=>resume.id===decision.resumeId);
+     state=normalizeState(selectedResume.state);
     activeCloudResumeId=selectedResume.id;
     activeCloudRevision=selectedResume.revision;
     void rememberLastWorkedResume(user.uid,selectedResume.id,cloudSessionGeneration);
     cloudDraftDirty=false;
     history=[];redoHistory=[];selectedId=null;
     render();
+   }else if(decision.type==='sync-guest-copy'){
+    const selectedResume=resumes.find(resume=>resume.id===decision.resumeId);
+    activeCloudResumeId=selectedResume.id;
+    activeCloudRevision=selectedResume.revision;
+    cloudDraftDirty=true;
+    void rememberLastWorkedResume(user.uid,selectedResume.id,cloudSessionGeneration);
    }else{
     const snapshot=deep(state);
     const result=await saveResume(user.uid,null,snapshot.docName,snapshot,null);
@@ -439,6 +509,7 @@ async function updateCloudAccount(user,error){
     cloudDraftDirty=false;
     if(JSON.stringify(snapshot)!==JSON.stringify(state))cloudSavePending=true;
    }
+   persistAccountResume(user.uid,state,cloudSessionGeneration);
    cloudReady=true;
    renderCloudResumes();
    if(openCloudOnAuth){
@@ -446,7 +517,7 @@ async function updateCloudAccount(user,error){
     history.replaceState(null,'',location.pathname+location.hash);
     openCloudModal();
    }
-   setSaveState(cloudDraftDirty||cloudSavePending?'Saving…':'All changes saved');
+   setSaveState(cloudDraftDirty||cloudSavePending?'Saving…':currentSaveStateLabel());
    if(cloudSavePending)scheduleCloudSave();
   }catch(error){
    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
@@ -455,6 +526,16 @@ async function updateCloudAccount(user,error){
    setSaveState('Unable to save changes');
    $('saveState').title=error.message||'Could not load or save this resume to the cloud.';
    console.error('Could not initialize the signed-in resume.',error);
+   const localResume=accountResumeStorage.load(user.uid);
+   if(localResume.error){
+    console.error('Could not read the signed-in resume saved in this browser.',localResume.error);
+   }else if(localResume.state){
+    state=localResume.state;
+    activeCloudResumeId=null;
+    activeCloudRevision=null;
+    history=[];redoHistory=[];selectedId=null;
+    render();
+   }
   }
   if(authGeneration===generation&&cloudUser?.uid===user.uid){
    renderTemplates();
@@ -2113,8 +2194,12 @@ $('editMode').addEventListener('change',e=>{
 $('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
  $('googleSignInBtn').addEventListener('click',async()=>{
+  const button=$('googleSignInBtn');
+  if(button.disabled)return;
+  button.disabled=true;
   try{await signInWithGoogle()}
-  catch(error){toast(authErrorMessage(error))}
+  catch(error){if(!isGoogleSignInCancellation(error))toast(authErrorMessage(error))}
+  finally{button.disabled=false}
  });
   $('browserSaveToggle').addEventListener('change',event=>{
    if(cloudUser){updateBrowserPersistenceUI();return}
@@ -2204,6 +2289,8 @@ showRecoveryNotice(savedProject);
 addEventListener('pagehide',()=>{
  const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
  if(persistenceMode==='cloud'){
+  clearTimeout(accountSaveTimer);
+  persistAccountResume(cloudUser.uid,state);
   if(cloudReady&&!cloudSaveBlocked){clearTimeout(cloudSaveTimer);void persistCloudResume()}
   return;
  }

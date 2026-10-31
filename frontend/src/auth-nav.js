@@ -1,4 +1,4 @@
-import { cloudConfigured, googleSignInErrorMessage, observeAuth, signInWithGoogle, signOutUser } from './firebase-cloud.js';
+import { cloudConfigured, googleSignInErrorMessage, isGoogleSignInCancellation, observeAuth, signInWithGoogle, signOutUser } from './firebase-cloud.js';
 
 const nav = document.querySelector('.about-nav');
 const signInButton = document.querySelector('[data-auth-sign-in]');
@@ -180,14 +180,19 @@ function updateAuthControls(user, error) {
 }
 
 signInButton?.addEventListener('click', async () => {
+  if (signInButton.disabled) return;
+  signInButton.disabled = true;
   try {
     await signInWithGoogle();
   } catch (error) {
+    if (isGoogleSignInCancellation(error)) return;
     console.error('Google sign-in failed.', error);
     if (status) {
       status.textContent = googleSignInErrorMessage(error);
       status.classList.add('auth-error');
     }
+  } finally {
+    signInButton.disabled = false;
   }
 });
 

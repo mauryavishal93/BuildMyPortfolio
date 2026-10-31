@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFirebaseCloudClient, googleSignInErrorMessage } from '../frontend/src/firebase-cloud.js';
+import { createFirebaseCloudClient, googleSignInErrorMessage, isGoogleSignInCancellation } from '../frontend/src/firebase-cloud.js';
 import { chooseAuthenticatedResume } from '../frontend/src/resume-persistence.js';
 
 function createFakeFirebase({ popupError = null, signOutError = null } = {}) {
@@ -135,6 +135,12 @@ test('Google sign-in reports actionable Firebase configuration and domain errors
   assert.match(googleSignInErrorMessage({ code: 'auth/operation-not-allowed' }), /Enable Google/);
   assert.match(googleSignInErrorMessage({ code: 'auth/unauthorized-domain' }, 'example.com'), /example\.com/);
   assert.match(googleSignInErrorMessage({ code: 'auth/unauthorized-domain' }, '127.0.0.1'), /using localhost/);
+});
+
+test('cancelled Google popup requests are identified for silent handling', () => {
+  assert.equal(isGoogleSignInCancellation({ code: 'auth/cancelled-popup-request' }), true);
+  assert.equal(isGoogleSignInCancellation({ code: 'auth/popup-blocked' }), false);
+  assert.equal(isGoogleSignInCancellation(new Error('Other sign-in error')), false);
 });
 
 test('cloud resume create, list, revision update, conflict detection, and delete are scoped per user', async () => {

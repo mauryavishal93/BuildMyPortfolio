@@ -2,6 +2,14 @@ import { readSavedProject } from './project-storage.js';
 
 export const GUEST_RESUME_PREFERENCE_KEY = 'resumeBrowserSavingV1';
 export const GUEST_RESUME_KEYS = ['resumeStudioV2', 'resumeStudioProject'];
+const ACCOUNT_RESUME_KEY_PREFIX = 'resumeAccountV1:';
+
+function accountResumeKey(uid) {
+  if (typeof uid !== 'string' || !uid) {
+    throw new Error('A valid account ID is required for local resume storage.');
+  }
+  return `${ACCOUNT_RESUME_KEY_PREFIX}${encodeURIComponent(uid)}`;
+}
 
 export function createGuestResumeStorage(storage, normalize) {
   let enabled = true;
@@ -68,7 +76,43 @@ export function createGuestResumeStorage(storage, normalize) {
   };
 }
 
-export function chooseAuthenticatedResume({ hasGuestDraft, resumes, lastWorkedResumeId }) {
+export function createAccountResumeStorage(storage, normalize) {
+  return {
+    load(uid) {
+      const key = accountResumeKey(uid);
+      let raw;
+      try {
+        raw = storage.getItem(key);
+        if (raw === null) return { state: null, error: null, raw: null };
+        const saved = JSON.parse(raw);
+        if (saved?.version !== 1) throw new Error('The saved account resume version is invalid.');
+        return { state: normalize(saved.state), error: null, raw: null };
+      } catch (error) {
+        return { state: null, error, raw: raw ?? null };
+      }
+    },
+    save(uid, state) {
+      storage.setItem(accountResumeKey(uid), JSON.stringify({ version: 1, state }));
+    },
+    clear(uid) {
+      storage.removeItem(accountResumeKey(uid));
+    }
+  };
+}
+
+function normalizedResumeName(name) {
+  return typeof name === 'string' ? name.trim().replace(/\s+/g, ' ').toLocaleLowerCase() : '';
+}
+
+export function findResumeByName(resumes, name) {
+  const normalizedName = normalizedResumeName(name);
+  if (!normalizedName) return null;
+  return resumes.find(resume => normalizedResumeName(resume.name) === normalizedName) ?? null;
+}
+
+export function chooseAuthenticatedResume({ hasGuestDraft, guestDraftName, resumes, lastWorkedResumeId }) {
+  const sameNameResume = hasGuestDraft ? findResumeByName(resumes, guestDraftName) : null;
+  if (sameNameResume) return { type: 'sync-guest-copy', resumeId: sameNameResume.id };
   if (resumes.length) {
     const lastWorkedResume = resumes.find(resume => resume.id === lastWorkedResumeId);
     return { type: 'open-cloud-resume', resumeId: lastWorkedResume?.id ?? resumes[0].id };

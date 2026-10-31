@@ -16,6 +16,8 @@ npm run dev
 
 Vite opens the editor at `/`. To run the billing API locally, start the backend in a second terminal with `npm run backend`; Vite proxies `/api` requests to `http://127.0.0.1:3000`. Billing remains disabled unless all server-side configuration is present.
 
+Check whether the website backend is running with `GET /api/health`. It returns HTTP `200` and `{"status":"ok"}` when available, with caching disabled.
+
 ## Production
 
 ```sh

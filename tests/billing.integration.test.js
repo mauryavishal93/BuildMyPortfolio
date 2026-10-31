@@ -120,15 +120,14 @@ async function request(path, { method = 'GET', token, body, headers = {} } = {})
   });
 }
 
-test('health check returns a zero-byte success response before domain redirects', async () => {
+test('health check reports website status before domain redirects', async () => {
   const response = await request('/api/health', {
     headers: { host: 'buildmyportfolio.onrender.com' }
   });
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.equal(response.headers.get('content-length'), '0');
-  assert.equal(await response.text(), '');
+  assert.deepEqual(await response.json(), { status: 'ok' });
 });
 
 test('removed app-selection and marriage URLs return visitors to the resume-builder home', async () => {

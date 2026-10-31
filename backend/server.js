@@ -33,12 +33,9 @@ app.disable('x-powered-by');
 
 app.get('/api/health', (_request, response) => {
   response
+    .set('Cache-Control', 'no-store')
     .status(200)
-    .set({
-      'Cache-Control': 'no-store',
-      'Content-Length': '0'
-    })
-    .end();
+    .json({ status: 'ok' });
 });
 
 app.use((request, response, next) => {

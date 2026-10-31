@@ -413,11 +413,18 @@ test('subscription checkout, payment verification, and signed webhook lifecycle 
   const entitlementResponse = await request('/api/billing/entitlement', { token: 'valid-test-token' });
   assert.equal((await entitlementResponse.json()).entitlement.subscriptionId, 'sub_test1');
 
-  const cancelled = await request('/api/billing/cancel', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: { reason: 'Changing to a different plan' }
-  });
+  const checkoutEnabled = process.env.BILLING_ENABLED;
+  process.env.BILLING_ENABLED = 'false';
+  let cancelled;
+  try {
+    cancelled = await request('/api/billing/cancel', {
+      method: 'POST',
+      token: 'valid-test-token',
+      body: { reason: 'Changing to a different plan' }
+    });
+  } finally {
+    process.env.BILLING_ENABLED = checkoutEnabled;
+  }
   assert.equal(cancelled.status, 200);
   assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').cancelAtCycleEnd, true);
   const userActivityResponse = await request('/api/billing/activity', { token: 'valid-test-token' });

@@ -26,6 +26,7 @@ let entitlement = null;
 let billingConfig = null;
 let billingConfigError = null;
 let refreshId = 0;
+let cancellationPending = false;
 
 const formatDate = value => {
   const timestamp = Number(value);
@@ -99,8 +100,8 @@ function updateVoucherControls() {
 
 function updatePlanSummary(user) {
   const active = entitlement?.status === 'active';
-  cancelButton.hidden = !active || !entitlement?.subscriptionId || Boolean(entitlement.cancelAtCycleEnd);
-  yearlyButton.hidden = !active || entitlement.billingPlan !== 'monthly' || Boolean(entitlement.cancelAtCycleEnd);
+  cancelButton.hidden = !user || !active || !entitlement?.subscriptionId || Boolean(entitlement.cancelAtCycleEnd);
+  yearlyButton.hidden = !user || !active || entitlement.billingPlan !== 'monthly' || Boolean(entitlement.cancelAtCycleEnd);
   yearlyButton.disabled = !billingConfig?.checkoutEnabled;
 
   if (!user) {
@@ -169,23 +170,34 @@ async function refreshBillingPage(user, authError = null) {
 }
 
 async function finalizeCancellation() {
-  if (!currentUser || !entitlement?.subscriptionId) return;
+  if (cancellationPending || !currentUser || !entitlement?.subscriptionId) return;
+  cancellationPending = true;
   cancelButton.disabled = true;
+  const confirmButton = cancelDialogForm?.querySelector('[type="submit"]');
+  if (confirmButton) {
+    confirmButton.disabled = true;
+    confirmButton.textContent = 'Scheduling cancellation…';
+  }
   try {
     const reason = cancelReasonInput.value.trim();
     await cancelBillingSubscription(currentUser, entitlement.subscriptionId, reason);
-    billingStatus.textContent = 'Cancellation scheduled. Pro remains active through the current paid period.';
     cancelDialog?.close?.();
     await refreshBillingPage(currentUser);
+    billingStatus.textContent = 'Cancellation scheduled. Pro remains active through the current paid period.';
   } catch (error) {
     billingStatus.textContent = error.message || 'Could not cancel this subscription.';
   } finally {
+    cancellationPending = false;
     cancelButton.disabled = false;
+    if (confirmButton) {
+      confirmButton.disabled = false;
+      confirmButton.textContent = 'Confirm cancellation';
+    }
   }
 }
 
 cancelButton.addEventListener('click', () => {
-  if (!currentUser || !entitlement?.subscriptionId) return;
+  if (cancellationPending || !currentUser || !entitlement?.subscriptionId) return;
   if (cancelDialog && typeof cancelDialog.showModal === 'function') {
     cancelReasonInput.value = '';
     cancelDialog.showModal();

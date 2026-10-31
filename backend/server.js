@@ -54,6 +54,15 @@ function requireEntitlementConfig(_request, response, next) {
   next();
 }
 
+function requireSubscriptionManagementConfig(_request, response, next) {
+  const { keyId, keySecret } = razorpayConfiguration();
+  if (!firebaseAdminConfigured() || !keyId || !keySecret) {
+    response.status(503).json({ error: 'Subscription management is unavailable on this server.' });
+    return;
+  }
+  next();
+}
+
 async function getFirebaseAdmin() {
   if (app.locals.firebaseAdmin) return app.locals.firebaseAdmin;
   if (firebaseAdmin) return firebaseAdmin;
@@ -1269,7 +1278,7 @@ app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, 
   }
 });
 
-app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async (request, response) => {
+app.post('/api/billing/cancel', requireSubscriptionManagementConfig, requireFirebaseUser, async (request, response) => {
   const reason = typeof request.body?.reason === 'string' ? request.body.reason.trim() : '';
   let subscriptionId = typeof request.body?.subscriptionId === 'string' ? request.body.subscriptionId.trim() : '';
 

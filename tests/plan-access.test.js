@@ -87,6 +87,21 @@ test('job descriptions are analyzed only after an explicit Run checks action', (
   assert.match(source, /if\(lockedJobMatch&&promptUpgrade\)showUpgrade\('job-description-ats'/);
 });
 
+test('hidden sign-out controls stay hidden in both account-menu styles', () => {
+  for (const stylesheet of ['style.css', 'about.css']) {
+    const styles = readFileSync(new URL(`../frontend/src/${stylesheet}`, import.meta.url), 'utf8');
+    assert.match(styles, /\.account-menu-item\[hidden\]\{display:none!important\}/);
+  }
+});
+
+test('subscription management buttons are hidden unless the user is signed in', () => {
+  const source = readFileSync(new URL('../frontend/src/billing.js', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../frontend/src/pricing.css', import.meta.url), 'utf8');
+  assert.match(source, /cancelButton\.hidden\s*=\s*!user\s*\|\|/);
+  assert.match(source, /yearlyButton\.hidden\s*=\s*!user\s*\|\|/);
+  assert.match(styles, /\.billing-plan-actions \.btn\[hidden\]\{display:none!important\}/);
+});
+
 test('monthly and yearly prices match the displayed INR subscriptions', () => {
   assert.equal(PLAN_CONFIG.pro.currency, 'INR');
   assert.deepEqual(PLAN_CONFIG.pro.monthly, { price: 99, interval: 'month' });

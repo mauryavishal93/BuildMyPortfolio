@@ -140,6 +140,14 @@ async function request(path, { method = 'GET', token, body, headers = {} } = {})
   });
 }
 
+test('health check returns an empty success response', async () => {
+  const response = await request('/api/health');
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(await response.text(), '');
+});
+
 function signedWebhook(event) {
   const rawBody = Buffer.from(JSON.stringify(event));
   const signature = createHmac('sha256', environment.RAZORPAY_WEBHOOK_SECRET)

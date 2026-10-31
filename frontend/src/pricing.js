@@ -131,33 +131,6 @@ for (const feature of PRICING_FEATURES) {
   tableBody.append(row);
 }
 
-function updateVoucherControls() {
-  const signInRequired = !currentUser;
-  const proActive = entitlement?.status === 'active';
-  const disabled = signInRequired || proActive;
-
-  voucherInput.disabled = disabled;
-  redeemButton.disabled = disabled;
-  $('#voucherSection').classList.toggle('voucher-disabled', disabled);
-  $('#voucherSection').classList.toggle('voucher-pro-active', proActive);
-
-  if (signInRequired) {
-    voucherInput.value = '';
-    voucherInput.placeholder = 'Sign in to redeem a voucher';
-    voucherStatus.dataset.state = 'error';
-    voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
-  } else if (proActive) {
-    voucherInput.value = '';
-    voucherInput.placeholder = 'Pro access is already active';
-    voucherStatus.dataset.state = 'success';
-    voucherStatus.textContent = 'Pro is already active. Voucher redemption is unavailable while your plan is active.';
-  } else {
-    voucherInput.placeholder = 'Enter voucher code';
-    voucherStatus.dataset.state = '';
-    voucherStatus.textContent = 'Enter a voucher code to check it for this account.';
-  }
-}
-
 function updatePurchaseControls() {
   const checkoutReady = Boolean(billingConfig?.checkoutEnabled);
   const active = entitlement?.status === 'active';

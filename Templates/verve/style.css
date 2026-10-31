@@ -1,0 +1,5 @@
+.layout-verve .resume-header{position:relative;padding:20px var(--mx) 18px;background:linear-gradient(135deg,#111827,#4f46e5 52%,#ec4899);color:#fff;overflow:hidden}
+.layout-verve .resume-header:after{content:"";position:absolute;right:-30px;bottom:-48px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.09)}
+.layout-verve .name{color:#fff;letter-spacing:.06em;text-transform:uppercase;font-size:29px}
+.layout-verve .headline,.layout-verve .contact{color:#e9e7ff}
+.layout-verve .section-heading{border:0;border-left:4px solid var(--resume-accent);background:rgba(109,40,217,.08);padding:6px 10px;color:var(--resume-accent);text-transform:uppercase;letter-spacing:.08em}

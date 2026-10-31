@@ -26,6 +26,7 @@ const distDir = path.resolve(backendDir, '../dist');
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 const subscriptionCollection = 'billingSubscriptions';
+const paidPlanSalesEnabled = false;
 let firebaseAdmin;
 
 app.disable('x-powered-by');
@@ -39,11 +40,15 @@ app.use((request, response, next) => {
 });
 
 function requireBillingConfig(_request, response, next) {
-  if (!billingConfigured()) {
-    response.status(503).json({ error: 'Paid plans are not configured on this server yet.' });
+  if (!paidPlanSalesEnabled || !billingConfigured()) {
+    response.status(410).json({ error: 'Paid plans are no longer available.' });
     return;
   }
   next();
+}
+
+function rejectPaidPlanSales(_request, response) {
+  response.status(410).json({ error: 'Voucher redemption is no longer available.' });
 }
 
 function requireEntitlementConfig(_request, response, next) {
@@ -375,14 +380,11 @@ app.put('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (request,
 
 app.get('/api/billing/config', (_request, response) => {
   response.json({
-    checkoutEnabled: billingConfigured(),
+    checkoutEnabled: paidPlanSalesEnabled && billingConfigured(),
     entitlementEnabled: firebaseAdminConfigured(),
-    voucherEnabled: firebaseAdminConfigured(),
-    keyId: billingConfigured() ? process.env.RAZORPAY_KEY_ID : null,
-    plans: Object.fromEntries(Object.entries(BILLING_PLANS).map(([key, plan]) => [
-      key,
-      { id: plan.id, label: plan.label, amount: plan.amount, currency: plan.currency, period: plan.period }
-    ]))
+    voucherEnabled: false,
+    keyId: null,
+    plans: {}
   });
 });
 
@@ -585,7 +587,7 @@ app.get('/api/billing/entitlement', requireEntitlementConfig, requireFirebaseUse
   }
 });
 
-app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFirebaseUser, async (request, response) => {
+app.post('/api/billing/vouchers/redeem', rejectPaidPlanSales, async (request, response) => {
   const code = typeof request.body?.code === 'string' ? request.body.code.trim().toUpperCase() : '';
   if (!/^[A-Z0-9][A-Z0-9-]{5,39}$/.test(code)) {
     response.status(400).json({ error: 'Enter a valid voucher code.' });

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Compare Free, Pro Monthly, and Pro Yearly plans for PersonaCraftPro.">
+    <meta name="description" content="Every PersonaCraftPro feature is free, including all resume templates, ATS checks, and PDF exports.">
     <title>Plans | PersonaCraftPro</title>
     <link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
     <link rel="stylesheet" href="/src/about.css">
@@ -39,83 +39,30 @@
     </header>
     <main class="about-main pricing-main">
       <section class="pricing-hero">
-        <p class="about-eyebrow">PLANS THAT STAY SIMPLE</p>
-        <h1>Start free and upgrade only when you need more power.</h1>
-        <p class="about-lead">PersonaCraftPro keeps the core editor free, while Pro unlocks more templates, unlimited Pro-template downloads, and deeper ATS guidance for job-specific resume targeting.</p>
+        <p class="about-eyebrow">NO PAYWALLS</p>
+        <h1>All features are free.</h1>
+        <p class="about-lead">Create and export resumes with every template and tool, with no subscription, usage limits, or account required for core features.</p>
       </section>
-      <section class="plan-cards" aria-label="Plan overview">
+      <section class="plan-cards" aria-label="Included features">
         <article class="plan-card">
-          <p class="about-eyebrow">START HERE</p>
+          <p class="about-eyebrow">EVERYTHING INCLUDED</p>
           <h2>Free</h2>
-          <p class="plan-price" id="freePrice">₹0 <span>always free</span></p>
-          <p>Core resume tools remain available without an account or payment.</p>
+          <p class="plan-price">₹0 <span>always free</span></p>
+          <p>All features are available to everyone without payment.</p>
           <ul>
-            <li>Complete resume editing and six Free templates</li>
-            <li>Use any Pro template after Google sign-in</li>
-            <li>Two lifetime Pro-template PDF downloads per account</li>
-            <li>Watermark-free standard A4 PDF preview and export</li>
-            <li>Resume-only ATS readiness checks</li>
-            <li>Basic cover-letter tools</li>
-            <li>JSON import/export and a guest browser-saving toggle</li>
-            <li>Google sign-in cloud sync with latest-resume loading</li>
+            <li>All 20 resume templates</li>
+            <li>Unlimited text-based PDF downloads</li>
+            <li>Unlimited resume-only and job-description ATS checks</li>
+            <li>Resume editing and cover-letter tools</li>
+            <li>JSON import/export and browser autosave controls</li>
+            <li>Optional Google sign-in cloud sync</li>
           </ul>
           <a class="btn primary plan-action" href="/editor.html">Get started free</a>
         </article>
-        <article class="plan-card plan-card-pro">
-          <p class="about-eyebrow">MONTHLY SUBSCRIPTION</p>
-          <div class="plan-card-heading"><h2>Pro Monthly</h2><span class="plan-status-badge" id="monthlyPlanBadge" hidden></span></div>
-          <p class="plan-price" id="monthlyPrice">₹99 <span>per month, recurring</span></p>
-          <ul>
-            <li>All 20 existing templates with unlimited PDF downloads</li>
-            <li>Job-description keyword and skills comparison</li>
-            <li>Cancel any time; access continues through the paid billing period</li>
-          </ul>
-          <button class="btn primary plan-action" id="purchaseMonthly" type="button" disabled>Sign in to purchase monthly</button>
-        </article>
-        <article class="plan-card plan-card-pro plan-card-yearly">
-          <p class="about-eyebrow">YEARLY SUBSCRIPTION · SAVE VS MONTHLY</p>
-          <div class="plan-card-heading"><h2>Pro Yearly</h2><span class="plan-status-badge" id="yearlyPlanBadge" hidden></span></div>
-          <p class="plan-price" id="yearlyPrice">₹399 <span>per year, recurring</span></p>
-          <ul>
-            <li>All 20 existing templates with unlimited PDF downloads</li>
-            <li>Job-description keyword and skills comparison</li>
-            <li>Cancel any time; access continues through the paid billing period</li>
-          </ul>
-          <button class="btn primary plan-action" id="purchaseYearly" type="button" disabled>Sign in to purchase yearly</button>
-        </article>
-      </section>
-      <p id="checkoutStatus" class="checkout-status" role="status" aria-live="polite">Checkout availability is being checked. You must sign in before starting a purchase.</p>
-      <section class="voucher-card" id="pricingVoucherSection" aria-labelledby="pricingVoucherTitle">
-        <div>
-          <p class="about-eyebrow">HAVE A VOUCHER?</p>
-          <h2 id="pricingVoucherTitle">Redeem a Pro voucher</h2>
-          <p>Enter a voucher code provided to you. Pro access is linked to your signed-in Google account.</p>
-          <p>Public vouchers can be redeemed by any signed-in user until their redemption limit. Account-specific vouchers can only be used by the assigned account.</p>
-        </div>
-        <form class="voucher-form" id="pricingVoucherForm">
-          <label class="voucher-label" for="pricingVoucherCode">Voucher code</label>
-          <input id="pricingVoucherCode" name="code" autocomplete="off" placeholder="Sign in to redeem a voucher" maxlength="40" required disabled>
-          <button class="btn primary" id="redeemPricingVoucher" type="submit" disabled>Redeem voucher</button>
-        </form>
-        <p class="voucher-examples">Example formats only — these are not valid codes: <code>EXAMPLE-30DAYS</code> · <code>EXAMPLE-1YEAR</code></p>
-        <p class="voucher-status" id="pricingVoucherStatus" role="status" aria-live="polite">Sign in with Google before redeeming a voucher.</p>
-      </section>
-      <section class="pricing-comparison">
-        <div class="section-heading">
-          <p class="about-eyebrow">FEATURE COMPARISON</p>
-          <h2>What is available today</h2>
-        </div>
-        <div class="pricing-table-wrap">
-          <table class="pricing-table">
-            <thead><tr><th scope="col">Feature</th><th scope="col">Free</th><th scope="col">Pro</th></tr></thead>
-            <tbody id="pricingFeatures"></tbody>
-          </table>
-        </div>
       </section>
       <section class="about-section pricing-terms">
-        <h2>Pricing, purchase, and access terms</h2>
-        <p>Pro is a recurring subscription: ₹99 per month or ₹399 per year. The subscription renews at the selected interval until canceled. Canceling stops future renewals; access remains through the current paid period. Payments are handled by Razorpay. Resume content is not sent to Razorpay.</p>
-        <p>Purchases require signing in with Google. Core editing, guest browser-saving controls, account-based cloud resume sync, JSON backup, resume-only ATS checks, cover letters, and standard PDF export remain free. A Google account can export two resumes using Pro templates at no cost; each Pro-template PDF download counts, including repeat downloads.</p>
+        <h2>Free for everyone</h2>
+        <p>There are no subscriptions, purchases, or feature-based usage limits. Sign in with Google only if you want to use optional cloud resume storage. Existing subscribers can still manage cancellation from the Billing page.</p>
         <div class="pricing-links">
           <a href="/privacy.html">Privacy policy</a>
           <a href="/terms.html">Terms of service</a>

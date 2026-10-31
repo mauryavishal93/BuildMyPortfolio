@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Manage your PersonaCraftPro account, Pro plan, vouchers, and billing activity.">
+    <meta name="description" content="Review your free plan and manage any existing subscription renewal.">
     <title>Billing | PersonaCraftPro</title>
     <link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
     <link rel="stylesheet" href="/src/about.css">
@@ -41,7 +41,7 @@
       <section class="pricing-hero">
         <p class="about-eyebrow">YOUR ACCOUNT</p>
         <h1>Billing</h1>
-        <p class="about-lead">Manage your current plan, redeem a voucher, and review billing activity.</p>
+        <p class="about-lead">All features are free. Review your account status and manage cancellation of any existing subscription.</p>
       </section>
       <section class="billing-account" aria-label="Billing account status">
         <p id="billingAccountStatus" role="status" aria-live="polite">Checking sign-in and billing status…</p>
@@ -49,43 +49,27 @@
       <section class="billing-plan-summary" aria-labelledby="billingPlanTitle">
         <div>
           <p class="about-eyebrow">CURRENT PLAN</p>
-          <h2 id="billingPlanTitle">Checking plan status…</h2>
-          <p id="billingPlanDetail">Sign in to view your active plan and manage renewals.</p>
+          <h2 id="billingPlanTitle">Checking account status…</h2>
+          <p id="billingPlanDetail">Sign in to review account billing history or manage an existing subscription.</p>
         </div>
         <div class="billing-plan-actions">
-          <button class="btn outline" id="switchBillingYearly" type="button" hidden>Switch to yearly</button>
           <button class="btn outline" id="cancelBilling" type="button" hidden>Cancel subscription</button>
-          <a class="btn primary" href="/pricing.html">View plans</a>
+          <a class="btn primary" href="/pricing.html">View included features</a>
         </div>
       </section>
       <p class="checkout-status" id="billingServiceStatus" role="status" aria-live="polite"></p>
-      <section class="voucher-card" id="voucherSection" aria-labelledby="voucherTitle">
-        <div>
-          <p class="about-eyebrow">HAVE A VOUCHER?</p>
-          <h2 id="voucherTitle">Redeem a Pro voucher</h2>
-          <p>Enter a voucher code provided to you. Pro access is linked to your signed-in Google account.</p>
-          <p>Public vouchers can be redeemed by any signed-in user until their redemption limit. Account-specific vouchers can only be used by the assigned account.</p>
-        </div>
-        <form class="voucher-form" id="voucherForm">
-          <label class="voucher-label" for="voucherCode">Voucher code</label>
-          <input id="voucherCode" name="code" autocomplete="off" placeholder="Enter voucher code" maxlength="40" required>
-          <button class="btn primary" id="redeemVoucher" type="submit" disabled>Redeem voucher</button>
-        </form>
-        <p class="voucher-examples">Example formats only — these are not valid codes: <code>EXAMPLE-30DAYS</code> · <code>EXAMPLE-1YEAR</code></p>
-        <p class="voucher-status" id="voucherStatus" role="status" aria-live="polite"></p>
-      </section>
       <section class="billing-history" aria-labelledby="billingHistoryTitle">
         <div class="section-heading">
           <p class="about-eyebrow">YOUR ACCOUNT</p>
           <h2 id="billingHistoryTitle">Billing activity</h2>
-          <p>Recent purchases, voucher redemptions, renewals, plan changes, and cancellations.</p>
+          <p>Existing subscription history and account billing activity.</p>
         </div>
         <div id="billingHistory" class="billing-history-list" role="status" aria-live="polite">Sign in to view billing activity.</div>
       </section>
       <nav class="billing-links" aria-label="More billing information">
         <a class="billing-link-card" href="/pricing.html">
           <span class="billing-link-icon" aria-hidden="true">₹</span>
-          <span class="billing-link-copy"><strong>Explore plans</strong><small>Compare Pro options and pricing</small></span>
+          <span class="billing-link-copy"><strong>Included features</strong><small>See everything available for free</small></span>
           <span class="billing-link-arrow" aria-hidden="true">→</span>
         </a>
         <a class="billing-link-card billing-link-refunds" href="/refunds.html">

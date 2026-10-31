@@ -1,0 +1,3 @@
+.layout-portrait .resume-header{border-bottom:3px solid var(--resume-accent);padding-bottom:14px}
+.layout-portrait .photo{border-radius:12px;--photo:100px}
+.layout-portrait .section-heading{border-bottom:2px solid var(--resume-accent)}

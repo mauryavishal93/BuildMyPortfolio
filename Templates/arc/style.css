@@ -1,0 +1,4 @@
+.layout-arc .resume-header{margin:var(--mt) var(--mx) 16px;padding:18px 18px 14px;border:1px solid rgba(15,118,110,.2);border-radius:18px;background:linear-gradient(135deg,#f0fdfa,#ecfeff);box-shadow:0 8px 18px rgba(15,118,110,.08)}
+.layout-arc .name{color:#0f172a;font-size:28px;letter-spacing:.07em;text-transform:uppercase}
+.layout-arc .headline,.layout-arc .contact{color:#334155}
+.layout-arc .section-heading{padding:7px 12px;border:0;border-radius:999px;background:rgba(15,118,110,.08);color:#0f766e;text-transform:uppercase;letter-spacing:.08em}

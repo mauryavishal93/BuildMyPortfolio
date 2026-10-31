@@ -1,7 +1,5 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
-import { voucherDocumentId } from '../backend/billing.js';
 import { app } from '../backend/server.js';
 
 const environment = {
@@ -69,8 +67,6 @@ function createFakeDatabase() {
 let server;
 let origin;
 let fakeDatabase;
-let providerSubscription;
-let nextSubscriptionId = 0;
 
 before(async () => {
   Object.assign(process.env, environment);
@@ -89,26 +85,8 @@ before(async () => {
     db: fakeDatabase.db
   };
   app.locals.razorpayRequest = async (endpoint, { method = 'GET' } = {}) => {
-    if (endpoint === '/plans/plan_monthly_test') {
-      return { id: 'plan_monthly_test', item: { amount: 9900, currency: 'INR' }, period: 'monthly', interval: 1 };
-    }
-    if (endpoint === '/plans/plan_yearly_test') {
-      return { id: 'plan_yearly_test', item: { amount: 39900, currency: 'INR' }, period: 'yearly', interval: 1 };
-    }
-    if (endpoint === '/subscriptions' && method === 'POST') {
-      nextSubscriptionId += 1;
-      return {
-        id: `sub_test${nextSubscriptionId}`,
-        plan_id: 'plan_monthly_test',
-        status: 'created'
-      };
-    }
-    if (endpoint === '/subscriptions/sub_test1') return providerSubscription;
-    if (endpoint === '/payments/pay_test1') {
-      return { id: 'pay_test1', subscription_id: 'sub_test1', status: 'captured' };
-    }
-    if (endpoint === '/subscriptions/sub_test1/cancel') {
-      return { id: 'sub_test1', status: 'cancelled' };
+    if (/^\/subscriptions\/sub_[A-Za-z0-9]+\/cancel$/.test(endpoint)) {
+      return { id: endpoint.split('/')[2], status: 'cancelled' };
     }
     throw new Error(`Unexpected mocked Razorpay request: ${method} ${endpoint}`);
   };
@@ -159,57 +137,26 @@ test('removed app-selection and marriage URLs return visitors to the resume-buil
   }
 });
 
-function signedWebhook(event) {
-  const rawBody = Buffer.from(JSON.stringify(event));
-  const signature = createHmac('sha256', environment.RAZORPAY_WEBHOOK_SECRET)
-    .update(rawBody)
-    .digest('hex');
-  return fetch(`${origin}/api/billing/webhook`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-razorpay-signature': signature
-    },
-    body: rawBody
-  });
-}
-
-test('billing routes reject unauthenticated and unapproved checkout requests', async () => {
+test('billing config and purchase endpoints keep paid plan sales disabled', async () => {
   const unauthenticated = await request('/api/billing/subscriptions', {
     method: 'POST',
     body: { planKey: 'monthly' }
   });
-  assert.equal(unauthenticated.status, 401);
+  assert.equal(unauthenticated.status, 410);
 
-  process.env.BILLING_TEST_MODE_VERIFIED = 'false';
   const config = await request('/api/billing/config');
   const configBody = await config.json();
   assert.equal(configBody.checkoutEnabled, false);
   assert.equal(configBody.entitlementEnabled, true);
-  assert.equal(configBody.voucherEnabled, true);
-  assert.doesNotMatch(JSON.stringify(configBody), /WELCOME30|LIMITED7/);
-  const configuredVoucherCodes = process.env.PRO_VOUCHERS_JSON;
-  process.env.PRO_VOUCHERS_JSON = '[]';
-  const adminVoucherConfig = await request('/api/billing/config');
-  assert.equal((await adminVoucherConfig.json()).voucherEnabled, true);
-  process.env.PRO_VOUCHERS_JSON = configuredVoucherCodes;
-  fakeDatabase.records.set('users/user-1/billing/entitlement', {
-    planId: 'pro',
-    billingPlan: 'yearly',
-    validUntil: Date.now() + 60_000,
-    subscriptionId: 'sub_existing'
-  });
-  const entitlement = await request('/api/billing/entitlement', { token: 'valid-test-token' });
-  assert.equal(entitlement.status, 200);
-  assert.equal((await entitlement.json()).entitlement.planId, 'pro');
+  assert.equal(configBody.voucherEnabled, false);
+  assert.equal(configBody.keyId, null);
+  assert.deepEqual(configBody.plans, {});
   const blocked = await request('/api/billing/subscriptions', {
     method: 'POST',
     token: 'valid-test-token',
     body: { planKey: 'monthly' }
   });
-  assert.equal(blocked.status, 503);
-  fakeDatabase.records.delete('users/user-1/billing/entitlement');
-  process.env.BILLING_TEST_MODE_VERIFIED = environment.BILLING_TEST_MODE_VERIFIED;
+  assert.equal(blocked.status, 410);
 });
 
 test('admin pricing stores distinct actual and current values', async () => {
@@ -238,234 +185,48 @@ test('admin pricing stores distinct actual and current values', async () => {
   assert.equal(loaded.pricing.yearly.currentPrice, 399);
 });
 
-test('public vouchers are available to every signed-in account and queue during active Pro access', async () => {
-  const unauthenticated = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    body: { code: 'WELCOME30' }
-  });
-  assert.equal(unauthenticated.status, 401);
-
-  const invalid = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: { code: 'NOT-A-CODE' }
-  });
-  assert.equal(invalid.status, 404);
-
-  const redeemed = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: { code: ' welcome30 ' }
-  });
-  assert.equal(redeemed.status, 200);
-  const entitlement = (await redeemed.json()).entitlement;
-  assert.equal(entitlement.planId, 'pro');
-  assert.equal(entitlement.billingPlan, 'voucher');
-  assert.equal(entitlement.source, 'server-verified');
-  assert.ok(entitlement.validUntil > Date.now());
-
-  const secondAccount = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'other-test-token',
-    body: { code: 'WELCOME30' }
-  });
-  assert.equal(secondAccount.status, 200);
-  assert.equal((await secondAccount.json()).entitlement.billingPlan, 'voucher');
-
-  const duplicate = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: { code: 'WELCOME30' }
-  });
-  assert.equal(duplicate.status, 409);
-
-  const activeAccount = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: { code: 'LIMITED7' }
-  });
-  assert.equal(activeAccount.status, 200);
-  const queued = await activeAccount.json();
-  assert.equal(queued.queued, true);
-  assert.equal(queued.entitlement.pendingVoucherCount, 1);
-  assert.equal(queued.entitlement.pendingVoucherStartAt, entitlement.validUntil);
-
-  const firstLimited = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'other-test-token',
-    body: { code: 'LIMITED7' }
-  });
-  assert.equal(firstLimited.status, 200);
-
-  const anotherPublicAccount = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'fourth-test-token',
-    body: { code: 'WELCOME30' }
-  });
-  assert.equal(anotherPublicAccount.status, 200);
-
-  const capped = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'third-test-token',
-    body: { code: 'LIMITED7' }
-  });
-  assert.equal(capped.status, 409);
-
-  const assignedCode = 'TARGET-USER-4';
-  const assignedId = voucherDocumentId(assignedCode);
-  fakeDatabase.records.set(`adminVouchers/${assignedId}`, {
-    code: assignedCode,
-    durationDays: 30,
-    maxRedemptions: 1,
-    assignedUid: 'user-4',
-    redeemedCount: 0,
-    createdAt: Date.now()
-  });
-  const wrongAccount = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'other-test-token',
-    body: { code: assignedCode }
-  });
-  assert.equal(wrongAccount.status, 403);
-  const assignedAccount = await request('/api/billing/vouchers/redeem', {
-    method: 'POST',
-    token: 'fourth-test-token',
-    body: { code: assignedCode }
-  });
-  assert.equal(assignedAccount.status, 200);
-  assert.equal((await assignedAccount.json()).queued, true);
-
-  const activeEntitlementKey = 'users/user-1/billing/entitlement';
-  fakeDatabase.records.set(activeEntitlementKey, {
-    ...fakeDatabase.records.get(activeEntitlementKey),
-    validUntil: Date.now() - 1
-  });
-  const activated = await request('/api/billing/entitlement', { token: 'valid-test-token' });
-  assert.equal(activated.status, 200);
-  const activatedEntitlement = (await activated.json()).entitlement;
-  assert.equal(activatedEntitlement.billingPlan, 'voucher');
-  assert.equal(activatedEntitlement.pendingVoucherCount, 0);
-  assert.ok(activatedEntitlement.validUntil > Date.now());
-
-  for (const uid of ['user-1', 'user-2', 'user-3', 'user-4']) {
-    fakeDatabase.records.delete(`users/${uid}/billing/entitlement`);
+test('voucher redemption is disabled for all accounts', async () => {
+  for (const token of [undefined, 'valid-test-token']) {
+    const response = await request('/api/billing/vouchers/redeem', {
+      method: 'POST',
+      token,
+      body: { code: 'WELCOME30' }
+    });
+    assert.equal(response.status, 410);
+    assert.match((await response.json()).error, /no longer available/i);
   }
 });
 
-test('subscription checkout, payment verification, and signed webhook lifecycle update server entitlements', async () => {
-  const checkoutResponse = await request('/api/billing/subscriptions', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: { planKey: 'monthly' }
-  });
-  assert.equal(checkoutResponse.status, 201);
-  assert.equal((await checkoutResponse.json()).subscriptionId, 'sub_test1');
-  assert.equal(fakeDatabase.records.get('billingSubscriptions/sub_test1').uid, 'user-1');
+test('paid endpoints are disabled while existing subscriptions can still be cancelled', async () => {
+  for (const [path, body] of [
+    ['/api/billing/subscriptions', { planKey: 'monthly' }],
+    ['/api/billing/verify', { razorpaySubscriptionId: 'sub_existing' }],
+    ['/api/billing/change-plan', { planKey: 'yearly' }]
+  ]) {
+    const response = await request(path, { method: 'POST', token: 'valid-test-token', body });
+    assert.equal(response.status, 410, path);
+  }
 
-  const endOfPeriod = Math.floor(Date.now() / 1000) + 3600;
-  providerSubscription = {
-    id: 'sub_test1',
-    plan_id: 'plan_monthly_test',
-    status: 'active',
-    current_end: endOfPeriod,
-    notes: { plan_key: 'monthly' }
-  };
-  const signature = createHmac('sha256', environment.RAZORPAY_KEY_SECRET)
-    .update('sub_test1|pay_test1')
-    .digest('hex');
-  const verified = await request('/api/billing/verify', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: {
-      razorpaySubscriptionId: 'sub_test1',
-      razorpayPaymentId: 'pay_test1',
-      razorpaySignature: signature
-    }
+  const validUntil = Date.now() + 60_000;
+  fakeDatabase.records.set('billingSubscriptions/sub_existing', {
+    uid: 'user-1',
+    planKey: 'monthly',
+    currentEnd: validUntil,
+    status: 'active'
   });
-  assert.equal(verified.status, 200);
-  assert.equal((await verified.json()).entitlement.planId, 'pro');
-  assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').status, 'active');
-  fakeDatabase.records.set('users/user-1/billing/entitlement', {
-    ...fakeDatabase.records.get('users/user-1/billing/entitlement'),
-    pendingVouchers: [{ voucherId: 'queued-webhook-test', durationDays: 7, startsAt: Date.now() + 3_600_000 }]
-  });
-
-  const activatedEvent = {
-    id: 'evt_activation_1',
-    event: 'subscription.activated',
-    payload: { subscription: { entity: providerSubscription } }
-  };
-  assert.equal((await signedWebhook(activatedEvent)).status, 200);
-  assert.equal((await signedWebhook(activatedEvent)).status, 200);
-  assert.equal(fakeDatabase.records.get('billingWebhookEvents/evt_activation_1').subscriptionId, 'sub_test1');
-  const updatedEntitlement = fakeDatabase.records.get('users/user-1/billing/entitlement');
-  assert.equal(updatedEntitlement.pendingVouchers.length, 1);
-  assert.equal(updatedEntitlement.pendingVouchers[0].startsAt, endOfPeriod * 1000);
-
   fakeDatabase.records.set('users/user-1/billing/entitlement', {
     planId: 'pro',
     billingPlan: 'monthly',
     status: 'active',
-    validUntil: Date.now() + 60_000,
-    subscriptionId: null,
+    validUntil,
+    subscriptionId: 'sub_existing',
     cancelAtCycleEnd: false
   });
-  const entitlementResponse = await request('/api/billing/entitlement', { token: 'valid-test-token' });
-  assert.equal((await entitlementResponse.json()).entitlement.subscriptionId, 'sub_test1');
-
-  const checkoutEnabled = process.env.BILLING_ENABLED;
-  process.env.BILLING_ENABLED = 'false';
-  let cancelled;
-  try {
-    cancelled = await request('/api/billing/cancel', {
-      method: 'POST',
-      token: 'valid-test-token',
-      body: { reason: 'Changing to a different plan' }
-    });
-  } finally {
-    process.env.BILLING_ENABLED = checkoutEnabled;
-  }
+  const cancelled = await request('/api/billing/cancel', {
+    method: 'POST',
+    token: 'valid-test-token',
+    body: { subscriptionId: 'sub_existing', reason: 'User requested cancellation' }
+  });
   assert.equal(cancelled.status, 200);
   assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').cancelAtCycleEnd, true);
-  const userActivityResponse = await request('/api/billing/activity', { token: 'valid-test-token' });
-  const userActivity = (await userActivityResponse.json()).activity;
-  const userCancellation = userActivity.find(item => item.title === 'Subscription cancelled by user');
-  assert.equal(userCancellation.actorType, 'user');
-  assert.equal(userCancellation.actorUid, 'user-1');
-  assert.ok(Number.isFinite(userCancellation.occurredAt));
-
-  fakeDatabase.records.set('users/user-2/billing/entitlement', {
-    planId: 'pro', billingPlan: 'monthly', status: 'active', validUntil: Date.now() + 60_000,
-    subscriptionId: 'sub_admin_cancel'
-  });
-  const adminCancelled = await request('/api/admin/users/user-2/cancel-pro', {
-    method: 'POST', token: 'admin-test-token', body: { reason: 'User requested cancellation' }
-  });
-  assert.equal(adminCancelled.status, 200);
-  const adminActivityResponse = await request('/api/billing/activity', { token: 'other-test-token' });
-  const adminActivity = (await adminActivityResponse.json()).activity;
-  const adminCancellation = adminActivity.find(item => item.title === 'Pro access cancelled by admin');
-  assert.equal(adminCancellation.actorType, 'admin');
-  assert.equal(adminCancellation.actorUid, 'admin-1');
-  assert.equal(adminCancellation.detail, 'User requested cancellation');
-  assert.ok(Number.isFinite(adminCancellation.occurredAt));
-
-  const expiredEvent = {
-    id: 'evt_expired_1',
-    event: 'subscription.expired',
-    payload: {
-      subscription: {
-        entity: { ...providerSubscription, current_end: Math.floor(Date.now() / 1000) - 1, status: 'expired' }
-      }
-    }
-  };
-  assert.equal((await signedWebhook(expiredEvent)).status, 200);
-  assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').planId, 'free');
-
-  const invalidSignature = await fetch(`${origin}/api/billing/webhook`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-razorpay-signature': 'invalid' },
-    body: JSON.stringify(activatedEvent)
-  });
-  assert.equal(invalidSignature.status, 400);
 });

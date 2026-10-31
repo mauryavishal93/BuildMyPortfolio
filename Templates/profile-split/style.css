@@ -1,0 +1,19 @@
+.layout-profile-split{background:linear-gradient(90deg,#d9ebec 0 50%,#f1dfd8 50% 100%);--resume-accent:#5f9fa2}
+.layout-profile-split .sheet-inner{background:linear-gradient(90deg,#a9c8ce 0 50%,#f4f4f4 50% 100%)}
+.layout-profile-split .resume-header{display:flex;align-items:center;gap:24px;min-height:230px;margin:0;padding:24px 32px;background:linear-gradient(90deg,#a9c8ce 0 50%,#f4f4f4 50% 100%)}
+.layout-profile-split .resume-header.has-photo[data-photo-pos=center]{flex-direction:column;justify-content:center;gap:10px}
+.layout-profile-split .profile-photo,.layout-profile-split .photo{width:150px;height:150px;flex:0 0 150px;object-fit:cover;border:5px solid #f8fbfc;border-radius:50%;outline:3px solid #5f9fa2}
+.layout-profile-split .photo-placeholder{background:#e5ecee}
+.layout-profile-split .header-text{min-width:0}
+.layout-profile-split .name{color:#24262a;font-size:30px;letter-spacing:.025em}
+.layout-profile-split .headline{text-transform:uppercase;letter-spacing:.06em}
+.layout-profile-split .sections-area{background:linear-gradient(90deg,#a9c8ce 0 50%,#e3a08a 50% 100%);padding:20px 24px max(var(--mb),var(--page-no-h))}
+.layout-profile-split .section-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0}
+.layout-profile-split .section-column{min-height:100%;padding:0 12px}
+.layout-profile-split .section-column:first-child{background:#edf5f6}
+.layout-profile-split .section-column:last-child{background:#f8eeea}
+.layout-profile-split .resume-section{padding:12px;background:#f8fbfd}
+.layout-profile-split .section-heading{color:#15181b;font-size:var(--resume-heading);font-weight:600;letter-spacing:.02em;border-bottom:2px solid rgba(95,159,162,.55)}
+.layout-profile-split .skill{border-color:rgba(95,159,162,.35)}
+.layout-profile-split[data-mode=free] .sections-area{background:transparent}
+@media print{.layout-profile-split,.layout-profile-split .sheet-inner,.layout-profile-split .resume-header,.layout-profile-split .sections-area,.layout-profile-split .section-column:first-child,.layout-profile-split .section-column:last-child{print-color-adjust:exact;-webkit-print-color-adjust:exact}}

@@ -1,9 +1,7 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
-import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
-import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
 import {
  chooseAuthenticatedResume,
  createGuestResumeStorage,
@@ -13,10 +11,11 @@ import {
 } from './resume-persistence.js';
 import { buildResumePdf, drawPdfText } from './resume-pdf.js';
 import {
- cloudConfigured, consumeProTemplateDownload, deleteResume, getLastWorkedResumeId, getProTemplateDownloadStatus, googleSignInErrorMessage, listResumes, observeAuth, saveResume, setLastWorkedResumeId,
+ cloudConfigured, deleteResume, getLastWorkedResumeId, googleSignInErrorMessage, listResumes, observeAuth, saveResume, setLastWorkedResumeId,
  signInWithGoogle, signOutUser
 } from './firebase-cloud.js';
 import { zoomFromPinch } from './zoom.js';
+import { templateDefs } from '../../Templates/index.js';
 
 (()=>{'use strict';
 const $=id=>document.getElementById(id),deep=x=>JSON.parse(JSON.stringify(x)),uid=()=>Math.random().toString(36).slice(2,10);
@@ -24,28 +23,6 @@ const baseDocumentTitle=document.title;
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
 const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
-const templateDefs=[
-{id:'classic',name:'Classic',sub:'ATS-friendly',accent:'#31547a',cls:'layout-classic',layout:'single'},
-{id:'modern',name:'Modern',sub:'Two-column',accent:'#344b67',cls:'layout-modern',layout:'two',banner:true},
-{id:'minimal',name:'Minimal',sub:'Clean type',accent:'#202a3a',cls:'layout-minimal',layout:'single'},
-{id:'creative',name:'Creative',sub:'Color accents',accent:'#6b4eff',cls:'layout-creative',layout:'single'},
-{id:'compact',name:'Compact',sub:'Space-saving',accent:'#2c5260',cls:'layout-compact',layout:'single'},
-{id:'elegant',name:'Elegant',sub:'Editorial',accent:'#7a5947',cls:'layout-elegant',layout:'single'},
-{id:'tech',name:'Tech',sub:'Engineering',accent:'#166b73',cls:'layout-tech',layout:'single'},
-{id:'executive',name:'Executive',sub:'Leadership',accent:'#27364d',cls:'layout-executive',layout:'single'},
-{id:'photo',name:'Photo Sidebar',sub:'Portrait layout',accent:'#215e69',cls:'layout-photo',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'timeline',name:'Timeline',sub:'Career milestones',accent:'#8b4b37',cls:'layout-timeline',layout:'single'},
-{id:'pastel',name:'Soft Pastel',sub:'Warm palette',accent:'#9b5878',cls:'layout-pastel',layout:'single',banner:true},
-{id:'bold',name:'Bold Split',sub:'High contrast',accent:'#b45309',cls:'layout-bold',layout:'two',banner:true},
-{id:'student',name:'Graduate',sub:'Early career',accent:'#18756d',cls:'layout-student',layout:'single'},
-{id:'portrait',name:'Portrait Left',sub:'Photo + rule',accent:'#2f4a7a',cls:'layout-portrait',layout:'single',photo:true,photoPos:'left'},
-{id:'card',name:'Centered Card',sub:'Photo on top',accent:'#6a4c7d',cls:'layout-card',layout:'single',photo:true,photoPos:'center'},
-{id:'photobanner',name:'Photo Banner',sub:'Banner + photo',accent:'#1f5d73',cls:'layout-photobanner',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'studio',name:'Studio',sub:'Serif + frame',accent:'#8a4b2d',cls:'layout-studio',layout:'single',banner:true,photo:true,photoPos:'right'},
-{id:'luxe',name:'Luxe',sub:'Luxury serif',accent:'#7b4b42',cls:'layout-luxe',layout:'single',banner:true},
-{id:'verve',name:'Verve',sub:'Vibrant modern',accent:'#6d28d9',cls:'layout-verve',layout:'single',banner:true},
-{id:'arc',name:'Arc',sub:'Rounded profile',accent:'#0f766e',cls:'layout-arc',layout:'single',banner:true,photo:true,photoPos:'right'}
-];
 const makeSections=()=>{
   return [
     {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
@@ -56,7 +33,7 @@ const makeSections=()=>{
     {id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
   ];
 };
-const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
+const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',freePageCount:1,profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
 function normalizeState(d){
@@ -64,7 +41,7 @@ function normalizeState(d){
  const base=fresh(),ver=Number(d.version)||1,out={...base,version:4};
  out.docName=str(d.docName).trim()?str(d.docName).slice(0,120):base.docName;
  out.template=templateDefs.some(t=>t.id===d.template)?d.template:base.template;
- out.layout=d.layout==='two'?'two':'single';out.mode=d.mode==='free'?'free':'flow';
+ out.layout=d.layout==='two'?'two':'single';out.mode=d.mode==='free'?'free':'flow';out.freePageCount=Math.round(clamp(d.freePageCount,1,100,1));
  out.profile={...base.profile};for(const k of Object.keys(base.profile))if(typeof d.profile[k]==='string')out.profile[k]=d.profile[k];
  if(out.profile.photo&&!/^data:image\//.test(out.profile.photo))out.profile.photo='';
  const ds=d.design;let mx=clamp(ds.margin,0,100,DEFAULT_MARGIN),my=clamp(ds.marginY!==undefined?ds.marginY:ds.margin,0,100,DEFAULT_MARGIN);
@@ -74,12 +51,12 @@ function normalizeState(d){
  out.sections=d.sections.filter(s=>s&&typeof s==='object').map(s=>{
   const type=KNOWN_TYPES.includes(s.type)?s.type:'custom';let id=str(s.id)||uid();while(seen.has(id))id=uid();seen.add(id);
   const normalizedListStyle=['none','bullet','number','arrow','check','dash','diamond'].includes(s.listStyle)?s.listStyle:(type==='summary'?'none':'bullet');
-  const n={id,type,title:str(s.title).trim()?str(s.title):'Untitled section',visible:s.visible!==false,listStyle:(type==='summary'&&ver<4&&normalizedListStyle==='bullet')?'none':normalizedListStyle};
+  const n={id,type,title:str(s.title).trim()?str(s.title):'Untitled section',visible:s.visible!==false,listStyle:(type==='summary'&&ver<4&&normalizedListStyle==='bullet')?'none':normalizedListStyle,textColor:/^#[0-9a-f]{6}$/i.test(str(s.textColor))?s.textColor:''};
   if(['experience','education','projects'].includes(type)||Array.isArray(s.entries))n.entries=(Array.isArray(s.entries)?s.entries:[]).filter(e=>e&&typeof e==='object').map(e=>({role:str(e.role),company:str(e.company),date:str(e.date),details:str(e.details)}));
   else n.content=str(s.content);
   return n});
  out.positions={};const pos=d.positions||d.freePositions;
- if(pos&&typeof pos==='object')for(const [k,p] of Object.entries(pos)){if(!seen.has(k)||!p||typeof p!=='object')continue;const x=Number(p.x),y=Number(p.y),w=Number(p.w);if(![x,y,w].every(Number.isFinite))continue;if(ver<3&&x===0&&w===610)continue;out.positions[k]={x:clamp(x,0,PAGE_W,0),y:clamp(y,0,PAGE_H,0),w:clamp(w,120,PAGE_W,610)}}
+ if(pos&&typeof pos==='object')for(const [k,p] of Object.entries(pos)){if(!seen.has(k)||!p||typeof p!=='object')continue;const x=Number(p.x),y=Number(p.y),w=Number(p.w);if(![x,y,w].every(Number.isFinite))continue;if(ver<3&&x===0&&w===610)continue;const position={x:clamp(x,0,PAGE_W,0),y:clamp(y,0,PAGE_H,0),w:clamp(w,80,PAGE_W,610),page:Math.round(clamp(p.page,1,100,1))},h=Number(p.h);if(Number.isFinite(h)&&h>0)position.h=clamp(h,30,PAGE_H,30);out.positions[k]=position;out.freePageCount=Math.max(out.freePageCount,position.page)}
  return out;
 }
 let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
@@ -88,10 +65,9 @@ const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),se
 const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
 let lastWorkedResumeWrite=Promise.resolve();
 let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
-let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
-let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
+let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
 let signOutPending=false;
-let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
+let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 const detailLines=v=>String(v||'').replace(/\r\n?/g,'\n').split('\n');
@@ -123,7 +99,6 @@ function insertPointerLine(sectionId,afterLine){
  requestAnimationFrame(()=>$('inspector').querySelector(`[data-section-pointer-line][data-section-id="${sectionId}"][data-line="${lineIndex}"]`)?.focus());
 }
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
-function updateProLabel(){const isPro=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);const badge=$('proBrandBadge');if(badge)badge.hidden=!isPro;document.title=isPro?`${baseDocumentTitle} | Pro`:baseDocumentTitle}
 function authErrorMessage(error){
  return googleSignInErrorMessage(error);
 }
@@ -333,10 +308,6 @@ async function removeCloudResume(id){
 async function updateCloudAccount(user,error){
  authStateResolved=true;
  if(error){
-  proTemplateDownloadsRemaining=null;
-  verifiedEntitlement=null;
-  updateProTemplatePreviewAllowance();
-  updateProLabel();
   $('googleSignInBtn').disabled=true;
   $('googleSignInLabel').textContent='Cloud setup needed';
   $('googleSignInBtn').title=error.message;
@@ -396,10 +367,6 @@ async function updateCloudAccount(user,error){
   if(guestLogin)guestResumeDirty=false;
  }
  cloudUser=user;
- proTemplateDownloadsRemaining=null;
- verifiedEntitlement=null;
- updateProTemplatePreviewAllowance({checking:!!user});
- updateProLabel();
  $('googleSignInBtn').hidden=!!user;
  $('cloudActions').hidden=!!user;
  $('accountMenu').hidden=false;
@@ -489,53 +456,11 @@ async function updateCloudAccount(user,error){
    $('saveState').title=error.message||'Could not load or save this resume to the cloud.';
    console.error('Could not initialize the signed-in resume.',error);
   }
-  try{
-   if(!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
-    const usage=await getProTemplateDownloadStatus(user.uid);
-    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
-    proTemplateDownloadsRemaining=usage.remaining;
-    updateProTemplatePreviewAllowance();
-   }
-  }catch(error){
-   console.error('Could not load the Pro-template trial allowance.',error);
-   updateProTemplatePreviewAllowance({error:true});
-  }
-  try{
-   const config=await loadBillingConfig();
-   if(config.entitlementEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
-   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
-  }catch(billingError){
-   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
-   console.error('Could not load the signed-in account billing status.',billingError);
-  }
   if(authGeneration===generation&&cloudUser?.uid===user.uid){
-   updateProLabel();
    renderTemplates();
   }
  }
 }
-window.addEventListener('focus',async()=>{
- const user=cloudUser;
- if(!user)return;
- try{
-  const config=await loadBillingConfig();
-  const entitlement=config.entitlementEnabled?await loadBillingEntitlement(user):null;
-  if(cloudUser?.uid!==user.uid)return;
-  verifiedEntitlement=entitlement;
-  if(!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)) {
-   const usage=await getProTemplateDownloadStatus(user.uid);
-   if(cloudUser?.uid!==user.uid)return;
-   proTemplateDownloadsRemaining=usage.remaining;
-   updateProTemplatePreviewAllowance();
-  } else {
-   proTemplateDownloadsRemaining=null;
-  }
-  updateProLabel();
-  renderTemplates();
- }catch(error){
-  console.error('Could not refresh the signed-in account billing status.',error);
- }
-});
 function updateUndoButton(){const undoButton=$('undoBtn'),redoButton=$('redoBtn');if(undoButton)undoButton.disabled=history.length===0;if(redoButton)redoButton.disabled=redoHistory.length===0}
 function recordHistory(snapshot){history.push(snapshot);if(history.length>50)history.shift();redoHistory=[];updateUndoButton()}
 function transact(fn){const previous=deep(state);fn();if(JSON.stringify(previous)!==JSON.stringify(state))recordHistory(previous);render();saveLocal()}
@@ -548,10 +473,10 @@ function websiteHref(value){
  try{const url=new URL(/^https?:\/\//i.test(raw)?raw:`https://${raw}`);return ['http:','https:'].includes(url.protocol)?url.href:''}catch{return ''}
 }
 function templateCardMarkup(t){
- const pro=isProTemplate(t.id),selected=state.template===t.id;
+ const selected=state.template===t.id;
  const photo=t.photo&&t.id!=='photo'?`<span class="mini-photo" style="${t.photoPos==='left'?'left':'right'}:${t.photoPos==='center'?'calc(50% - 7px)':'8px'};${t.photoPos==='center'?'left:calc(50% - 7px);right:auto':''}"></span>`:'';
- const sidebar=t.layout==='two'?`<div style="float:left;width:30%;height:100%;background:${t.accent};margin-right:5px">${t.id==='photo'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
- return `<div class="template-card"><button class="template ${selected?'active':''} ${pro?'template-pro':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, ${pro?'Pro':'Free'}"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="plan-badge ${pro?'pro':'free'}">${pro?'PRO':'FREE'}</span></span><small>${$esc(t.sub)}</small></button></div>`;
+ const sidebar=t.layout==='two'||t.id==='interio-designer'?`<div style="float:left;width:30%;height:100%;background:${t.id==='interio-designer'?'#315f4b':t.accent};margin-right:5px">${t.id==='photo'||t.id==='interio-designer'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
+ return `<div class="template-card"><button class="template ${selected?'active':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, free for everyone"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="template-availability">Free</span></span><small>${$esc(t.sub)}</small></button></div>`;
 }
 function renderTemplates(){
  $('templates').innerHTML=templateDefs.map(templateCardMarkup).join('');
@@ -585,6 +510,42 @@ function sheetHTML(index,cols){
  const contact=[p.email?`<span contenteditable="true" spellcheck="true" data-profile-field="email" title="Click to edit email">${$esc(p.email)}</span>`:'',p.phone?`<span contenteditable="true" spellcheck="true" data-profile-field="phone" title="Click to edit phone">${$esc(p.phone)}</span>`:'',p.location?`<span contenteditable="true" spellcheck="true" data-profile-field="location" title="Click to edit location">${$esc(p.location)}</span>`:'',p.website?`<span contenteditable="true" spellcheck="true" data-profile-field="website" title="Click to edit website">${$esc(p.website)}</span>`:''].filter(Boolean).join('<span class="contact-separator"> · </span>');
  const photoMarkup=p.photo?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:'<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded"></span>';
  const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?photoMarkup:''}<div class="header-text"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="contact" contenteditable="false" title="Edit contact details in the right panel">${contact}</div></div></header>`:'';
+ if(tmpl.id==='teal-modern'){
+  const initials=String(p.name||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toLocaleUpperCase()||'';
+  const tealPhoto=p.photo
+   ?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Location','location','⌖'],['Website','website','↗'],['Phone','phone','☎'],['Email','email','✉']]
+   .filter(([,field])=>p[field])
+   .map(([label,field,icon])=>`<div class="tr-contact-item"><span class="tr-contact-icon" aria-hidden="true">${icon}</span><span contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</span></div>`)
+   .join('');
+  const profile=index===0?`<header class="tr-header"><div class="tr-header-art" aria-hidden="true"></div><div class="tr-header-copy"><div class="tr-kicker"><span></span>PROFILE</div><h1 class="tr-name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="tr-title" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="tr-header-rule"></div><div class="tr-contact-row">${contactFields}</div></div><div class="tr-photo-frame">${tealPhoto}</div></header>`:'';
+  return `<div class="sheet-inner tr-sheet">${profile}<div class="tr-layout"><aside class="tr-sidebar"><div class="tr-sidebar-sections"></div></aside><main class="tr-main"><div class="sections-area"></div></main></div></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='peach-mint'){
+  const initials=String(p.name||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toLocaleUpperCase()||'';
+  const peachPhoto=p.photo
+   ?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Location','location'],['Website','website'],['Phone','phone'],['Email','email']]
+   .filter(([,field])=>p[field])
+   .map(([label,field])=>`<div class="pm-contact-item"><span class="pm-contact-icon" aria-hidden="true">${label==='Location'?'⌖':label==='Website'?'↗':label==='Phone'?'☎':'✉'}</span><div><span class="pm-contact-label">${label}</span><div contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</div></div></div>`)
+   .join('');
+  const profile=index===0?`<header class="pm-profile">${peachPhoto}<h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><span class="pm-name-underline"></span></header><div class="pm-contact">${contactFields}</div>`:'';
+  return `<div class="sheet-inner pm-sheet"><aside class="pm-sidebar">${profile}<div class="pm-sidebar-sections"></div></aside><main class="pm-main"><div class="sections-area"></div></main></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='interio-designer'){
+  const initials=String(p.name||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toLocaleUpperCase()||'';
+  const interioPhoto=p.photo
+   ?`<img class="interio-photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="interio-photo interio-photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const interioHeader=index===0?`<header class="resume-header"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div></header>`:'';
+  const contactBlocks=[['Address','location'],['Phone','phone'],['Mail','email'],['Social Media','website']]
+   .filter(([,field])=>p[field])
+   .map(([label,field])=>`<div class="interio-contact-block"><h3>${label}</h3><p contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</p></div>`)
+   .join('');
+  return `<div class="sheet-inner interio-layout"><div class="interio-resume-label">RESUME</div><aside class="interio-sidebar">${interioPhoto}${contactBlocks}<div class="interio-sidebar-sections"></div></aside><div class="interio-main">${interioHeader}<div class="sections-area">${cols?'<div class="section-columns"><div class="section-column"></div><div class="section-column"></div></div>':''}</div></div></div><div class="page-number"></div>`;
+ }
  return `<div class="sheet-inner">${head}<div class="sections-area">${cols?'<div class="section-columns"><div class="section-column"></div><div class="section-column"></div></div>':''}</div></div><div class="page-number"></div>`;
 }
 function createSheet(index,tmpl,cols){
@@ -619,12 +580,13 @@ function sectionAtoms(s){
  return a;
 }
 function makeShell(s,cont){
- const sec=document.createElement('section');sec.className='resume-section pointer-'+(s.listStyle||'bullet')+(selectedId===s.id?' selected':'');sec.dataset.resumeSection=s.id;
+ const sec=document.createElement('section');sec.className='resume-section pointer-'+(s.listStyle||'bullet')+(selectedId===s.id?' selected':'');sec.dataset.resumeSection=s.id;sec.dataset.sectionType=s.type;
+ if(/^#[0-9a-f]{6}$/i.test(s.textColor||''))sec.style.setProperty('--section-text-color',s.textColor);
  sec.innerHTML=`${cont?'':`<h2 class="section-heading" contenteditable="true" spellcheck="true" data-section-title="${$esc(s.id)}" title="Click to edit this section title">${$esc(s.title)}</h2>`}<div class="section-body"></div>`;return sec;
 }
 /* Appends one atom and returns the element it created (so a failed fit can be undone). */
 function appendAtom(shell,a,st,s){
- const body=shell.lastElementChild;let el;
+ const body=shell.querySelector('.section-body');let el;
  const entryIndex=a.e&&s.entries?s.entries.indexOf(a.e):-1;
  if(a.k==='entry'){
   el=document.createElement('div');el.className='entry';
@@ -654,29 +616,41 @@ function flowSections(root,tmpl){
  const two=state.layout==='two',pages=[],streams=Array.from({length:two?2:1},()=>({page:0}));
  const addPage=()=>{const p=createSheet(pages.length,tmpl,two);root.appendChild(p);pages.push(p);return p};
  addPage();
- const colOf=(si,pi)=>two?pages[pi].querySelectorAll('.section-column')[si]:pages[pi].querySelector('.sections-area');
- const limitOf=pi=>{const a=pages[pi].querySelector('.sections-area');return a.getBoundingClientRect().bottom-parseFloat(getComputedStyle(a).paddingBottom)};
- const fits=(si,pi)=>{const l=colOf(si,pi).lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi)+.5};
- const fill=si=>{const st=streams[si],c=colOf(si,st.page),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
+ const colOf=(si,pi,s)=>tmpl.id==='peach-mint'
+  ?pages[pi].querySelector(s.type==='skills'||s.type==='certifications'?'.pm-sidebar-sections':'.pm-main .sections-area')
+  :tmpl.id==='teal-modern'
+   ?pages[pi].querySelector(s.type==='skills'?'.tr-sidebar-sections':'.tr-main .sections-area')
+  :tmpl.id==='interio-designer'&&s.type==='skills'
+   ?pages[pi].querySelector(pi===0?'.interio-sidebar-sections':'.interio-main .sections-area')
+  :two?pages[pi].querySelectorAll('.section-column')[si]:pages[pi].querySelector('.sections-area');
+ const limitOf=(pi,c)=>c.classList.contains('interio-sidebar-sections')
+  ?c.getBoundingClientRect().bottom
+  :c.classList.contains('pm-sidebar-sections')
+   ?c.getBoundingClientRect().bottom
+  :c.classList.contains('tr-sidebar-sections')
+   ?c.getBoundingClientRect().bottom
+  :c.closest('.sections-area').getBoundingClientRect().bottom-parseFloat(getComputedStyle(c.closest('.sections-area')).paddingBottom);
+ const fits=(si,pi,s)=>{const c=colOf(si,pi,s),l=c.lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi,c)+.5};
+ const fill=(si,s)=>{const st=streams[si],c=colOf(si,st.page,s),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
  const attempt=(si,pi,s,cont,first,force)=>{
-  const shell=makeShell(s,cont),st={};colOf(si,pi).appendChild(shell);appendAtom(shell,first,st,s);
-  if(fits(si,pi)||force)return {si,pi,shell,st,s};
+  const shell=makeShell(s,cont),st={},container=colOf(si,pi,s);container.appendChild(shell);appendAtom(shell,first,st,s);
+  if(fits(si,pi,s)||force)return {si,pi,shell,st,s};
   shell.remove();return null;
  };
  for(const s of state.sections.filter(x=>x.visible)){
   const atoms=sectionAtoms(s);let i=0,cont=false,cur=null,lastSi=0;
-  const pref=!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0)<=fill(1)?0:1);
+  const pref=tmpl.id==='peach-mint'?(s.type==='skills'||s.type==='certifications'?1:0):tmpl.id==='teal-modern'?(s.type==='skills'?1:0):!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0,s)<=fill(1,s)?0:1);
   while(i<atoms.length){
    const a=atoms[i];
    if(cur){
     const el=appendAtom(cur.shell,a,cur.st,cur.s || s);
-    if(fits(cur.si,cur.pi)){i++;continue}
+    if(fits(cur.si,cur.pi,cur.s)){i++;continue}
     el.remove();lastSi=cur.si;cur=null;cont=true;
    }
    const first=cont&&a.k==='li'?{k:'entry',e:a.e,continuation:true}:a;
    let placed=null;
    if(!cont){
-    const order=two?[pref,1-pref]:[0];
+    const order=two?(tmpl.id==='peach-mint'||tmpl.id==='teal-modern'?[pref]:[pref,1-pref]):[0];
     for(const si of order){placed=attempt(si,streams[si].page,s,false,first,false);if(placed)break}
     lastSi=pref;
    }
@@ -689,155 +663,127 @@ function flowSections(root,tmpl){
   }
  }
 }
-function renderFree(root,tmpl){
- const page=createSheet(0,tmpl,false);root.appendChild(page);
- const area=page.querySelector('.sections-area'),mx=clamp(state.design.margin,0,100,DEFAULT_MARGIN),defW=PAGE_W-2*mx;
- let cursor=area.offsetTop+parseFloat(getComputedStyle(area).paddingTop);
- state.sections.filter(s=>s.visible).forEach(s=>{
-  const node=renderWhole(s),pos=state.positions[s.id];
-  node.style.cssText+=`;position:absolute;margin:0;z-index:2;left:${pos?pos.x:mx}px;top:${pos?pos.y:cursor}px;width:${pos?pos.w:defW}px`;
-  area.appendChild(node);
-  if(!pos){state.positions[s.id]={x:mx,y:cursor,w:defW};cursor+=node.offsetHeight+14}
+function captureStructuredPages(){
+ const sheets=[...$('sheets').querySelectorAll('.sheet')];
+ if(!sheets.length)return;
+ state.freePageCount=Math.max(state.freePageCount||1,sheets.length);
+ const scaleFor=sheet=>sheet.getBoundingClientRect().width/PAGE_W||1;
+ sheets.forEach((sheet,pageIndex)=>{
+  const scale=scaleFor(sheet),bounds=sheet.getBoundingClientRect();
+  sheet.querySelectorAll('[data-resume-section]').forEach(node=>{
+   const id=node.dataset.resumeSection;
+   if(state.positions[id])return;
+   const rect=node.getBoundingClientRect();
+   const x=clamp(Math.round((rect.left-bounds.left)/scale),0,PAGE_W-80,0);
+   const y=clamp(Math.round((rect.top-bounds.top)/scale),0,PAGE_H-30,0);
+   const w=clamp(Math.round(rect.width/scale),80,PAGE_W-x,PAGE_W-x);
+   const h=clamp(Math.round(rect.height/scale),30,PAGE_H-y,30);
+   state.positions[id]={x,y,w,h,page:pageIndex+1};
+  });
  });
+ state.freePageCount=Math.max(state.freePageCount,...Object.values(state.positions).map(position=>position.page||1));
+}
+function renderFree(root,tmpl){
+ const pageCount=Math.max(1,...state.sections.filter(s=>s.visible).map(s=>state.positions[s.id]?.page||1)),pages=[];
+ for(let index=0;index<pageCount;index++){const page=createSheet(index,tmpl,false);root.appendChild(page);pages.push(page)}
+ const firstPage=pages[0],sheetBounds=firstPage.getBoundingClientRect(),firstArea=firstPage.querySelector('.sections-area'),areaBounds=firstArea.getBoundingClientRect(),scale=sheetBounds.width/PAGE_W||1,mx=clamp(state.design.margin,0,100,DEFAULT_MARGIN),padding=getComputedStyle(firstArea);
+ const sidebar=tmpl.id==='interio-designer'?firstPage.querySelector('.interio-sidebar'):null;
+ const peachSidebar=tmpl.id==='peach-mint'?firstPage.querySelector('.pm-sidebar'):null;
+ const tealSidebar=tmpl.id==='teal-modern'?firstPage.querySelector('.tr-sidebar'):null;
+ const defaultX=peachSidebar?Math.round((peachSidebar.getBoundingClientRect().right-sheetBounds.left)/scale+16):sidebar?Math.round((sidebar.getBoundingClientRect().right-sheetBounds.left)/scale+12):tealSidebar?Math.round((tealSidebar.getBoundingClientRect().right-sheetBounds.left)/scale+16):mx;
+ const defaultW=Math.max(80,PAGE_W-defaultX-mx);
+ const defaultY=Math.max(DEFAULT_MARGIN,Math.round((areaBounds.top-sheetBounds.top)/scale+parseFloat(padding.paddingTop)));
+ const header=tmpl.id==='profile-split'?firstPage.querySelector('.resume-header'):tmpl.id==='teal-modern'?firstPage.querySelector('.tr-header'):null;
+ const headerBottom=header?Math.ceil((header.getBoundingClientRect().bottom-sheetBounds.top)/scale+16):0;
+ const firstPageDefaultY=Math.max(defaultY,headerBottom);
+ const cursorByPage=Array.from({length:pageCount},(_,index)=>index===0?firstPageDefaultY:defaultY);
+ const addPage=()=>{
+  const page=createSheet(pages.length,tmpl,false);
+  root.appendChild(page);pages.push(page);cursorByPage.push(defaultY);
+  state.freePageCount=pages.length;
+  return page;
+ };
+ const createFragment=(section,pageIndex,position,continued)=>{
+  const page=pages[pageIndex],area=page.querySelector('.sections-area'),shell=makeShell(section,continued);
+  shell.style.cssText+=`;position:absolute;margin:0;z-index:2;left:${position.x}px;top:${position.y}px;width:${position.w}px;${position.h?`min-height:${position.h}px`:''}`;
+  if(!continued)shell.insertAdjacentHTML('beforeend','<button class="free-section-move" type="button" aria-label="Move section" title="Drag to move this section">Move</button><button class="free-section-resize" type="button" aria-label="Resize section" title="Drag to resize this section"></button>');
+  area.appendChild(shell);
+  return {page,shell,st:{},pageIndex};
+ };
+ state.sections.filter(s=>s.visible).forEach(s=>{
+  let pos=state.positions[s.id],pageIndex=pos?Math.round(clamp(pos.page,1,pageCount,1))-1:0;
+  if(!pos){
+   const skillSidebar=tealSidebar&&s.type==='skills'?tealSidebar:null;
+   const x=skillSidebar?Math.round((skillSidebar.getBoundingClientRect().left-sheetBounds.left)/scale+12):defaultX;
+   const w=skillSidebar?Math.max(80,Math.round(skillSidebar.getBoundingClientRect().width/scale)-24):defaultW;
+   pos=state.positions[s.id]={x,y:cursorByPage[pageIndex],w,page:pageIndex+1};
+  }
+  pageIndex=Math.round(clamp(pos.page,1,pages.length,1))-1;
+  pos.page=pageIndex+1;
+  if(peachSidebar&&pos.x<defaultX){
+   pos.x=defaultX;
+   pos.y=cursorByPage[pageIndex];
+   pos.w=defaultW;
+  }
+  if(pageIndex===0&&pos.y<headerBottom)pos.y=headerBottom;
+  let fragment=createFragment(s,pageIndex,pos,false);
+  const firstFragment=fragment;
+  let firstFragmentHeight=0;
+  for(const atom of sectionAtoms(s)){
+   let rendered=appendAtom(fragment.shell,atom,fragment.st,s);
+   const pageBounds=fragment.page.getBoundingClientRect(),pageScale=pageBounds.width/PAGE_W||1;
+   const bottom=pageBounds.bottom-(state.design.pageNumbers?32:16)*pageScale;
+   if(Math.max(rendered.getBoundingClientRect().bottom,fragment.shell.getBoundingClientRect().bottom)<=bottom+.5){
+    if(fragment===firstFragment)firstFragmentHeight=Math.max(firstFragmentHeight,firstFragment.shell.offsetHeight);
+    continue;
+   }
+   const atomHeight=rendered.getBoundingClientRect().height;
+   rendered.remove();
+   if(atom.k==='li'){
+    const list=fragment.shell.querySelector('.pointer-list');
+    if(list&&!list.children.length)list.remove();
+    fragment.st.ul=null;
+   }
+   const fragmentHasContent=fragment.shell.querySelector('.section-body').childElementCount>0;
+   if(atomHeight>PAGE_H-80&&!fragmentHasContent){
+    appendAtom(fragment.shell,atom,fragment.st,s);
+    if(fragment===firstFragment)firstFragmentHeight=Math.max(firstFragmentHeight,firstFragment.shell.offsetHeight);
+    continue;
+   }
+   if(fragment===firstFragment)firstFragmentHeight=Math.max(firstFragmentHeight,firstFragment.shell.offsetHeight);
+   fragment.pageIndex++;
+   if(fragment.pageIndex>=pages.length)addPage();
+   if(fragmentHasContent){
+    fragment=createFragment(s,fragment.pageIndex,{...pos,y:DEFAULT_MARGIN,h:0},true);
+    if(atom.k==='li')appendAtom(fragment.shell,{k:'entry',e:atom.e,continuation:true},fragment.st,s);
+   }else{
+    fragment.shell.remove();
+    fragment=createFragment(s,fragment.pageIndex,{...pos,y:DEFAULT_MARGIN,h:0},false);
+   }
+   if(atomHeight>PAGE_H-80){
+    appendAtom(fragment.shell,atom,fragment.st,s);
+   }else{
+    rendered=appendAtom(fragment.shell,atom,fragment.st,s);
+   }
+  }
+  cursorByPage[pageIndex]=Math.max(cursorByPage[pageIndex],pos.y+firstFragmentHeight+14);
+ });
+ state.freePageCount=pages.length;
 }
 function renderSheets(){
  const root=$('sheets'),tmpl=activeTemplate();root.innerHTML='';
  if(state.mode==='free')renderFree(root,tmpl);else flowSections(root,tmpl);
  const all=[...root.querySelectorAll('.sheet')];
+ all.forEach(sh=>sh.dataset.mode=state.mode);
  all.forEach((sh,i)=>{
   sh.querySelector('.page-number').textContent=state.design.pageNumbers?`Page ${i+1} of ${all.length}`:'';
   sh.style.transform=zoom===1?'':`scale(${zoom})`;sh.style.marginBottom=zoom===1?'':((zoom-1)*PAGE_H)+'px';
  });
- $('hint').textContent=state.mode==='free'?'Free position: drag sections · Click text directly to edit':'Click any name, heading, bullet, skill, or paragraph on the page to edit · Use the right panel for design and photo details';
+ $('hint').textContent=state.mode==='free'
+  ?'Drag a section or use its Move handle; drag the bottom-right corner to resize. Set its page, position and size in Selected section.'
+  :'Click any name, heading, bullet, skill, or paragraph on the page to edit · Use the right panel for design and photo details';
  $('zoomLabel').textContent=Math.round(zoom*100)+'%';
 }
-function closeTemplatePreview(){
- templatePreviewGeneration++;
- $('templatePreviewModalBg').classList.remove('show');
- $('templatePreviewModalBg').setAttribute('aria-hidden','true');
-}
-async function openTemplatePreview(templateId){
- const template=templateDefs.find(item=>item.id===templateId);
- if(!template||!isProTemplate(templateId)||canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement))return;
- const generation=++templatePreviewGeneration;
- const modal=$('templatePreviewModalBg'),pages=$('templatePreviewPages'),status=$('templatePreviewStatus');
- $('templatePreviewTitle').textContent=`${template.name} template preview`;
- $('templatePreviewTitle').dataset.templateId=templateId;
- const exportButton=$('exportProTemplatePreview');
- exportButton.disabled=true;
- status.textContent='Creating a high-resolution preview of your current resume…';
- pages.innerHTML='';
- modal.classList.add('show');
- modal.setAttribute('aria-hidden','false');
- updateProTemplatePreviewAllowance({checking:!!cloudUser});
- $('closeTemplatePreview').focus();
-
- let renderedPages=[];
- const originalState=state,originalSelection=selectedId,originalZoom=zoom;
- try{
-  state=deep(state);
-  state.template=template.id;
-  state.layout=template.layout;
-  state.design.accent=template.accent;
-  selectedId=null;
-  zoom=1;
-  renderSheets();
-  renderedPages=[...$('sheets').querySelectorAll('.sheet')].map(sheet=>sheet.cloneNode(true));
- }catch(error){
-  console.error('Could not render the Pro template preview.',error);
-  status.textContent='This resume preview could not be rendered. Close this window and try again.';
-  return;
- }finally{
-  state=originalState;
-  selectedId=originalSelection;
-  zoom=originalZoom;
-  renderSheets();
- }
-
- const captureRoot=document.createElement('div');
- captureRoot.className='template-preview-capture';
- document.body.append(captureRoot);
- try{
-  const {default:html2canvas}=await import('html2canvas');
-  for(let index=0;index<renderedPages.length;index++){
-   if(generation!==templatePreviewGeneration)return;
-   const sheet=renderedPages[index];
-   sheet.querySelectorAll('.selected').forEach(element=>element.classList.remove('selected'));
-   sheet.style.transform='none';
-   sheet.style.marginBottom='0';
-   captureRoot.replaceChildren(sheet);
-  const canvas=await html2canvas(sheet,{scale:2,backgroundColor:'#ffffff',logging:false,useCORS:true});
-   const page=document.createElement('div');
-   page.className='template-preview-page';
-   const image=document.createElement('img');
-  image.src=canvas.toDataURL('image/jpeg',.9);
-  image.alt=`High-resolution ${template.name} resume preview, page ${index+1}`;
-   page.append(image);
-   const watermark=document.createElement('span');
-   watermark.className='template-preview-watermark';
-   watermark.textContent='PersonaCraftPro · PREVIEW';
-   watermark.setAttribute('aria-hidden','true');
-   page.append(watermark);
-   pages.append(page);
-   canvas.width=0;
-   canvas.height=0;
-  }
-  if(generation!==templatePreviewGeneration)return;
-  if(cloudUser){
-   const requestingUid=cloudUser.uid;
-   try{
-    const usage=await getProTemplateDownloadStatus(requestingUid);
-    if(generation!==templatePreviewGeneration||cloudUser?.uid!==requestingUid)return;
-    proTemplateDownloadsRemaining=usage.remaining;
-    updateProTemplatePreviewAllowance();
-   }catch(error){
-    console.error('Could not refresh the Pro-template trial allowance.',error);
-    if(generation!==templatePreviewGeneration)return;
-    status.textContent='Could not refresh your free Pro-template PDF allowance. You can still preview; the allowance will be confirmed before download.';
-    updateProTemplatePreviewAllowance({error:true});
-   }
-  }
-  if(generation!==templatePreviewGeneration)return;
-  updateProTemplatePreviewAllowance();
- }catch(error){
-  console.error('Could not create the Pro template preview image.',error);
-  if(generation===templatePreviewGeneration)status.textContent='The preview image could not be created. Check your browser resources and try again.';
- }finally{
-  captureRoot.remove();
- }
-}
-function updateProTemplatePreviewAllowance({checking=false,error=false}={}){
- const modal=$('templatePreviewModalBg');
- if(!modal?.classList.contains('show'))return;
- const badge=$('templatePreviewAllowance'),status=$('templatePreviewStatus'),button=$('exportProTemplatePreview');
- const remaining=proTemplateDownloadsRemaining;
- if(!cloudUser){
-  badge.className='template-preview-allowance unavailable';
-  badge.textContent='Sign in to get 2 free Pro PDFs';
-  status.textContent='Preview only; sign in with Google to export and download up to two Pro-template PDFs.';
-  button.disabled=true;
-  return;
- }
- if(checking||error||!Number.isInteger(remaining)){
-  badge.className='template-preview-allowance unavailable';
-  badge.textContent=error?'Could not verify free Pro PDF allowance':'Checking free Pro PDF allowance…';
-  if(!error)status.textContent='Checking your free Pro-template PDF allowance…';
-  button.disabled=true;
-  return;
- }
- if(remaining===0){
-  badge.className='template-preview-allowance exhausted';
-  badge.textContent='0 of 2 free Pro PDF downloads remaining';
-  status.textContent='You have used both free Pro-template PDF downloads. Export is disabled; upgrade to Pro for unlimited downloads.';
-  button.disabled=true;
-  return;
- }
- badge.className='template-preview-allowance';
- badge.textContent=`${remaining} of 2 free Pro PDF downloads remaining`;
- status.textContent=`Preview only; this does not apply the Pro template in the editor. Create a PDF preview, then download it to use one free download.`;
- button.disabled=false;
-}
-
 /* ---------- Inspector ---------- */
 function field(label,key,value,type='text',extra=''){return `<div class="field"><label>${label}</label><input data-profile="${key}" type="${type}" value="${$esc(value)}" ${extra}></div>`}
 function renderInspector(){
@@ -860,7 +806,12 @@ function renderInspector(){
  <div class="field"><label><input type="checkbox" data-design="pageNumbers" ${d.pageNumbers?'checked':''}>Show page numbers (reserves a small footer)</label></div>
  <div class="small-note">Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.</div>`:''}`;
  if(rightTab==='section'&&s){
-   h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
+   h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field"><label for="sectionTextColor">Text color</label><div class="field-row"><input id="sectionTextColor" data-section-text-color type="color" value="${s.textColor||'#1b2434'}" aria-label="Section text color"><button class="btn outline small" id="resetSectionTextColor" type="button" ${s.textColor?'':'disabled'}>Use template color</button></div></div>`;
+   if(state.mode==='free'){
+    const position=state.positions[s.id]||{x:0,y:0,w:PAGE_W,h:0},node=$('sheets').querySelector(`[data-resume-section="${s.id}"]`),height=position.h||Math.ceil(node?.offsetHeight||80);
+    h+=`<div class="eyebrow">Position & size (px)</div><div class="field"><label for="freeSectionPage">Page (of ${state.freePageCount})</label><input id="freeSectionPage" data-free-position="page" type="number" min="1" max="${state.freePageCount}" value="${position.page||1}"></div><div class="field-row"><div class="field"><label for="freeSectionX">Left</label><input id="freeSectionX" data-free-position="x" type="number" min="0" max="${PAGE_W-80}" value="${position.x}"></div><div class="field"><label for="freeSectionY">Top</label><input id="freeSectionY" data-free-position="y" type="number" min="0" max="${PAGE_H-30}" value="${position.y}"></div></div><div class="field-row"><div class="field"><label for="freeSectionWidth">Width</label><input id="freeSectionWidth" data-free-position="w" type="number" min="80" max="${PAGE_W-position.x}" value="${position.w}"></div><div class="field"><label for="freeSectionHeight">Minimum height</label><input id="freeSectionHeight" data-free-position="h" type="number" min="30" max="${PAGE_H-position.y}" value="${height}"></div></div><div class="small-note">Text wraps to the section width. Content can grow beyond its minimum height so it stays visible.</div>`;
+   }
+   h+=`<div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
    if(s.entries){
     h+=s.entries.map((e,i)=>`<details class="inspector-entry"${i===0?' open':''}><summary><span>Entry ${i+1}</span><span class="inspector-entry-title" data-entry-summary="${i}">${$esc(e.role||e.company||'Add entry details')}</span></summary><div class="inspector-entry-content"><div class="field"><label>Role / qualification</label><input data-entry="role" data-index="${i}" value="${$esc(e.role)}"></div><div class="field"><label>Company / institution</label><input data-entry="company" data-index="${i}" value="${$esc(e.company)}"></div><div class="field"><label>Date</label><input data-entry="date" data-index="${i}" value="${$esc(e.date)}"></div><div class="field"><label>Details</label><div class="detail-bullet-list" data-entry-details="${i}">${renderDetailInputs(e,i)}</div><button class="btn outline small" type="button" data-add-detail-line="${i}">＋ Add bullet</button></div><button class="btn danger small" data-remove-entry="${i}">Remove entry</button></div></details>`).join('');
      h+='<button class="btn outline small" id="addEntry">＋ Add entry</button>';
@@ -878,9 +829,27 @@ function renderInspector(){
   else v=el.value;
   transact(()=>{state.design[k]=v});
  }));
+ $('inspector').querySelectorAll('[data-free-position]').forEach(el=>el.addEventListener('change',()=>{
+  if(state.mode!=='free')return;
+  const section=sectionById(selectedId);if(!section)return;
+  const current=state.positions[section.id]||{x:0,y:0,w:PAGE_W};
+  transact(()=>{
+   const next={...current},key=el.dataset.freePosition,value=Number(el.value);
+   if(!Number.isFinite(value)){renderInspector();return}
+   if(key==='x')next.x=clamp(value,0,PAGE_W-80,current.x);
+   else if(key==='y')next.y=clamp(value,0,PAGE_H-30,current.y);
+   else if(key==='w')next.w=clamp(value,80,PAGE_W-next.x,current.w);
+   else if(key==='h')next.h=clamp(value,30,PAGE_H-next.y,current.h||30);
+   else if(key==='page')next.page=Math.round(clamp(value,1,state.freePageCount,current.page||1));
+   if(next.x+next.w>PAGE_W)next.w=PAGE_W-next.x;
+   state.positions[section.id]=next;
+  });
+ }));
  const photo=$('photoInput');photo?.addEventListener('change',()=>{const f=photo.files&&photo.files[0];if(!f)return;if(!f.type.startsWith('image/')||f.size>8*1024*1024){toast('Choose an image under 8 MB');return}const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const scale=Math.min(1,500/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,im.width*scale);c.height=Math.max(1,im.height*scale);c.getContext('2d').drawImage(im,0,0,c.width,c.height);transact(()=>state.profile.photo=c.toDataURL('image/jpeg',.84))};im.onerror=()=>toast('That image could not be read');im.src=String(r.result)};r.readAsDataURL(f)});
  $('removePhoto')?.addEventListener('click',()=>transact(()=>state.profile.photo=''));
  $('sectionTitle')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.title=e.target.value||'Untitled section';saveLocal();syncSheetFields();});
+ $('sectionTextColor')?.addEventListener('change',e=>{const x=sectionById(selectedId),color=e.target.value;if(!x||!/^#[0-9a-f]{6}$/i.test(color))return;transact(()=>{x.textColor=color})});
+ $('resetSectionTextColor')?.addEventListener('click',()=>{const x=sectionById(selectedId);if(!x)return;transact(()=>{x.textColor=''})});
  $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();renderInspector();});
  $('sectionContent')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.content=e.target.value;saveLocal();syncSheetFields();});
  $('inspector').querySelectorAll('[data-entry]').forEach(el=>el.addEventListener('input',()=>{const x=sectionById(selectedId),i=+el.dataset.index;if(!x?.entries?.[i])return;x.entries[i][el.dataset.entry]=el.value;if(el.dataset.entry==='role'||el.dataset.entry==='company')updateInspectorEntryTitle(i,x.entries[i]);saveLocal();syncSheetFields();}));
@@ -1118,21 +1087,8 @@ function addPdfDecorations(doc,sheet){
   canvas.width=0;canvas.height=0;
  }
 }
-async function exportPDF(templateId=null){
- const originalState=state,originalSelection=selectedId,originalZoom=zoom;
- if(templateId){
-  const template=templateDefs.find(item=>item.id===templateId);
-  if(!template||!isProTemplate(templateId)||canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement))return;
-  state=deep(state);
-  state.template=template.id;
-  state.layout=template.layout;
-  state.design.accent=template.accent;
-  selectedId=null;
-  zoom=1;
-  renderSheets();
- }
- const sheets=[...$('sheets').querySelectorAll('.sheet')];if(!sheets.length){if(templateId){state=originalState;selectedId=originalSelection;zoom=originalZoom;renderSheets()}return}
- pdfPreviewUsesProTemplate=isProTemplate(state.template);
+async function exportPDF(){
+ const sheets=[...$('sheets').querySelectorAll('.sheet')];if(!sheets.length)return;
  const generation=++pdfPreviewGeneration;
  const btn=$('pdfBtn'),status=$('pdfPreviewStatus'),frame=$('pdfPreviewFrame'),downloadBtn=$('downloadPdfPreview');
  openPdfPreview();
@@ -1167,7 +1123,6 @@ async function exportPDF(templateId=null){
   $('sheets').classList.remove('exporting');
   btn.disabled=false;
   btn.textContent='Export PDF';
-  if(templateId){state=originalState;selectedId=originalSelection;zoom=originalZoom}
   renderSheets();
  }
 }
@@ -1184,14 +1139,7 @@ function showPdfPreview(blob,filename,pageCount,title){
  $('pdfPreviewTitle').textContent=title;
  $('pdfPreviewFrame').src=pdfPreviewUrl;
  $('pdfPreviewFrame').hidden=false;
- const trialText=pdfPreviewUsesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)
-  ? !cloudUser
-   ? ' · Sign in with Google for two free Pro-template PDF downloads'
-   : proTemplateDownloadsRemaining===null
-    ? ' · Free Pro-template allowance will be checked when downloading'
-    : ` · ${proTemplateDownloadsRemaining} free Pro-template PDF download${proTemplateDownloadsRemaining===1?'':'s'} remaining`
-  : '';
- $('pdfPreviewStatus').textContent=`Text is selectable and searchable. ${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading — the button is ready when you are.`;
+ $('pdfPreviewStatus').textContent=`Text is selectable and searchable. ${pageCount} A4 page${pageCount===1?'':'s'}. Review before downloading — the button is ready when you are.`;
  $('downloadPdfPreview').disabled=false;
  $('downloadPdfPreview').textContent='Download PDF';
 }
@@ -1209,36 +1157,12 @@ function closePdfPreview(){
 async function downloadPreviewPdf(){
  if(!pdfPreviewBlob||$('downloadPdfPreview').disabled)return;
  const button=$('downloadPdfPreview');
- const usesProTemplate=pdfPreviewUsesProTemplate;
  button.disabled=true;
  button.textContent='Preparing download…';
  try{
-  if(usesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
-   if(!cloudUser){
-    closePdfPreview();
-    showUpgrade('template-trial-sign-in','Sign in for free Pro-template downloads','Sign in with Google to use Pro templates and get two lifetime Pro-template PDF downloads.');
-    $('googleSignInBtn').focus();
-    return;
-   }
-   try{
-    const usage=await consumeProTemplateDownload(cloudUser.uid);
-    proTemplateDownloadsRemaining=usage.remaining;
-    if(!usage.allowed){
-     closePdfPreview();
-     showUpgrade('template-trial-exhausted','Free Pro-template downloads used','You have used both free Pro-template PDF downloads for this Google account. Upgrade to Pro for unlimited Pro-template PDF downloads.');
-     return;
-    }
-   }catch(error){
-    console.error('Could not reserve a Pro-template PDF download.',error);
-    $('pdfPreviewStatus').textContent=error.message||'Could not confirm your free Pro-template download. Please retry.';
-    return;
-   }
-  }
   download(pdfPreviewFilename,pdfPreviewBlob);
   closePdfPreview();
-  toast(usesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)
-   ? `${proTemplateDownloadsRemaining} free Pro-template PDF downloads remaining`
-   : 'PDF downloaded');
+  toast('PDF downloaded');
  }finally{
   button.textContent='Download PDF';
   if(pdfPreviewBlob)button.disabled=false;
@@ -1507,9 +1431,9 @@ function renderAtsResults(report){
  const hasScore=Number.isFinite(report.score);
  const matchedDisplay=matchedKeywords||'<span class="ats-keyword missing">No recognized resume keywords detected</span>';
  const missingDisplay=missingKeywords||'<span class="ats-keyword matched">All key terms covered</span>';
- const comparisonDetails=report.generic?`<div class="ats-section-title">Recognized resume keywords</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Job-specific comparison</div><div class="ats-empty">${report.jobMatchLocked?'Job-description comparison is a planned Pro feature. Your pasted text remains in this browser and was not used in this Free analysis. <a href="/pricing.html">View plans</a>.':'Job-description comparison is planned for Pro and is not available yet.'}</div>`:`<div class="ats-section-title">Keyword match</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Missing terms</div><div class="ats-keywords">${missingDisplay}</div>`;
+ const comparisonDetails=report.generic?`<div class="ats-section-title">Recognized resume keywords</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-empty">Add a job description and run checks for role-specific keyword and skills matching.</div>`:`<div class="ats-section-title">Keyword match</div><div class="ats-keywords">${matchedDisplay}</div><div class="ats-section-title">Missing terms</div><div class="ats-keywords">${missingDisplay}</div>`;
  const criteriaTitle=report.generic?'General readiness factors':'ATS criteria';
- const note=report.generic?'Generic readiness uses available resume-verifiable factors. Optional education and certifications are excluded when absent. Job-description keyword, title, and required-skill matching are planned for Pro and are not available yet.':'Keyword match (50%) uses only the Technical Skills section; job title alignment (25%) and skills evidenced in experience (15%) make up the other primary factors. Formatting, structure, experience depth, education, certifications, and impact make up the remaining 10%. This heuristic score is capped at 95 because employer-specific ATS rules cannot be reproduced; scores around 75–80% or higher are generally considered strong.';
+ const note=report.generic?'Generic readiness uses resume-verifiable factors. Add a job description and run checks to include role-specific keyword, title, and skills matching.':'Keyword match (50%) uses only the Technical Skills section; job title alignment (25%) and skills evidenced in experience (15%) make up the other primary factors. Formatting, structure, experience depth, education, certifications, and impact make up the remaining 10%. This heuristic score is capped at 95 because employer-specific ATS rules cannot be reproduced; scores around 75–80% or higher are generally considered strong.';
  container.innerHTML=`<div class="ats-score-row"><div class="ats-score">${hasScore?report.score:'—'}<small>score</small></div><div class="ats-score-meta"><strong>${report.generic?'Generic ATS readiness':'ATS readiness'}</strong><div>${report.generic?'Resume-only estimate; not matched to a job description.':hasScore?'Weighted score based on the 9 ATS criteria':'Paste a target job description to calculate compatibility.'}</div><div class="ats-progress"><span style="width:${hasScore?report.score:0}%"></span></div></div></div>${comparisonDetails}<div class="ats-section-title">${criteriaTitle}</div><div class="ats-criteria-grid">${criteria}</div><div class="ats-section-title">Findings</div><div class="ats-findings">${findings}</div><div class="ats-note">${note}</div>`;
 }
 function openAts(){
@@ -1572,7 +1496,6 @@ async function previewCoverLetterPdf(){
  if(!text){toast('Generate a draft first');return}
  const button=$('downloadCoverLetterPdf');
  const generation=++pdfPreviewGeneration;
- pdfPreviewUsesProTemplate=false;
  openPdfPreview();
  $('pdfPreviewTitle').textContent='Preview your cover letter PDF';
  $('pdfPreviewStatus').textContent='Preparing your PDF preview…';
@@ -1604,69 +1527,6 @@ function applyAtsFriendlyLayout(){
  });
  toast('ATS-friendly layout applied');
 }
-function showUpgrade(featureId,title,description){
- $('upgradeFeature').textContent=title;
- $('upgradeDescription').textContent=description;
- $('upgradePrice').textContent=`₹${PLAN_CONFIG.pro.monthly.price}/month or ₹${PLAN_CONFIG.pro.yearly.price}/year · recurring subscription`;
- pendingUpgradeFeature=featureId;
- const previewTemplate=pendingUpgradeFeature==='template'&&pendingProTemplate?templateDefs.find(item=>item.id===pendingProTemplate):null;
- $('continueFree').textContent=featureId.startsWith('template')?'Use free Template':'Use free ATS checks';
- $('previewUpgrade').hidden=!previewTemplate;
- $('previewUpgrade').textContent=previewTemplate?`Preview ${previewTemplate.name}`:'Preview template';
- $('upgradeModalBg').classList.add('show');
- $('upgradeModalBg').setAttribute('aria-hidden','false');
- $('viewPlans').focus();
-}
-function closeUpgrade(){
- $('upgradeModalBg').classList.remove('show');
- $('upgradeModalBg').setAttribute('aria-hidden','true');
- $('previewUpgrade').hidden=true;
- pendingProTemplate=null;
- pendingUpgradeFeature='';
-}
-function previewPendingTemplate(){
- if(pendingUpgradeFeature!=='template'||!pendingProTemplate){toast('Select a Pro template to preview it first.');return}
- const templateId=pendingProTemplate;
- pendingProTemplate=null;
- pendingUpgradeFeature='';
- $('upgradeModalBg').classList.remove('show');
- $('upgradeModalBg').setAttribute('aria-hidden','true');
- $('previewUpgrade').hidden=true;
- openTemplatePreview(templateId);
-}
-function continueWithFreeTemplate(){
- if(pendingUpgradeFeature!=='template'||!pendingProTemplate){closeUpgrade();return}
- const fallback=isProTemplate(state.template)?templateDefs[0]:activeTemplate();
- if(state.template!==fallback.id)transact(()=>{state.template=fallback.id;state.layout=fallback.layout;state.design.accent=fallback.accent;selectedId=null});
- closeUpgrade();
- toast(`Continuing with ${fallback.name}, a free template. Your resume content is unchanged.`);
-}
-async function requestProTemplate(templateId){
- pendingProTemplate=templateId;
- const template=templateDefs.find(item=>item.id===templateId);
- if(canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
-  transact(()=>{
-   state.template=template.id;
-   state.layout=template.layout;
-   state.design.accent=template.accent;
-   selectedId=null;
-  });
-  pendingProTemplate=null;
-  toast(`Applied ${template.name}`);
-  return;
- }
- pendingProTemplate=null;
- openTemplatePreview(templateId);
-}
-function exportProTemplatePreview(){
- const templateId=$('templatePreviewTitle').dataset.templateId;
- if(!templateId||!cloudUser||!Number.isInteger(proTemplateDownloadsRemaining)||proTemplateDownloadsRemaining<1){
-  updateProTemplatePreviewAllowance({error:!!cloudUser});
-  return;
- }
- closeTemplatePreview();
- void exportPDF(templateId);
-}
 let atsCheckGeneration=0;
 function renderAtsProcessing(stageIndex,stages){
  const stage=stages[stageIndex];
@@ -1681,16 +1541,14 @@ function renderAtsProcessing(stageIndex,stages){
   <ol class="ats-processing-steps">${stages.map((item,index)=>`<li class="${index<stageIndex?'complete':index===stageIndex?'current':''}">${item.label}</li>`).join('')}</ol>
  </div>`;
 }
-function runAtsChecks({promptUpgrade=true}={}){
+function runAtsChecks(){
  const generation=++atsCheckGeneration;
  const runButton=$('runAtsBtn');
  const jobText=$('jobDescription').value.trim();
- const lockedJobMatch=shouldPromptForJobDescriptionAtsUpgrade(jobText,verifiedEntitlement);
- if(lockedJobMatch&&promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Free includes resume-only ATS checks. Comparing your resume with a job description, including another role, requires Pro.');
  const stages=[
   {label:'Reading resume sections',detail:'Collecting the details available in your resume.'},
   {label:'Checking structure and completeness',detail:'Reviewing contact details, sections, and formatting.'},
-  {label:lockedJobMatch?'Reviewing resume skills':'Evaluating skills and experience',detail:'Checking the content against resume-readiness factors.'},
+  {label:'Evaluating skills and experience',detail:'Checking the content against resume-readiness factors.'},
   {label:'Preparing your recommendations',detail:'Organizing the findings into a clear report.'}
  ];
  const delays=[300,340,360,300];
@@ -1705,9 +1563,7 @@ function runAtsChecks({promptUpgrade=true}={}){
     await wait(delays[index]);
    }
    if(generation!==atsCheckGeneration)return;
-   const report=computeAtsChecks(lockedJobMatch?'':undefined);
-   if(lockedJobMatch)report.jobMatchLocked=true;
-   renderAtsResults(report);
+   renderAtsResults(computeAtsChecks(jobText));
   }catch(error){
    console.error('Could not complete the ATS analysis.',error);
    if(generation===atsCheckGeneration){
@@ -1724,9 +1580,11 @@ function runAtsChecks({promptUpgrade=true}={}){
 $('templates').addEventListener('click',e=>{
  const b=e.target.closest('[data-template]');
  if(!b)return;
- if(isProTemplate(b.dataset.template)&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){void requestProTemplate(b.dataset.template);return}
- if(b.dataset.template===state.template)return;
- transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
+ const template=templateDefs.find(item=>item.id===b.dataset.template);
+ if(!template||template.id===state.template)return;
+ transact(()=>{state.template=template.id;state.layout=template.layout;state.design.accent=template.accent;selectedId=null});
+ toast('Applied '+template.name);
+})
 $('sectionList').addEventListener('click',e=>{const deleteButton=e.target.closest('[data-delete-section]');if(deleteButton){e.preventDefault();e.stopPropagation();deleteSectionById(deleteButton.dataset.deleteSection);return}const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
 $('sectionList').addEventListener('dragstart',e=>{const row=e.target.closest('[data-section-row]');if(!row)return;draggingId=row.dataset.sectionRow;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggingId);row.style.opacity='.5'});
 $('sectionList').addEventListener('dragend',e=>{const row=e.target.closest('[data-section-row]');if(row)row.style.opacity='1';draggingId=null});
@@ -2052,10 +1910,33 @@ $('sheets').addEventListener('pointerdown',e=>{
   if(pinchUsed)return;
  }
  if(state.mode!=='free'||e.button!==0)return;const hit=e.target.closest('[data-resume-section]');if(!hit)return;
+ const resizeHandle=e.target.closest('.free-section-resize'),moveHandle=e.target.closest('.free-section-move');
+ if(!resizeHandle&&!moveHandle&&e.target.closest('[contenteditable="true"]'))return;
  const id=hit.dataset.resumeSection;selectSection(id);const el=$('sheets').querySelector(`[data-resume-section="${id}"]`);if(!el)return;
- const beforeDrag=deep(state),startX=e.clientX,startY=e.clientY,start=deep(state.positions[id]||{x:0,y:0,w:PAGE_W}),sheet=el.closest('.sheet'),scale=sheet.getBoundingClientRect().width/PAGE_W||1;
- const move=ev=>{if(pinchUsed)return;const pos={x:clamp(start.x+(ev.clientX-startX)/scale,0,Math.max(0,PAGE_W-start.w),0),y:clamp(start.y+(ev.clientY-startY)/scale,0,PAGE_H-30,0),w:start.w};state.positions[id]=pos;el.style.left=pos.x+'px';el.style.top=pos.y+'px'};
- const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);if(JSON.stringify(beforeDrag)!==JSON.stringify(state)){recordHistory(beforeDrag);saveLocal()}};
+ const beforeDrag=deep(state),startX=e.clientX,startY=e.clientY,start=deep(state.positions[id]||{x:0,y:0,w:PAGE_W,page:Number(el.closest('.sheet')?.dataset.page)||1}),sheet=el.closest('.sheet'),sheetBounds=sheet.getBoundingClientRect(),scale=sheetBounds.width/PAGE_W||1,sectionBounds=el.getBoundingClientRect(),pointerOffsetX=(startX-sectionBounds.left)/scale,pointerOffsetY=(startY-sectionBounds.top)/scale;
+ if(resizeHandle||moveHandle)e.preventDefault();
+ const move=ev=>{
+  if(pinchUsed)return;
+  const dx=(ev.clientX-startX)/scale,dy=(ev.clientY-startY)/scale;
+  let pos;
+  if(resizeHandle){
+   pos={...start,w:clamp(Math.round(start.w+dx),80,PAGE_W-start.x,start.w),h:clamp(Math.round((start.h||el.getBoundingClientRect().height/scale)+dy),30,PAGE_H-start.y,30)};
+  }else{
+   const sheets=[...$('sheets').querySelectorAll('.sheet')];
+   let targetIndex=sheets.findIndex(candidate=>{const bounds=candidate.getBoundingClientRect();return ev.clientY>=bounds.top&&ev.clientY<=bounds.bottom});
+   if(targetIndex<0)targetIndex=clamp(Math.round((start.page||1)-1),0,sheets.length-1,0);
+   const target=sheets[targetIndex],bounds=target.getBoundingClientRect(),targetScale=bounds.width/PAGE_W||1;
+   pos={...start,page:targetIndex+1,x:clamp(Math.round((ev.clientX-bounds.left)/targetScale-pointerOffsetX),0,Math.max(0,PAGE_W-start.w),0),y:clamp(Math.round((ev.clientY-bounds.top)/targetScale-pointerOffsetY),0,Math.max(0,PAGE_H-30),0)};
+   const targetArea=target.querySelector('.sections-area');
+   if(targetArea&&el.parentElement!==targetArea)targetArea.appendChild(el);
+  }
+  state.positions[id]=pos;
+  el.style.left=pos.x+'px';el.style.top=pos.y+'px';el.style.width=pos.w+'px';el.style.minHeight=pos.h?pos.h+'px':'';
+ };
+ const up=()=>{
+  document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
+  if(JSON.stringify(beforeDrag)!==JSON.stringify(state)){recordHistory(beforeDrag);saveLocal();renderSheets();renderInspector()}
+ };
  document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});
 });
 $('sheets').addEventListener('pointermove',e=>{
@@ -2098,7 +1979,11 @@ $('cancelCustom').addEventListener('click',closeCustomSectionDialog);
 $('modalBg').addEventListener('click',e=>{if(e.target===$('modalBg'))closeCustomSectionDialog()});
 $('coverLetterBtn').addEventListener('click',openCoverLetter);$('closeCoverLetter').addEventListener('click',closeCoverLetter);$('coverLetterModalBg').addEventListener('click',e=>{if(e.target===$('coverLetterModalBg'))closeCoverLetter()});$('generateCoverLetter').addEventListener('click',generateCoverLetter);$('copyCoverLetter').addEventListener('click',copyCoverLetter);$('downloadCoverLetter').addEventListener('click',downloadCoverLetter);$('downloadCoverLetterPdf').addEventListener('click',previewCoverLetterPdf);
 $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.value==='two'?'two':'single'));
-$('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
+$('editMode').addEventListener('change',e=>{
+ const nextMode=e.target.value==='free'?'free':'flow';
+ if(nextMode==='free'&&state.mode!=='free')captureStructuredPages();
+ transact(()=>{state.mode=nextMode});
+});
 $('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
  $('googleSignInBtn').addEventListener('click',async()=>{
@@ -2156,15 +2041,6 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
  $('closeCloudModalAction').addEventListener('click',closeCloudModal);
  $('cloudModalBg').addEventListener('click',event=>{if(event.target===$('cloudModalBg'))closeCloudModal()});
  $('refreshCloudResumes').addEventListener('click',refreshCloudResumes);
- $('closeUpgrade').addEventListener('click',closeUpgrade);
- $('cancelUpgrade').addEventListener('click',closeUpgrade);
- $('previewUpgrade').addEventListener('click',previewPendingTemplate);
- $('continueFree').addEventListener('click',continueWithFreeTemplate);
- $('upgradeModalBg').addEventListener('click',event=>{if(event.target===$('upgradeModalBg'))closeUpgrade()});
- $('closeTemplatePreview').addEventListener('click',closeTemplatePreview);
- $('closeTemplatePreviewAction').addEventListener('click',closeTemplatePreview);
- $('exportProTemplatePreview').addEventListener('click',exportProTemplatePreview);
- $('templatePreviewModalBg').addEventListener('click',event=>{if(event.target===$('templatePreviewModalBg'))closeTemplatePreview()});
  $('saveCloudCopy').addEventListener('click',saveCurrentAsCloudCopy);
  $('cloudResumeList').addEventListener('click',event=>{
   const load=event.target.closest('[data-cloud-load]');
@@ -2193,7 +2069,7 @@ document.addEventListener('keydown',e=>{
   if(!e.shiftKey){e.preventDefault();undo();return}
  }
  if(modifier&&(key==='y'||(key==='z'&&e.shiftKey))){e.preventDefault();redo();return}
- if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}
+ if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal()}
 });
 const savedProject=guestResumeStorage.load();
 if(savedProject.state)state=savedProject.state;

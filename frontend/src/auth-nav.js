@@ -1,25 +1,11 @@
 import { cloudConfigured, googleSignInErrorMessage, observeAuth, signInWithGoogle, signOutUser } from './firebase-cloud.js';
-import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
-import { canUseFeature, FEATURE_IDS } from './plan-access.js';
 
 const nav = document.querySelector('.about-nav');
 const signInButton = document.querySelector('[data-auth-sign-in]');
 let signOutButton = document.querySelector('[data-auth-sign-out]');
 const status = document.querySelector('[data-auth-status]');
-const brand = document.querySelector('.about-brand');
-const originalTitle = document.title;
-const proBadge = brand ? document.createElement('span') : null;
 const standaloneTheme = nav?.querySelector(':scope > [data-theme-toggle]');
-let currentUser = null;
-let entitlementRequest = 0;
 let signOutPending = false;
-
-if (proBadge) {
-  proBadge.className = 'about-pro-brand-badge';
-  proBadge.textContent = 'Pro';
-  proBadge.hidden = true;
-  brand.append(proBadge);
-}
 
 function addMenuItem(panel, tag, className, text, href) {
   const item = document.createElement(tag);
@@ -127,33 +113,8 @@ function createAccountMenu() {
 
 const accountMenu = createAccountMenu();
 
-function updateProBadge(entitlement) {
-  const hasPro = canUseFeature(FEATURE_IDS.ALL_TEMPLATES, entitlement);
-  if (proBadge) proBadge.hidden = !hasPro;
-  document.title = hasPro ? `${originalTitle} | Pro` : originalTitle;
-}
-
-async function refreshProBadge(user) {
-  const requestId = ++entitlementRequest;
-  currentUser = user;
-  if (!user) {
-    updateProBadge(null);
-    return;
-  }
-
-  try {
-    const config = await loadBillingConfig();
-    const entitlement = config.entitlementEnabled ? await loadBillingEntitlement(user) : null;
-    if (requestId === entitlementRequest) updateProBadge(entitlement);
-  } catch (error) {
-    if (requestId === entitlementRequest) updateProBadge(null);
-    console.error('Could not load the account Pro status.', error);
-  }
-}
-
 function updateAuthControls(user, error) {
   if (error) {
-    void refreshProBadge(null);
     console.error('Could not initialize account controls.', error);
     if (signInButton) {
       signInButton.hidden = false;
@@ -180,7 +141,6 @@ function updateAuthControls(user, error) {
   }
 
   if (status) status.classList.remove('auth-error');
-  void refreshProBadge(user);
   if (signInButton) {
     signInButton.hidden = Boolean(user);
     signInButton.disabled = false;
@@ -257,7 +217,3 @@ signOutButton?.addEventListener('click', async () => {
 
 if (cloudConfigured) observeAuth(updateAuthControls);
 else updateAuthControls(null, new Error('Google sign-in is not configured on this site.'));
-
-window.addEventListener('focus', () => {
-  if (currentUser) void refreshProBadge(currentUser);
-});

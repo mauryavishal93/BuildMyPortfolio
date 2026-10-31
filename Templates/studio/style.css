@@ -1,0 +1,4 @@
+.layout-studio .name{font-family:Georgia,serif;font-weight:500;font-size:34px}
+.layout-studio .resume-header{background:#faf3ee;margin:0;padding:var(--mt) var(--mx) 16px;border-bottom:2px solid var(--resume-accent)}
+.layout-studio .photo{border-radius:6px;--photo:96px;border:4px solid #fff;box-shadow:0 0 0 1px var(--resume-accent)}
+.layout-studio .section-heading{font-family:Georgia,serif;letter-spacing:.5px;border-bottom:1px solid var(--resume-accent)}

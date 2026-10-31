@@ -4,77 +4,35 @@ import { readFileSync } from 'node:fs';
 import {
   canUseFeature,
   FEATURE_IDS,
-  isProTemplate,
-  PLAN_CONFIG,
   PRICING_FEATURES,
-  shouldPromptForJobDescriptionAtsUpgrade,
   TEMPLATE_IDS
 } from '../frontend/src/plan-access.js';
 
-test('templates are allocated without overlap and match the published plan counts', () => {
-  assert.equal(TEMPLATE_IDS.FREE.length, 6);
-  assert.equal(TEMPLATE_IDS.PRO.length, 11);
-  assert.equal(new Set([...TEMPLATE_IDS.FREE, ...TEMPLATE_IDS.PRO]).size, 17);
-  assert.equal(TEMPLATE_IDS.FREE.some(isProTemplate), false);
-  assert.equal(TEMPLATE_IDS.PRO.every(isProTemplate), true);
+test('all twenty-four templates are available on the free plan', () => {
+  assert.equal(TEMPLATE_IDS.FREE.length, 24);
+  assert.equal(TEMPLATE_IDS.PRO.length, 0);
+  assert.equal(new Set(TEMPLATE_IDS.FREE).size, 24);
 });
 
-test('essential Free features are included and future Pro features remain unavailable', () => {
+test('all editor features, templates, ATS checks, and exports are included', () => {
   for (const label of [
     'Resume editor',
-    'Standard PDF export',
-    'Resume-only ATS checks',
-    'Basic cover-letter tools',
+    'All 24 resume templates',
+    'Unlimited text-based PDF downloads',
+    'Unlimited resume-only and job-description ATS checks',
+    'Cover-letter tools',
     'JSON import and export',
-    'Browser autosave'
+    'Browser autosave',
+    'Optional cloud storage'
   ]) {
     assert.equal(PRICING_FEATURES.find(feature => feature.label === label)?.free, 'Included');
   }
-  assert.equal(PRICING_FEATURES.find(feature => feature.label === 'Tailored resume versions')?.pro, 'Not available yet');
 });
 
-test('pro features reject missing, client-claimed, inactive, expired, or incomplete entitlements', () => {
-  const valid = {
-    planId: 'pro',
-    status: 'active',
-    source: 'server-verified',
-    validUntil: 2_000
-  };
-
-  assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES, null, 1_000), false);
-  assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES, { ...valid, source: 'client' }, 1_000), false);
-  assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES, { ...valid, status: 'inactive' }, 1_000), false);
-  assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES, { ...valid, validUntil: 1_000 }, 1_000), false);
-  assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES, { ...valid, validUntil: null }, 1_000), false);
-  assert.equal(canUseFeature('unknown-feature', valid, 1_000), false);
-});
-
-test('only recognized Pro features accept an active unexpired verified entitlement', () => {
-  const entitlement = {
-    planId: 'pro',
-    status: 'active',
-    source: 'server-verified',
-    validUntil: 2_000
-  };
-
-  assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES, entitlement, 1_000), true);
-  assert.equal(canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS, entitlement, 1_000), true);
-});
-
-test('job-description ATS attempts prompt Free users to upgrade but not Pro users', () => {
-  const activePro = {
-    planId: 'pro',
-    status: 'active',
-    source: 'server-verified',
-    validUntil: 2_000
-  };
-  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('', null), false);
-  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('  \n ', null), false);
-  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('Frontend developer role', null), true);
-  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('Another job description', {
-    ...activePro,
-    validUntil: Number.MAX_SAFE_INTEGER
-  }), false);
+test('known formerly gated features are always accessible without an entitlement', () => {
+  assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES), true);
+  assert.equal(canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS), true);
+  assert.equal(canUseFeature('unknown-feature'), false);
 });
 
 test('job descriptions are analyzed only after an explicit Run checks action', () => {
@@ -84,7 +42,8 @@ test('job descriptions are analyzed only after an explicit Run checks action', (
   assert.match(source, /\$\('runAtsBtn'\)\.addEventListener\('click',\(\)=>runAtsChecks\(\)\)/);
   assert.doesNotMatch(source, /\$\('jobDescription'\)\.addEventListener\('input'/);
   assert.doesNotMatch(source, /atsModalBg'\)\.classList\.contains\('show'\)\)runAtsChecks/);
-  assert.match(source, /if\(lockedJobMatch&&promptUpgrade\)showUpgrade\('job-description-ats'/);
+  assert.match(source, /renderAtsResults\(computeAtsChecks\(jobText\)\)/);
+  assert.doesNotMatch(source, /showUpgrade|shouldPromptForJobDescriptionAtsUpgrade/);
 });
 
 test('hidden sign-out controls stay hidden in both account-menu styles', () => {
@@ -94,11 +53,13 @@ test('hidden sign-out controls stay hidden in both account-menu styles', () => {
   }
 });
 
-test('subscription management buttons are hidden unless the user is signed in', () => {
+test('legacy subscription cancellation is account-gated and no new paid plan controls remain', () => {
+  const html = readFileSync(new URL('../frontend/billing.html', import.meta.url), 'utf8');
   const source = readFileSync(new URL('../frontend/src/billing.js', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../frontend/src/pricing.css', import.meta.url), 'utf8');
   assert.match(source, /cancelButton\.hidden\s*=\s*!user\s*\|\|/);
-  assert.match(source, /yearlyButton\.hidden\s*=\s*!user\s*\|\|/);
+  assert.doesNotMatch(html, /switchBillingYearly|voucherSection|redeemVoucher/);
+  assert.doesNotMatch(source, /scheduleBillingPlanChange|redeemBillingVoucher|voucherForm/);
   assert.match(styles, /\.billing-plan-actions \.btn\[hidden\]\{display:none!important\}/);
 });
 
@@ -132,41 +93,24 @@ test('all site pages use a text-only two-tone wordmark and the matching favicon'
   assert.match(logo, /FFE56A/);
 });
 
-test('monthly and yearly prices match the displayed INR subscriptions', () => {
-  assert.equal(PLAN_CONFIG.pro.currency, 'INR');
-  assert.deepEqual(PLAN_CONFIG.pro.monthly, { price: 99, interval: 'month' });
-  assert.deepEqual(PLAN_CONFIG.pro.yearly, { price: 399, interval: 'year' });
+test('pricing page presents a single free plan without checkout or voucher flows', () => {
+  const html = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
+  const script = readFileSync(new URL('../frontend/src/pricing.js', import.meta.url), 'utf8');
+  assert.match(html, /All features are free/);
+  assert.match(html, /Unlimited text-based PDF downloads/);
+  assert.match(html, /Unlimited resume-only and job-description ATS checks/);
+  assert.doesNotMatch(html, /Pro Monthly|Pro Yearly|purchaseMonthly|purchaseYearly|Voucher|checkoutStatus/);
+  assert.doesNotMatch(script, /createBillingSubscription|redeemBillingVoucher|Razorpay|PLAN_CONFIG/);
 });
 
-test('Pro template preview offers PDF export without a template-application trial modal', () => {
+test('editor removes Pro modals and has no template or PDF usage quota', () => {
   const html = readFileSync(new URL('../frontend/editor.html', import.meta.url), 'utf8');
   const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
-  assert.match(html, /id="previewUpgrade"/);
-  assert.doesNotMatch(html, /proTemplateTrialModalBg|applyProTemplate/);
-  assert.match(html, /id="templatePreviewModalBg"/);
-  assert.match(html, /id="templatePreviewAllowance"/);
-  assert.match(html, /id="exportProTemplatePreview"[^>]*disabled/);
-  assert.doesNotMatch(source, /template-preview-btn|data-template-preview/);
-});
-
-test('Free users preview Pro templates and can render a PDF without applying the template', () => {
-  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
-  assert.match(source, /pendingProTemplate=null;\s*openTemplatePreview\(templateId\)/);
-  assert.match(source, /async function exportPDF\(templateId=null\)/);
-  assert.match(source, /void exportPDF\(templateId\)/);
-  assert.match(source, /consumeProTemplateDownload\(cloudUser\.uid\)/);
-  assert.match(source, /You have used both free Pro-template PDF downloads\. Export is disabled/);
-  assert.match(source, /of 2 free Pro PDF downloads remaining/);
-  assert.match(source, /exportButton\.disabled=true/);
-  assert.match(source, /if\(!cloudUser\)\{[\s\S]*?button\.disabled=true/);
-  assert.match(source, /!cloudUser\|\|!Number\.isInteger\(proTemplateDownloadsRemaining\)\|\|proTemplateDownloadsRemaining<1/);
-  assert.doesNotMatch(source, /applyPendingProTemplate|showProTemplateTrial/);
-});
-
-test('upgrade modal actions wrap instead of overlapping at narrow widths', () => {
-  const styles = readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8');
-  assert.match(styles, /\.upgrade-modal \.modal-actions[^}]*display:grid/);
-  assert.match(styles, /@media\(max-width:560px\)[^{]*\{[^}]*grid-template-columns:1fr/s);
+  assert.doesNotMatch(html, /upgradeModalBg|templatePreviewModalBg|Pro template/);
+  assert.match(html, /See all included features/);
+  assert.match(source, /async function exportPDF\(\)/);
+  assert.match(source, /const template=templateDefs\.find\(item=>item\.id===b\.dataset\.template\)/);
+  assert.doesNotMatch(source, /consumeProTemplateDownload|proTemplateDownloadsRemaining|shouldPromptForJobDescriptionAtsUpgrade|showUpgrade/);
 });
 
 test('photo templates show an accessible avatar placeholder when no photo is uploaded', () => {
@@ -220,36 +164,25 @@ test('experience content reflows to the next page while the user is typing', () 
   assert.match(source, /reflowOverflowingDetail\(el,replacements\.length>1\)/);
 });
 
-test('billing and Plans pages expose voucher entry and label sample codes as examples', () => {
+test('billing preserves cancellation/history but removes voucher and purchase controls', () => {
   const html = readFileSync(new URL('../frontend/billing.html', import.meta.url), 'utf8');
   const pricingHtml = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
   const source = readFileSync(new URL('../frontend/src/billing.js', import.meta.url), 'utf8');
   const pricingSource = readFileSync(new URL('../frontend/src/pricing.js', import.meta.url), 'utf8');
-  assert.match(html, /id="voucherForm"/);
-  assert.match(html, /id="voucherSection"[^>]*aria-labelledby="voucherTitle">/);
-  assert.match(html, /Example formats only — these are not valid codes/);
-  assert.match(source, /redeemBillingVoucher\(currentUser, code\)/);
-  assert.match(source, /const voucherUnavailable = billingConfig\?\.entitlementEnabled === false/);
-  assert.match(source, /const disabled = signInRequired \|\| voucherUnavailable/);
-  assert.match(source, /Voucher availability could not be checked\. Enter a code and the server will verify it/);
-  assert.match(source, /a valid voucher will start after your current access ends/i);
-  assert.match(source, /result\.queued/);
-  assert.match(source, /billingConfig\?\.entitlementEnabled === false/);
-  assert.match(pricingHtml, /id="pricingVoucherForm"/);
-  assert.match(pricingHtml, /id="pricingVoucherSection"[^>]*aria-labelledby="pricingVoucherTitle">/);
-  assert.match(pricingHtml, /id="pricingVoucherCode"/);
-  assert.match(pricingSource, /redeemBillingVoucher\(currentUser, code\)/);
-  assert.match(pricingSource, /result\.queued/);
+  assert.match(html, /id="cancelBilling"/);
+  assert.match(html, /id="billingHistory"/);
+  assert.doesNotMatch(html, /voucher|purchaseMonthly|purchaseYearly/i);
+  assert.doesNotMatch(source, /redeemBillingVoucher|scheduleBillingPlanChange/);
+  assert.match(pricingHtml, /All features are free/);
+  assert.doesNotMatch(pricingHtml, /voucher|purchaseMonthly|purchaseYearly|Pro Monthly|Pro Yearly/i);
+  assert.doesNotMatch(pricingSource, /redeemBillingVoucher|createBillingSubscription|Razorpay/);
 });
 
-test('Firestore rules restrict the lifetime Pro-template trial to two owner-only increments', () => {
+test('Firestore and cloud client no longer maintain a Pro-template download quota', () => {
   const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
-  assert.match(rules, /match \/users\/\{userId\}\/trial\/proTemplateDownloads/);
-  assert.match(rules, /request\.auth\.uid == userId/);
-  assert.match(rules, /request\.resource\.data\.count == 1/);
-  assert.match(rules, /request\.resource\.data\.count == resource\.data\.count \+ 1/);
-  assert.match(rules, /request\.resource\.data\.count <= 2/);
-  assert.match(rules, /allow delete: if false/);
+  const cloudClient = readFileSync(new URL('../frontend/src/firebase-cloud.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(rules, /trial\/proTemplateDownloads/);
+  assert.doesNotMatch(cloudClient, /getProTemplateDownloadStatus|consumeProTemplateDownload/);
 });
 
 test('Firestore rules scope the last-worked resume preference to its signed-in account', () => {

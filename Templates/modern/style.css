@@ -1,0 +1,5 @@
+.layout-modern{--col-gap:20px;--c1:1.25fr;--c2:.75fr}
+.layout-modern .resume-header{margin:0;padding:var(--mt) var(--mx) 18px;background:var(--resume-accent);color:#fff}
+.layout-modern .name{color:#fff}
+.layout-modern .headline,.layout-modern .contact{color:#e9edf5}
+.layout-modern .photo{border:3px solid rgba(255,255,255,.85)}

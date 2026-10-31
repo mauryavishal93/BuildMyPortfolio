@@ -66,38 +66,6 @@ export async function loadBillingEntitlement(user) {
   return result.entitlement;
 }
 
-export async function redeemBillingVoucher(user, code) {
-  return billingRequest('vouchers/redeem', user, {
-    method: 'POST',
-    body: { code }
-  });
-}
-
-export async function createBillingSubscription(user, planKey) {
-  return billingRequest('subscriptions', user, {
-    method: 'POST',
-    body: { planKey }
-  });
-}
-
-export async function scheduleBillingPlanChange(user, planKey) {
-  return billingRequest('change-plan', user, {
-    method: 'POST',
-    body: { planKey }
-  });
-}
-
-export async function verifyBillingCheckout(user, checkoutResponse) {
-  return billingRequest('verify', user, {
-    method: 'POST',
-    body: {
-      razorpayPaymentId: checkoutResponse.razorpay_payment_id,
-      razorpaySubscriptionId: checkoutResponse.razorpay_subscription_id,
-      razorpaySignature: checkoutResponse.razorpay_signature
-    }
-  });
-}
-
 export async function cancelBillingSubscription(user, subscriptionId = '', reason = '') {
   return billingRequest('cancel', user, {
     method: 'POST',

@@ -186,20 +186,3 @@ test('last-worked resume selection prefers the saved account selection and falls
     lastWorkedResumeId: 'deleted-resume'
   }), { type: 'open-cloud-resume', resumeId: 'newest-resume' });
 });
-
-test('Pro-template PDF trial allowance allows two lifetime claims and rejects later claims', async () => {
-  const firebase = createFakeFirebase();
-  assert.deepEqual(await firebase.client.getProTemplateDownloadStatus('user-1'), { used: 0, remaining: 2 });
-
-  assert.deepEqual(await firebase.client.consumeProTemplateDownload('user-1'), {
-    allowed: true, used: 1, remaining: 1
-  });
-  assert.deepEqual(await firebase.client.consumeProTemplateDownload('user-1'), {
-    allowed: true, used: 2, remaining: 0
-  });
-  assert.deepEqual(await firebase.client.getProTemplateDownloadStatus('user-1'), { used: 2, remaining: 0 });
-  assert.deepEqual(await firebase.client.consumeProTemplateDownload('user-1'), {
-    allowed: false, used: 2, remaining: 0
-  });
-  assert.deepEqual(await firebase.client.getProTemplateDownloadStatus('user-2'), { used: 0, remaining: 2 });
-});

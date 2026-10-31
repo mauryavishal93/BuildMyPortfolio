@@ -2,9 +2,7 @@ import {
   cancelBillingSubscription,
   loadBillingActivity,
   loadBillingConfig,
-  loadBillingEntitlement,
-  redeemBillingVoucher,
-  scheduleBillingPlanChange
+  loadBillingEntitlement
 } from './billing-client.js';
 import { cloudConfigured, observeAuth } from './firebase-cloud.js';
 
@@ -14,13 +12,10 @@ const planTitle = $('#billingPlanTitle');
 const planDetail = $('#billingPlanDetail');
 const historyList = $('#billingHistory');
 const billingStatus = $('#billingServiceStatus');
-const voucherInput = $('#voucherCode');
-const redeemButton = $('#redeemVoucher');
 const cancelButton = $('#cancelBilling');
 const cancelDialog = $('#cancelSubscriptionDialog');
 const cancelDialogForm = $('#cancelSubscriptionForm');
 const cancelReasonInput = $('#cancelReason');
-const yearlyButton = $('#switchBillingYearly');
 let currentUser = null;
 let entitlement = null;
 let billingConfig = null;
@@ -65,44 +60,9 @@ function renderHistory(activity) {
   }
 }
 
-function updateVoucherControls() {
-  const signInRequired = !currentUser;
-  const proActive = entitlement?.status === 'active';
-  const voucherUnavailable = billingConfig?.entitlementEnabled === false;
-  const disabled = signInRequired || voucherUnavailable;
-  voucherInput.disabled = disabled;
-  redeemButton.disabled = disabled;
-  $('#voucherSection').classList.toggle('voucher-disabled', disabled);
-  $('#voucherSection').classList.toggle('voucher-pro-active', proActive);
-
-  if (signInRequired) {
-    voucherInput.value = '';
-    voucherInput.placeholder = 'Sign in to redeem a voucher';
-    voucherStatus.dataset.state = 'error';
-    voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
-  } else if (!billingConfig) {
-    voucherInput.placeholder = 'Enter voucher code';
-    voucherStatus.dataset.state = billingConfigError ? 'error' : '';
-    voucherStatus.textContent = billingConfigError
-      ? 'Voucher availability could not be checked. Enter a code and the server will verify it.'
-      : 'Checking voucher availability…';
-  } else if (voucherUnavailable) {
-    voucherStatus.dataset.state = 'error';
-    voucherStatus.textContent = 'Voucher redemption is unavailable because server-side account verification is not configured.';
-  } else {
-    voucherInput.placeholder = 'Enter voucher code';
-    voucherStatus.dataset.state = proActive ? 'success' : '';
-    voucherStatus.textContent = proActive
-      ? `Pro is already active. A valid voucher will start after your current access ends${entitlement.validUntil ? ` on ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}` : ''}.`
-      : 'Enter a voucher code to check it for this account.';
-  }
-}
-
 function updatePlanSummary(user) {
   const active = entitlement?.status === 'active';
   cancelButton.hidden = !user || !active || !entitlement?.subscriptionId || Boolean(entitlement.cancelAtCycleEnd);
-  yearlyButton.hidden = !user || !active || entitlement.billingPlan !== 'monthly' || Boolean(entitlement.cancelAtCycleEnd);
-  yearlyButton.disabled = !billingConfig?.checkoutEnabled;
 
   if (!user) {
     planTitle.textContent = 'No active plan';
@@ -125,7 +85,6 @@ async function refreshBillingPage(user, authError = null) {
   currentUser = user;
   entitlement = null;
   updatePlanSummary(user);
-  updateVoucherControls();
 
   if (authError) billingStatus.textContent = authError.message || 'Sign-in could not be initialized.';
   else billingStatus.textContent = billingConfigError?.message || '';
@@ -134,7 +93,6 @@ async function refreshBillingPage(user, authError = null) {
     accountStatus.textContent = 'Sign in with Google to view and manage billing for your account.';
     historyList.textContent = 'Sign in to view billing activity.';
     updatePlanSummary(null);
-    updateVoucherControls();
     return;
   }
 
@@ -166,7 +124,6 @@ async function refreshBillingPage(user, authError = null) {
   }
 
   updatePlanSummary(user);
-  updateVoucherControls();
 }
 
 async function finalizeCancellation() {
@@ -217,56 +174,6 @@ document.querySelectorAll('[data-close-cancel-dialog]').forEach(button => {
     cancelDialog?.close?.();
     cancelReasonInput.value = '';
   });
-});
-
-yearlyButton.addEventListener('click', async () => {
-  if (!currentUser || entitlement?.billingPlan !== 'monthly' || !billingConfig?.checkoutEnabled) return;
-  const date = entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleDateString('en-IN') : 'the end of this billing period';
-  if (!window.confirm(`Schedule Pro Yearly to begin after ${date}? Your monthly access continues until then; ₹399/year will be charged when the switch takes effect.`)) return;
-  yearlyButton.disabled = true;
-  try {
-    const result = await scheduleBillingPlanChange(currentUser, 'yearly');
-    billingStatus.textContent = `Yearly plan scheduled for ${new Date(result.scheduledAt).toLocaleDateString('en-IN')}.`;
-    await refreshBillingPage(currentUser);
-  } catch (error) {
-    billingStatus.textContent = error.message || 'Could not schedule the yearly plan.';
-    yearlyButton.disabled = false;
-  }
-});
-
-$('#voucherForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const code = voucherInput.value.trim();
-  if (!currentUser) {
-    voucherStatus.dataset.state = 'error';
-    voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
-    return;
-  }
-  if (billingConfig?.entitlementEnabled === false) {
-    voucherStatus.dataset.state = 'error';
-    voucherStatus.textContent = 'Voucher redemption is unavailable because server-side account verification is not configured.';
-    return;
-  }
-  if (!code) return;
-
-  redeemButton.disabled = true;
-  voucherStatus.dataset.state = '';
-  voucherStatus.textContent = 'Checking voucher…';
-  try {
-    const result = await redeemBillingVoucher(currentUser, code);
-    entitlement = result.entitlement;
-    voucherInput.value = '';
-    voucherStatus.dataset.state = 'success';
-    await refreshBillingPage(currentUser);
-    voucherStatus.dataset.state = 'success';
-    voucherStatus.textContent = result.queued
-      ? `Voucher accepted. It will add ${result.entitlement.pendingVoucherCount} voucher${result.entitlement.pendingVoucherCount === 1 ? '' : 's'} after your current Pro access ends${result.entitlement.pendingVoucherStartAt ? ` on ${new Date(result.entitlement.pendingVoucherStartAt).toLocaleDateString('en-IN')}` : ''}.`
-      : `Voucher redeemed. Pro is active through ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}.`;
-  } catch (error) {
-    voucherStatus.dataset.state = 'error';
-    voucherStatus.textContent = error.message || 'Could not redeem this voucher.';
-    updateVoucherControls();
-  }
 });
 
 if (cloudConfigured) observeAuth((user, error) => refreshBillingPage(user, error));

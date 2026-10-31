@@ -1361,6 +1361,10 @@ app.get('/home.html', (_request, response) => {
   response.sendFile(path.join(distDir, 'home.html'));
 });
 
+app.get(['/app-select.html', '/marriage-home.html'], (_request, response) => {
+  response.redirect(302, '/home.html');
+});
+
 app.use(express.static(distDir));
 app.use((_request, response) => {
   response.status(404).json({ error: 'Not found' });

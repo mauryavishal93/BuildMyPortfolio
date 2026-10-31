@@ -20,45 +20,10 @@ import { zoomFromPinch } from './zoom.js';
 
 (()=>{'use strict';
 const $=id=>document.getElementById(id),deep=x=>JSON.parse(JSON.stringify(x)),uid=()=>Math.random().toString(36).slice(2,10);
-const baseDocumentTitle=document.title;
-const resolveAppMode=()=>{
-  const params=new URLSearchParams(location.search);
-  const requested=params.get('app');
-  const mode=requested==='marriage'||requested==='resume'?requested:(localStorage.getItem('personaCraftAppMode')||'resume');
-  try{localStorage.setItem('personaCraftAppMode',mode)}catch(error){console.warn('Unable to persist app mode.',error)}
-  return mode;
-};
-const APP_MODE=resolveAppMode();
-document.body.classList.toggle('marriage-mode', APP_MODE === 'marriage');
-document.title = APP_MODE === 'marriage' ? 'Marriage Portfolio | PersonaCraftPro' : baseDocumentTitle;
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
 const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
-const KNOWN_TYPES=APP_MODE==='marriage'?
- ['story','family','timeline','preferences','gallery','contact','custom']:
- ['summary','experience','education','skills','projects','certifications','custom'];
-const weddingTemplateDefs=[
-{id:'everafter',name:'Ever After',sub:'Classic romance',accent:'#c95d75',cls:'layout-rose',layout:'single'},
-{id:'blush',name:'Blush',sub:'Soft pastel',accent:'#e9b7c6',cls:'layout-blush',layout:'single',banner:true},
-{id:'goldenhour',name:'Golden Hour',sub:'Warm glow',accent:'#c99a4a',cls:'layout-golden',layout:'single',banner:true},
-{id:'petal',name:'Petal',sub:'Minimal floral',accent:'#a64f73',cls:'layout-petal',layout:'single'},
-{id:'velvet',name:'Velvet',sub:'Luxury night',accent:'#4f325e',cls:'layout-velvet',layout:'single'},
-{id:'saffron',name:'Saffron',sub:'Bright and festive',accent:'#d88b39',cls:'layout-saffron',layout:'single'},
-{id:'royal',name:'Royal Romance',sub:'Regal touch',accent:'#6a3d7b',cls:'layout-royal',layout:'single'},
-{id:'pearl',name:'Pearl',sub:'Elegant details',accent:'#c8d4dc',cls:'layout-pearl',layout:'single',banner:true},
-{id:'garden',name:'Garden Story',sub:'Botanical charm',accent:'#4e7d5d',cls:'layout-garden',layout:'single'},
-{id:'sunset',name:'Sunset Vows',sub:'Warm scene',accent:'#d56d5d',cls:'layout-sunset',layout:'single',banner:true},
-{id:'monogram',name:'Monogram',sub:'Initials + grace',accent:'#384b64',cls:'layout-monogram',layout:'single'},
-{id:'ocean',name:'Ocean Love',sub:'Beach-inspired',accent:'#2a7485',cls:'layout-ocean',layout:'single',banner:true},
-{id:'orchid',name:'Orchid',sub:'Bold floral',accent:'#8b5db3',cls:'layout-orchid',layout:'single'},
-{id:'heritage',name:'Heritage',sub:'Traditional theme',accent:'#8f5b38',cls:'layout-heritage',layout:'single'},
-{id:'moonlight',name:'Moonlight',sub:'Night elegance',accent:'#4a5d87',cls:'layout-moonlight',layout:'single',banner:true},
-{id:'waltz',name:'Waltz',sub:'Dance motif',accent:'#d86e95',cls:'layout-waltz',layout:'single'},
-{id:'lighthouse',name:'Lighthouse',sub:'Coastal romance',accent:'#4d6f8f',cls:'layout-lighthouse',layout:'single',banner:true},
-{id:'meadow',name:'Meadow',sub:'Fresh and airy',accent:'#7ea870',cls:'layout-meadow',layout:'single'},
-{id:'regal',name:'Regal Gold',sub:'Luxury finale',accent:'#b18a3a',cls:'layout-regal',layout:'single',banner:true},
-{id:'forever',name:'Forever',sub:'Signature finish',accent:'#a34a64',cls:'layout-forever',layout:'single'}
-];
-const templateDefs=APP_MODE==='marriage'?weddingTemplateDefs:[
+const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
+const templateDefs=[
 {id:'classic',name:'Classic',sub:'ATS-friendly',accent:'#31547a',cls:'layout-classic',layout:'single'},
 {id:'modern',name:'Modern',sub:'Two-column',accent:'#344b67',cls:'layout-modern',layout:'two',banner:true},
 {id:'minimal',name:'Minimal',sub:'Clean type',accent:'#202a3a',cls:'layout-minimal',layout:'single'},
@@ -81,16 +46,6 @@ const templateDefs=APP_MODE==='marriage'?weddingTemplateDefs:[
 {id:'arc',name:'Arc',sub:'Rounded profile',accent:'#0f766e',cls:'layout-arc',layout:'single',banner:true,photo:true,photoPos:'right'}
 ];
 const makeSections=()=>{
-  if(APP_MODE==='marriage'){
-    return [
-      {id:uid(),type:'story',title:'Our Story',visible:true,listStyle:'none',content:'A joyful journey marked by love, laughter, and a shared commitment to building a life full of adventure, faith, and meaningful memories together.'},
-      {id:uid(),type:'timeline',title:'Wedding Timeline',visible:true,entries:[{role:'First Date',company:'The beginning',date:'June 2020',details:'We met during a late evening walk and instantly connected over music, laughter, and a shared sense of adventure.'},{role:'Engagement',company:'A new chapter',date:'March 2023',details:'Our families came together to celebrate the moment we chose forever and to honour the love we have built.'},{role:'Wedding Day',company:'The celebration',date:'November 2026',details:'A day filled with heartfelt vows, joyful traditions, and the people we love most gathered in one place.'}]},
-      {id:uid(),type:'family',title:'Family & Guests',visible:true,entries:[{role:'Our Families',company:'Love and support',date:'Always',details:'We are deeply grateful for the kindness, encouragement, and presence of our family and close friends throughout our journey.'}]},
-      {id:uid(),type:'preferences',title:'Wedding Details',visible:true,content:'Venue • Family • Guests • Ceremony • Reception • Travel • Favorites'},
-      {id:uid(),type:'gallery',title:'Memories',visible:true,entries:[{role:'Favorite Moments',company:'A lifetime of treasured memories',date:'Shared always',details:'From small everyday rituals to grand celebrations, every memory has become a beautiful chapter of our story.'}]},
-      {id:uid(),type:'contact',title:'Contact & Blessings',visible:true,content:'We are delighted to celebrate with you and welcome your love, blessings, and warm wishes as we begin this new chapter together.'}
-    ];
-  }
   return [
     {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
     {id:uid(),type:'experience',title:'Work Experience',visible:true,entries:[{role:'Senior QA Automation Engineer',company:'Example Technology Company',date:'2022 — Present',details:'Designed and maintained scalable UI and API automation suites.\nImproved regression reliability and reduced repetitive manual effort.\nCollaborated with developers and product teams to resolve release risks.'},{role:'QA Engineer',company:'Previous Company',date:'2019 — 2022',details:'Built automated tests and reusable test utilities.\nReported defects with clear reproduction steps and impact analysis.'}]},
@@ -100,7 +55,7 @@ const makeSections=()=>{
     {id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
   ];
 };
-const fresh=()=>({version:4,docName:APP_MODE==='marriage'?'Wedding Bio Data':'Untitled resume',template:APP_MODE==='marriage'?'everafter':'classic',layout:'single',mode:'flow',profile:APP_MODE==='marriage'?{name:'Ava & Noah',headline:'Together forever',email:'hello@avaandnoah.com',phone:'+1 (555) 214-7721',location:'New York, NY',website:'avaandnoah.com',photo:''}:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:APP_MODE==='marriage'?'#b96e91':'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
+const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
 function normalizeState(d){
@@ -576,13 +531,6 @@ function renderTemplates(){
  $('templates').innerHTML=templateDefs.map(templateCardMarkup).join('');
 }
 function getSectionStarterOptions(){
-  if(APP_MODE==='marriage'){
-    return [
-      { type: 'story', label: 'Add Our Story' },
-      { type: 'timeline', label: 'Add Timeline' },
-      { type: 'family', label: 'Add Family Details' }
-    ];
-  }
   return [
     { type: 'summary', label: 'Add Summary' },
     { type: 'experience', label: 'Add Experience' }
@@ -591,7 +539,7 @@ function getSectionStarterOptions(){
 function renderSectionList(){
  if(!state.sections.length){
   const starterOptions=getSectionStarterOptions();
-  $('sectionList').innerHTML=`<div class="section-empty"><strong>No sections yet</strong><p>${APP_MODE==='marriage' ? 'Start with a wedding story or timeline section for your marriage bio-data.' : 'Start with a Summary or Experience section to build your first resume.'}</p><div class="section-empty-actions">${starterOptions.map(option=>`<button class="btn soft small" type="button" data-add="${option.type}">${option.label}</button>`).join('')}</div></div>`;
+  $('sectionList').innerHTML=`<div class="section-empty"><strong>No sections yet</strong><p>Start with a Summary or Experience section to build your first resume.</p><div class="section-empty-actions">${starterOptions.map(option=>`<button class="btn soft small" type="button" data-add="${option.type}">${option.label}</button>`).join('')}</div></div>`;
   return;
  }
  $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${$esc(s.id)}"><span class="grip" aria-hidden="true">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" type="button" data-toggle="${$esc(s.id)}" title="${s.visible?'Hide':'Show'} section" aria-label="${s.visible?'Hide':'Show'} ${$esc(s.title)}">${s.visible?'◉':'○'}</button><button class="section-delete" type="button" data-delete-section="${$esc(s.id)}" title="Delete ${$esc(s.title)}" aria-label="Delete ${$esc(s.title)}">×</button></div>`).join('');
@@ -867,16 +815,16 @@ function updateProTemplatePreviewAllowance({checking=false,error=false}={}){
 /* ---------- Inspector ---------- */
 function field(label,key,value,type='text',extra=''){return `<div class="field"><label>${label}</label><input data-profile="${key}" type="${type}" value="${$esc(value)}" ${extra}></div>`}
 function renderInspector(){
- const s=sectionById(selectedId),d=state.design,tmplHasPhoto=!!activeTemplate().photo;const isMarriage=APP_MODE==='marriage';let nameLabel=isMarriage?'Couple names':'Full name';let titleLabel=isMarriage?'Wedding title':'Professional title';let locationLabel=isMarriage?'Wedding city':'Location';let websiteLabel=isMarriage?'Website / profile':'Website / LinkedIn';let h=`<div class="inspector-head"><h2>Design & properties</h2></div>
+ const s=sectionById(selectedId),d=state.design,tmplHasPhoto=!!activeTemplate().photo;let h=`<div class="inspector-head"><h2>Design & properties</h2></div>
  <div class="tabs rtabs" role="tablist" aria-label="Properties"><button class="tab ${rightTab==='design'?'active':''}" role="tab" aria-selected="${rightTab==='design'}" data-rtab="design">Design & properties</button><button class="tab ${rightTab==='section'?'active':''}" role="tab" aria-selected="${rightTab==='section'}" data-rtab="section">Selected section</button></div>
  ${rightTab==='design'?`<div class="field"><label>Name & header alignment</label><div class="seg" role="group" aria-label="Header alignment">${[['','Template'],['left','Left'],['center','Center'],['right','Right']].map(([v,l])=>`<button type="button" data-halign="${v}" class="${(d.headerAlign||'')===v?'active':''}" aria-pressed="${(d.headerAlign||'')===v}">${l}</button>`).join('')}</div></div>
  <div class="rule"></div>
  <div class="eyebrow">Profile</div>
- <div class="field"><label>${nameLabel}</label><input data-profile="name" value="${$esc(state.profile.name)}"></div>
- <div class="field"><label>${titleLabel}</label><input data-profile="headline" value="${$esc(state.profile.headline)}"></div>
+ <div class="field"><label>Full name</label><input data-profile="name" value="${$esc(state.profile.name)}"></div>
+ <div class="field"><label>Professional title</label><input data-profile="headline" value="${$esc(state.profile.headline)}"></div>
  <div class="field-row">${field('Email','email',state.profile.email,'email')}${field('Phone','phone',state.profile.phone)}</div>
- <div class="field"><label>${locationLabel}</label><input data-profile="location" value="${$esc(state.profile.location)}"></div>
- <div class="field"><label>${websiteLabel}</label><input data-profile="website" value="${$esc(state.profile.website)}"></div>
+ <div class="field"><label>Location</label><input data-profile="location" value="${$esc(state.profile.location)}"></div>
+ <div class="field"><label>Website / LinkedIn</label><input data-profile="website" value="${$esc(state.profile.website)}"></div>
  <div class="field"><label>Profile photo ${tmplHasPhoto?'':'(this template has no photo slot — pick a photo template)'}</label><input id="photoInput" type="file" accept="image/*"></div>${state.profile.photo?'<button class="btn soft small" id="removePhoto">Remove photo</button>':''}
  <div class="field" style="margin-top:12px"><label>Photo position</label><div class="seg" role="group" aria-label="Photo position">${[['','Template'],['left','Left'],['center','Center'],['right','Right']].map(([v,l])=>`<button type="button" data-palign="${v}" class="${(d.photoAlign||'')===v?'active':''}" aria-pressed="${(d.photoAlign||'')===v}">${l}</button>`).join('')}</div></div>
  <div class="rule"></div><div class="eyebrow">Global design</div>
@@ -884,7 +832,7 @@ function renderInspector(){
  <div class="field-row"><div class="field"><label>Body size (px)</label><input data-design="fontSize" type="number" min="8" max="24" value="${d.fontSize}"></div><div class="field"><label>Heading size (px)</label><input data-design="headingSize" type="number" min="10" max="28" value="${d.headingSize}"></div></div>
  <div class="field-row"><div class="field"><label>Left/right margin (px)</label><input data-design="margin" type="number" min="0" max="100" value="${d.margin}"></div><div class="field"><label>Top/bottom margin (px)</label><input data-design="marginY" type="number" min="0" max="100" value="${d.marginY}"></div></div>
  <div class="field"><label><input type="checkbox" data-design="pageNumbers" ${d.pageNumbers?'checked':''}>Show page numbers (reserves a small footer)</label></div>
- <div class="small-note">${isMarriage ? 'This bio-data layout is tuned for wedding stories, family introductions, venue details, and shared memories.' : 'Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.'}</div>`:''}`;
+ <div class="small-note">Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.</div>`:''}`;
  if(rightTab==='section'&&s){
    h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
    if(s.entries){
@@ -968,22 +916,10 @@ function render(){renderTemplates();renderSectionList();renderSheets();renderIns
 /* Selecting only toggles highlight classes: no re-layout, so the page never jumps while you click around. */
 function selectSection(id,expandEntries=false){selectedId=id;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
 function addSection(type,title,content){
- const mariageSectionMap={
-  story:{ kind: 'story', label:'Our Story', fallback:'A heartfelt story of love, commitment, and the moments that brought us together.' },
-  timeline:{ kind:'timeline', label:'Wedding Timeline', fallback:'Add your milestones, proposal story, and wedding schedule here.' },
-  family:{ kind:'family', label:'Family & Guests', fallback:'Celebrate your family, parents, and guests with a warm note.' },
-  preferences:{ kind:'preferences', label:'Wedding Details', fallback:'Venue, dress code, traditions, travel details, and more.' },
-  gallery:{ kind:'gallery', label:'Memories', fallback:'Capture cherished memories, favorite photos, and special moments.' },
-  contact:{ kind:'contact', label:'Contact & Blessings', fallback:'Share your address, message, RSVP info, or blessings.' }
- };
- const s={id:uid(),type,title:title||((APP_MODE==='marriage' && mariageSectionMap[type])?mariageSectionMap[type].label: type.charAt(0).toUpperCase()+type.slice(1)),visible:true,listStyle:'bullet'};
- if(['experience','education','projects','timeline','family','gallery'].includes(type)){
-  const defaultRole = type==='education'?'Degree / qualification':type==='projects'?'Project name':type==='timeline'?'Milestone':type==='family'?'Family member':'Memory';
-  const defaultCompany = type==='timeline' ? 'Event / moment' : type==='family' ? 'Family details' : type==='gallery' ? 'Memory note' : 'Organization';
-  s.entries=[{role:defaultRole,company:defaultCompany,date:'Year',details:'Add one detail per line.'}];
- } else if(APP_MODE==='marriage' && type==='story') {
-  s.listStyle='none';
-  s.content=content||'Share your love story, memorable starts, and the meaningful moments that shaped your journey together.';
+ const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};
+ if(['experience','education','projects'].includes(type)){
+  const defaultRole = type==='education'?'Degree / qualification':type==='projects'?'Project name':'Role / milestone';
+  s.entries=[{role:defaultRole,company:'Organization',date:'Year',details:'Add one detail per line.'}];
  } else {
   s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');
  }

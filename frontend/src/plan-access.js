@@ -6,26 +6,11 @@ export const TEMPLATE_IDS = Object.freeze({
   ])
 });
 
-export const MARRIAGE_TEMPLATE_IDS = Object.freeze({
-  FREE: Object.freeze([
-    'hindu-gold', 'royal-red', 'navy-gold', 'beige-ivory', 'soft-pastel', 'classic-cream'
-  ]),
-  PRO: Object.freeze([
-    'dark-temple', 'floral-rose', 'wedding-royal', 'arch-ornament', 'sage-profile', 'modern-rose',
-    'forest-luxe', 'chic-silver', 'sunset-portrait', 'heritage-navy', 'golden-bio', 'photo-card',
-    'monogram-royal', 'lavender-profile'
-  ])
-});
-
 const PRO_TEMPLATE_IDS = Object.freeze([
   ...TEMPLATE_IDS.PRO,
   'luxe',
   'verve',
   'arc'
-]);
-
-const MARRIAGE_PRO_TEMPLATE_IDS = Object.freeze([
-  ...MARRIAGE_TEMPLATE_IDS.PRO
 ]);
 
 export const FEATURE_IDS = Object.freeze({
@@ -63,7 +48,7 @@ export const PRICING_FEATURES = Object.freeze([
 ]);
 
 export function isProTemplate(templateId) {
-  return PRO_TEMPLATE_IDS.includes(templateId) || MARRIAGE_PRO_TEMPLATE_IDS.includes(templateId);
+  return PRO_TEMPLATE_IDS.includes(templateId);
 }
 
 export function canUseFeature(featureId, entitlement, now = Date.now()) {

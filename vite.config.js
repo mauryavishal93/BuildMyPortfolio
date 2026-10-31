@@ -17,8 +17,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         home: fileURLToPath(new URL('./frontend/home.html', import.meta.url)),
-        appSelect: fileURLToPath(new URL('./frontend/app-select.html', import.meta.url)),
-        marriageHome: fileURLToPath(new URL('./frontend/marriage-home.html', import.meta.url)),
         index: fileURLToPath(new URL('./frontend/index.html', import.meta.url)),
         admin: fileURLToPath(new URL('./frontend/admin.html', import.meta.url)),
         editor: fileURLToPath(new URL('./frontend/editor.html', import.meta.url)),

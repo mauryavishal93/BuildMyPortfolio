@@ -150,6 +150,15 @@ test('health check returns an empty success response', async () => {
   assert.equal(await response.text(), '');
 });
 
+test('removed app-selection and marriage URLs return visitors to the resume-builder home', async () => {
+  for (const path of ['/app-select.html', '/marriage-home.html']) {
+    const response = await fetch(`${origin}${path}`, { redirect: 'manual' });
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), '/home.html');
+  }
+});
+
 function signedWebhook(event) {
   const rawBody = Buffer.from(JSON.stringify(event));
   const signature = createHmac('sha256', environment.RAZORPAY_WEBHOOK_SECRET)

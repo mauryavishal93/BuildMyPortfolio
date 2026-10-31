@@ -102,6 +102,36 @@ test('subscription management buttons are hidden unless the user is signed in', 
   assert.match(styles, /\.billing-plan-actions \.btn\[hidden\]\{display:none!important\}/);
 });
 
+test('all site pages use a text-only two-tone wordmark and the matching favicon', () => {
+  const pages = [
+    'home.html', 'index.html', 'about.html', 'admin.html', 'billing.html',
+    'editor.html', 'pricing.html', 'privacy.html', 'refunds.html', 'terms.html'
+  ];
+  for (const page of pages) {
+    const html = readFileSync(new URL(`../frontend/${page}`, import.meta.url), 'utf8');
+    assert.match(html, /rel="icon"[^>]+personacraftpro-mark\.svg/, page);
+    assert.match(html, /<img class="(?:about-logo|logo)" src="\/images\/personacraftpro-mark\.svg"/, page);
+    assert.match(html, /PersonaCraft<span[^>]*>Pro<\/span>/, page);
+  }
+  const editor = readFileSync(new URL('../frontend/editor.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(editor, /id="proBrandBadge"/);
+  const styles = [
+    readFileSync(new URL('../frontend/src/about.css', import.meta.url), 'utf8'),
+    readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8')
+  ].join('\n');
+  assert.match(styles, /\.about-brand-name\{display:inline-flex;align-items:center;gap:4px/);
+  assert.match(styles, /\.brand-name\{display:inline-flex;align-items:center;gap:4px/);
+  assert.match(styles, /\.about-brand-name span\{display:inline-flex;align-items:center;padding:2px 6px;border-radius:6px;background:linear-gradient/);
+  assert.match(styles, /\.brand-name span\{display:inline-flex;align-items:center;padding:2px 6px;border-radius:6px;background:linear-gradient/);
+  assert.doesNotMatch(styles, /\.about-brand span:not\(\.about-logo\)\{display:none\}/);
+  assert.doesNotMatch(styles, /\.brand span\{display:none\}/);
+  const logo = readFileSync(new URL('../frontend/public/images/personacraftpro-mark.svg', import.meta.url), 'utf8');
+  assert.match(logo, /<svg/);
+  assert.match(logo, /rx="78"/);
+  assert.match(logo, /linearGradient/);
+  assert.match(logo, /FFE56A/);
+});
+
 test('monthly and yearly prices match the displayed INR subscriptions', () => {
   assert.equal(PLAN_CONFIG.pro.currency, 'INR');
   assert.deepEqual(PLAN_CONFIG.pro.monthly, { price: 99, interval: 'month' });

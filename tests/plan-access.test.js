@@ -29,6 +29,16 @@ test('all editor features, templates, ATS checks, and exports are included', () 
   }
 });
 
+test('public template counts match the available template registry', () => {
+  const count = TEMPLATE_IDS.FREE.length;
+  for (const page of ['about.html', 'pricing.html', 'terms.html']) {
+    const html = readFileSync(new URL(`../frontend/${page}`, import.meta.url), 'utf8');
+    assert.match(html, new RegExp(`\\b${count} (?:resume )?templates?\\b`), page);
+  }
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, new RegExp(`\\b${count} templates?\\b`), 'README.md');
+});
+
 test('known formerly gated features are always accessible without an entitlement', () => {
   assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES), true);
   assert.equal(canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS), true);

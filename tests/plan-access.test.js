@@ -8,16 +8,16 @@ import {
   TEMPLATE_IDS
 } from '../frontend/src/plan-access.js';
 
-test('all twenty-four templates are available on the free plan', () => {
-  assert.equal(TEMPLATE_IDS.FREE.length, 24);
+test('all twenty-five templates are available on the free plan', () => {
+  assert.equal(TEMPLATE_IDS.FREE.length, 25);
   assert.equal(TEMPLATE_IDS.PRO.length, 0);
-  assert.equal(new Set(TEMPLATE_IDS.FREE).size, 24);
+  assert.equal(new Set(TEMPLATE_IDS.FREE).size, 25);
 });
 
 test('all editor features, templates, ATS checks, and exports are included', () => {
   for (const label of [
     'Resume editor',
-    'All 24 resume templates',
+    'All 25 resume templates',
     'Unlimited text-based PDF downloads',
     'Unlimited resume-only and job-description ATS checks',
     'Cover-letter tools',

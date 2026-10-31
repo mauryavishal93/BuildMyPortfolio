@@ -475,7 +475,7 @@ function websiteHref(value){
 function templateCardMarkup(t){
  const selected=state.template===t.id;
  const photo=t.photo&&t.id!=='photo'?`<span class="mini-photo" style="${t.photoPos==='left'?'left':'right'}:${t.photoPos==='center'?'calc(50% - 7px)':'8px'};${t.photoPos==='center'?'left:calc(50% - 7px);right:auto':''}"></span>`:'';
- const sidebar=t.layout==='two'||t.id==='interio-designer'?`<div style="float:left;width:30%;height:100%;background:${t.id==='interio-designer'?'#315f4b':t.accent};margin-right:5px">${t.id==='photo'||t.id==='interio-designer'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
+ const sidebar=t.layout==='two'||t.id==='interio-designer'||t.id==='brian-baxter'?`<div style="float:left;width:30%;height:100%;background:${t.id==='interio-designer'?'#315f4b':t.id==='brian-baxter'?'#303030':t.accent};margin-right:5px">${t.id==='photo'||t.id==='interio-designer'||t.id==='brian-baxter'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
  return `<div class="template-card"><button class="template ${selected?'active':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, free for everyone"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="template-availability">Free</span></span><small>${$esc(t.sub)}</small></button></div>`;
 }
 function renderTemplates(){
@@ -510,6 +510,19 @@ function sheetHTML(index,cols){
  const contact=[p.email?`<span contenteditable="true" spellcheck="true" data-profile-field="email" title="Click to edit email">${$esc(p.email)}</span>`:'',p.phone?`<span contenteditable="true" spellcheck="true" data-profile-field="phone" title="Click to edit phone">${$esc(p.phone)}</span>`:'',p.location?`<span contenteditable="true" spellcheck="true" data-profile-field="location" title="Click to edit location">${$esc(p.location)}</span>`:'',p.website?`<span contenteditable="true" spellcheck="true" data-profile-field="website" title="Click to edit website">${$esc(p.website)}</span>`:''].filter(Boolean).join('<span class="contact-separator"> · </span>');
  const photoMarkup=p.photo?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:'<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded"></span>';
  const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?photoMarkup:''}<div class="header-text"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="contact" contenteditable="false" title="Edit contact details in the right panel">${contact}</div></div></header>`:'';
+ if(tmpl.id==='brian-baxter'){
+  const initials=String(p.name||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toLocaleUpperCase()||'';
+  const portrait=p.photo
+   ?`<img class="br-portrait" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="br-portrait br-portrait-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Phone','phone','☎'],['Email','email','@'],['Website','website','↗'],['Location','location','⌖']]
+   .filter(([,field])=>p[field])
+   .map(([label,field,icon])=>`<li class="br-contact-item"><span class="br-small-icon" aria-hidden="true">${icon}</span><span contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</span></li>`)
+   .join('');
+  const profile=index===0?`<header class="br-header"><div class="br-yellow-panel"></div><div class="br-header-photo">${portrait}</div><div class="br-header-name"><h1 contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><p contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your professional title">${$esc(p.headline||'Professional Title')}</p></div></header>`:'';
+  const contact=index===0&&contactFields?`<section class="br-side-section br-contact-section"><h2 class="br-section-title"><span class="br-title-icon" aria-hidden="true">●</span>Contact</h2><ul class="br-contact-list">${contactFields}</ul></section>`:'';
+  return `<div class="sheet-inner br-sheet">${profile}<div class="br-body"><aside class="br-sidebar">${contact}<div class="br-sidebar-sections"></div></aside><main class="br-main"><div class="sections-area"></div></main></div></div><div class="page-number"></div>`;
+ }
  if(tmpl.id==='teal-modern'){
   const initials=String(p.name||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toLocaleUpperCase()||'';
   const tealPhoto=p.photo
@@ -613,11 +626,13 @@ function renderWhole(s){const shell=makeShell(s,false),st={};sectionAtoms(s).for
    then the other column, and only then to a new page. Everything is measured, never estimated. */
 const MAIN_TYPES=new Set(['summary','experience']),SIDE_TYPES=new Set(['skills','education','certifications']);
 function flowSections(root,tmpl){
- const two=state.layout==='two',pages=[],streams=Array.from({length:two?2:1},()=>({page:0}));
+ const two=state.layout==='two',pages=[],streams=Array.from({length:tmpl.id==='brian-baxter'?2:two?2:1},()=>({page:0}));
  const addPage=()=>{const p=createSheet(pages.length,tmpl,two);root.appendChild(p);pages.push(p);return p};
  addPage();
  const colOf=(si,pi,s)=>tmpl.id==='peach-mint'
   ?pages[pi].querySelector(s.type==='skills'||s.type==='certifications'?'.pm-sidebar-sections':'.pm-main .sections-area')
+  :tmpl.id==='brian-baxter'
+   ?pages[pi].querySelector(s.type==='education'||s.type==='certifications'?'.br-sidebar-sections':'.br-main .sections-area')
   :tmpl.id==='teal-modern'
    ?pages[pi].querySelector(s.type==='skills'?'.tr-sidebar-sections':'.tr-main .sections-area')
   :tmpl.id==='interio-designer'&&s.type==='skills'
@@ -629,6 +644,8 @@ function flowSections(root,tmpl){
    ?c.getBoundingClientRect().bottom
   :c.classList.contains('tr-sidebar-sections')
    ?c.getBoundingClientRect().bottom
+  :c.classList.contains('br-sidebar-sections')
+   ?c.getBoundingClientRect().bottom
   :c.closest('.sections-area').getBoundingClientRect().bottom-parseFloat(getComputedStyle(c.closest('.sections-area')).paddingBottom);
  const fits=(si,pi,s)=>{const c=colOf(si,pi,s),l=c.lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi,c)+.5};
  const fill=(si,s)=>{const st=streams[si],c=colOf(si,st.page,s),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
@@ -639,7 +656,7 @@ function flowSections(root,tmpl){
  };
  for(const s of state.sections.filter(x=>x.visible)){
   const atoms=sectionAtoms(s);let i=0,cont=false,cur=null,lastSi=0;
-  const pref=tmpl.id==='peach-mint'?(s.type==='skills'||s.type==='certifications'?1:0):tmpl.id==='teal-modern'?(s.type==='skills'?1:0):!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0,s)<=fill(1,s)?0:1);
+  const pref=tmpl.id==='peach-mint'?(s.type==='skills'||s.type==='certifications'?1:0):tmpl.id==='teal-modern'?(s.type==='skills'?1:0):tmpl.id==='brian-baxter'?(s.type==='education'||s.type==='certifications'?1:0):!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0,s)<=fill(1,s)?0:1);
   while(i<atoms.length){
    const a=atoms[i];
    if(cur){
@@ -650,7 +667,7 @@ function flowSections(root,tmpl){
    const first=cont&&a.k==='li'?{k:'entry',e:a.e,continuation:true}:a;
    let placed=null;
    if(!cont){
-    const order=two?(tmpl.id==='peach-mint'||tmpl.id==='teal-modern'?[pref]:[pref,1-pref]):[0];
+    const order=two?(tmpl.id==='peach-mint'||tmpl.id==='teal-modern'?[pref]:[pref,1-pref]):tmpl.id==='brian-baxter'?[pref]:[0];
     for(const si of order){placed=attempt(si,streams[si].page,s,false,first,false);if(placed)break}
     lastSi=pref;
    }
@@ -690,13 +707,20 @@ function renderFree(root,tmpl){
  const sidebar=tmpl.id==='interio-designer'?firstPage.querySelector('.interio-sidebar'):null;
  const peachSidebar=tmpl.id==='peach-mint'?firstPage.querySelector('.pm-sidebar'):null;
  const tealSidebar=tmpl.id==='teal-modern'?firstPage.querySelector('.tr-sidebar'):null;
- const defaultX=peachSidebar?Math.round((peachSidebar.getBoundingClientRect().right-sheetBounds.left)/scale+16):sidebar?Math.round((sidebar.getBoundingClientRect().right-sheetBounds.left)/scale+12):tealSidebar?Math.round((tealSidebar.getBoundingClientRect().right-sheetBounds.left)/scale+16):mx;
- const defaultW=Math.max(80,PAGE_W-defaultX-mx);
+ const brianSidebar=tmpl.id==='brian-baxter'?firstPage.querySelector('.br-sidebar'):null;
+ const brianMain=tmpl.id==='brian-baxter'?firstPage.querySelector('.br-main'):null;
+ const brianContact=firstPage.querySelector('.br-contact-section');
+ const defaultX=peachSidebar?Math.round((peachSidebar.getBoundingClientRect().right-sheetBounds.left)/scale+16):sidebar?Math.round((sidebar.getBoundingClientRect().right-sheetBounds.left)/scale+12):tealSidebar?Math.round((tealSidebar.getBoundingClientRect().right-sheetBounds.left)/scale+16):brianMain?Math.round((areaBounds.left-sheetBounds.left)/scale):mx;
+ const defaultW=Math.max(80,brianMain?Math.round(areaBounds.width/scale):PAGE_W-defaultX-mx);
  const defaultY=Math.max(DEFAULT_MARGIN,Math.round((areaBounds.top-sheetBounds.top)/scale+parseFloat(padding.paddingTop)));
+ const brianSidebarX=brianSidebar?Math.round((brianSidebar.getBoundingClientRect().left-sheetBounds.left)/scale+parseFloat(getComputedStyle(brianSidebar).paddingLeft)):0;
+ const brianSidebarW=brianSidebar?Math.max(80,Math.round(brianSidebar.getBoundingClientRect().width/scale-parseFloat(getComputedStyle(brianSidebar).paddingLeft)-parseFloat(getComputedStyle(brianSidebar).paddingRight))):0;
+ const brianSidebarFirstY=brianContact?Math.ceil((brianContact.getBoundingClientRect().bottom-sheetBounds.top)/scale+18):DEFAULT_MARGIN;
  const header=tmpl.id==='profile-split'?firstPage.querySelector('.resume-header'):tmpl.id==='teal-modern'?firstPage.querySelector('.tr-header'):null;
  const headerBottom=header?Math.ceil((header.getBoundingClientRect().bottom-sheetBounds.top)/scale+16):0;
  const firstPageDefaultY=Math.max(defaultY,headerBottom);
  const cursorByPage=Array.from({length:pageCount},(_,index)=>index===0?firstPageDefaultY:defaultY);
+ const brianSidebarCursorByPage=Array.from({length:pageCount},(_,index)=>index===0?brianSidebarFirstY:DEFAULT_MARGIN);
  const addPage=()=>{
   const page=createSheet(pages.length,tmpl,false);
   root.appendChild(page);pages.push(page);cursorByPage.push(defaultY);
@@ -714,9 +738,11 @@ function renderFree(root,tmpl){
   let pos=state.positions[s.id],pageIndex=pos?Math.round(clamp(pos.page,1,pageCount,1))-1:0;
   if(!pos){
    const skillSidebar=tealSidebar&&s.type==='skills'?tealSidebar:null;
-   const x=skillSidebar?Math.round((skillSidebar.getBoundingClientRect().left-sheetBounds.left)/scale+12):defaultX;
-   const w=skillSidebar?Math.max(80,Math.round(skillSidebar.getBoundingClientRect().width/scale)-24):defaultW;
-   pos=state.positions[s.id]={x,y:cursorByPage[pageIndex],w,page:pageIndex+1};
+   const brianSidebarSection=brianSidebar&&(s.type==='education'||s.type==='certifications');
+   const x=skillSidebar?Math.round((skillSidebar.getBoundingClientRect().left-sheetBounds.left)/scale+12):brianSidebarSection?brianSidebarX:defaultX;
+   const y=brianSidebarSection?brianSidebarCursorByPage[pageIndex]:cursorByPage[pageIndex];
+   const w=skillSidebar?Math.max(80,Math.round(skillSidebar.getBoundingClientRect().width/scale)-24):brianSidebarSection?brianSidebarW:defaultW;
+   pos=state.positions[s.id]={x,y,w,page:pageIndex+1};
   }
   pageIndex=Math.round(clamp(pos.page,1,pages.length,1))-1;
   pos.page=pageIndex+1;
@@ -766,7 +792,11 @@ function renderFree(root,tmpl){
     rendered=appendAtom(fragment.shell,atom,fragment.st,s);
    }
   }
-  cursorByPage[pageIndex]=Math.max(cursorByPage[pageIndex],pos.y+firstFragmentHeight+14);
+  if(brianSidebar&& (s.type==='education'||s.type==='certifications')){
+   brianSidebarCursorByPage[pageIndex]=Math.max(brianSidebarCursorByPage[pageIndex],pos.y+firstFragmentHeight+14);
+  }else{
+   cursorByPage[pageIndex]=Math.max(cursorByPage[pageIndex],pos.y+firstFragmentHeight+14);
+  }
  });
  state.freePageCount=pages.length;
 }
@@ -1582,7 +1612,7 @@ $('templates').addEventListener('click',e=>{
  if(!b)return;
  const template=templateDefs.find(item=>item.id===b.dataset.template);
  if(!template||template.id===state.template)return;
- transact(()=>{state.template=template.id;state.layout=template.layout;state.design.accent=template.accent;selectedId=null});
+ transact(()=>{state.template=template.id;state.layout=template.layout;state.design.accent=template.accent;if(template.id==='brian-baxter'){state.positions={};state.freePageCount=1}selectedId=null});
  toast('Applied '+template.name);
 })
 $('sectionList').addEventListener('click',e=>{const deleteButton=e.target.closest('[data-delete-section]');if(deleteButton){e.preventDefault();e.stopPropagation();deleteSectionById(deleteButton.dataset.deleteSection);return}const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});

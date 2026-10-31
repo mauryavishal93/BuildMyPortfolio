@@ -22,10 +22,11 @@ import interioDesigner from './interio-designer/template.js';
 import profileSplit from './profile-split/template.js';
 import peachMint from './peach-mint/template.js';
 import tealModern from './teal-modern/template.js';
+import brianBaxter from './brian-baxter/template.js';
 
 export const templateDefs = Object.freeze([
   classic, modern, minimal, creative, compact, elegant, tech, executive,
   photo, timeline, pastel, bold, student, portrait, card, photobanner,
   studio, luxe, verve, arc, interioDesigner, profileSplit, peachMint,
-  tealModern
+  tealModern, brianBaxter
 ]);

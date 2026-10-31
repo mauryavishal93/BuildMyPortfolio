@@ -1,0 +1,62 @@
+.layout-brian-baxter{--br-yellow:#f8ad00;--br-deep:#f0a300;--br-charcoal:#303030;--br-ink:#222;background:#fff;color:var(--br-ink);font-family:Arial,Helvetica,sans-serif}
+.layout-brian-baxter .br-sheet{display:flex;height:100%;flex-direction:column;padding:0;overflow:hidden}
+.layout-brian-baxter .br-header{position:relative;display:grid;flex:none;grid-template-columns:38% 62%;min-height:205px;background:#f1f1f1;overflow:hidden}
+.layout-brian-baxter .br-yellow-panel{position:absolute;inset:0 auto 0 0;width:38%;background:var(--br-yellow)}
+.layout-brian-baxter .br-yellow-panel:after{position:absolute;right:-1px;bottom:0;width:0;height:0;border-style:solid;border-width:0 0 140px 140px;border-color:transparent transparent var(--br-charcoal) transparent;content:""}
+.layout-brian-baxter .br-header-photo{position:relative;z-index:2;align-self:center;justify-self:center;width:142px;height:142px;margin:18px 0 0;padding:4px;border:3px solid #fff;border-radius:50% 50% 50% 10%;background:#fff;overflow:hidden}
+.layout-brian-baxter .br-portrait{display:grid;width:100%;height:100%;place-items:center;object-fit:cover;border-radius:inherit}
+.layout-brian-baxter .br-portrait-placeholder{background:#d8d8d8;color:#555;font-size:34px;font-weight:700}
+.layout-brian-baxter .br-header-name{position:relative;z-index:1;align-self:center;min-width:0;padding:26px 24px 24px 28px;background:#f0f0f0}
+.layout-brian-baxter .br-header-name h1{margin:0;color:#222;font-size:clamp(23px,3vw,34px);font-weight:800;letter-spacing:-.02em;line-height:1.1;text-transform:uppercase;overflow-wrap:anywhere}
+.layout-brian-baxter .br-header-name p{margin:6px 0 0;color:#777;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.layout-brian-baxter .br-body{display:grid;flex:1;min-height:0;grid-template-columns:38% 62%;align-items:stretch}
+.layout-brian-baxter .br-sidebar{display:flex;min-width:0;min-height:0;flex-direction:column;padding:24px 20px 24px;background:var(--br-charcoal);color:#fff;overflow:hidden}
+.layout-brian-baxter .br-side-section{margin:0 0 24px}
+.layout-brian-baxter .br-section-title,.layout-brian-baxter .section-heading{position:relative;display:flex;align-items:center;gap:8px;margin:0 0 15px;padding:0 0 0 12px;color:inherit;font-size:12px;font-weight:800;line-height:1.25;text-transform:uppercase}
+.layout-brian-baxter .br-section-title:before,.layout-brian-baxter .section-heading:before{position:absolute;top:-3px;bottom:-3px;left:0;width:4px;border-radius:3px;background:var(--br-yellow);content:""}
+.layout-brian-baxter .br-title-icon{display:inline-grid;width:17px;height:17px;flex:none;place-items:center;border-radius:50%;background:var(--br-yellow);color:var(--br-charcoal);font-size:11px}
+.layout-brian-baxter .br-contact-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.layout-brian-baxter .br-contact-item{display:flex;min-width:0;align-items:flex-start;gap:8px;color:#eee;font-size:9px;line-height:1.4;overflow-wrap:anywhere}
+.layout-brian-baxter .br-small-icon{width:14px;flex:none;color:var(--br-yellow);text-align:center}
+.layout-brian-baxter .br-sidebar [contenteditable=true]{border-radius:3px}
+.layout-brian-baxter .br-sidebar [contenteditable=true]:focus{background:#fffaf0;color:#242424;caret-color:#242424;outline:0;box-shadow:0 0 0 2px var(--br-yellow);outline-offset:2px}
+.layout-brian-baxter .br-sidebar-sections{flex:1;min-height:0;overflow:hidden}
+.layout-brian-baxter .br-sidebar-sections .resume-section{margin:0 0 20px;color:#fff}
+.layout-brian-baxter .br-sidebar-sections .section-heading{margin-bottom:13px;color:#fff}
+.layout-brian-baxter .br-sidebar-sections .section-body{font-size:10px;line-height:1.45}
+.layout-brian-baxter .br-sidebar-sections .resume-section .section-body,.layout-brian-baxter .br-sidebar-sections .resume-section .section-body *{color:#f4f4f4!important}
+.layout-brian-baxter .br-sidebar-sections .entry{position:relative;margin:0 0 11px;padding-left:12px}
+.layout-brian-baxter .br-sidebar-sections .entry:before{position:absolute;top:5px;left:0;width:5px;height:5px;border-radius:50%;background:var(--br-yellow);content:""}
+.layout-brian-baxter .br-sidebar-sections .entry-top{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px 8px}
+.layout-brian-baxter .br-sidebar-sections .entry-title{min-width:0;color:#fff!important;font-size:10px;font-weight:700;line-height:1.4;text-transform:none}
+.layout-brian-baxter .br-sidebar-sections .entry-date{grid-column:1/-1;color:#ffd36a!important;font-size:9px;white-space:normal}
+.layout-brian-baxter .br-sidebar-sections .entry-sub,.layout-brian-baxter .br-sidebar-sections .pointer-list{color:#e4e4e4!important;font-size:9px}
+.layout-brian-baxter .br-sidebar-sections .resume-section .section-body [contenteditable=true]:focus{background:#fffaf0!important;color:#242424!important;caret-color:#242424!important;outline:0;box-shadow:0 0 0 2px var(--br-yellow);outline-offset:2px}
+.layout-brian-baxter .br-sidebar-sections .skill-list{display:grid;gap:6px}
+.layout-brian-baxter .br-sidebar-sections .skill{padding:0;border:0;color:#fff;font-size:10px}
+.layout-brian-baxter .br-main{display:flex;min-width:0;min-height:0;flex-direction:column;padding:26px 24px 24px;background:#fff}
+.layout-brian-baxter .br-main .resume-section{margin:0 0 24px;color:var(--br-ink);font-size:11px;line-height:1.5}
+.layout-brian-baxter .br-main .section-heading{margin-bottom:14px;color:#171717}
+.layout-brian-baxter .br-main .section-body{font-size:10px}
+.layout-brian-baxter .br-main .section-body>p{margin:0 0 6px;color:#555}
+.layout-brian-baxter .br-main .entry{position:relative;margin:0 0 17px;padding-left:12px}
+.layout-brian-baxter .br-main .entry:before{position:absolute;top:5px;left:-1px;width:6px;height:6px;border:1px solid #d28f00;border-radius:50%;background:var(--br-yellow);content:""}
+.layout-brian-baxter .br-main .entry-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.layout-brian-baxter .br-main .entry-title{font-size:10px;font-weight:800;text-transform:uppercase}
+.layout-brian-baxter .br-main .entry-date{flex:none;color:#666;font-size:9px;white-space:nowrap}
+.layout-brian-baxter .br-main .entry-sub{margin:2px 0 0;color:#777;font-size:9px;font-style:italic}
+.layout-brian-baxter .br-main .pointer-list{margin:5px 0 0;padding-left:15px;color:#555}
+.layout-brian-baxter .br-main .pointer-list li{margin:2px 0;font-size:9px}
+.layout-brian-baxter .br-main .pointer-list li::marker{color:var(--br-deep)}
+.layout-brian-baxter .br-main .skill-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}
+.layout-brian-baxter .br-main .skill{display:block;min-width:0;padding:3px 6px;border-color:#e4d7b8;border-radius:3px;background:#fffaf0;color:#303030;font-size:9px;overflow-wrap:anywhere}
+.layout-brian-baxter .page-number{color:#777}
+.layout-brian-baxter[data-page]:not([data-page="1"]) .br-sidebar{padding-top:24px}
+.layout-brian-baxter[data-mode=free] .sections-area{background:transparent}
+.layout-brian-baxter[data-mode=free] .br-main{position:static}
+.layout-brian-baxter[data-mode=free] .br-main .sections-area{inset:0}
+.layout-brian-baxter[data-mode=free] .br-sidebar{position:relative;z-index:1}
+.layout-brian-baxter[data-mode=free] .resume-section{background:transparent}
+@media(max-width:640px){.layout-brian-baxter .br-header{min-height:170px;grid-template-columns:34% 66%}.layout-brian-baxter .br-yellow-panel{width:34%}.layout-brian-baxter .br-header-photo{width:108px;height:108px}.layout-brian-baxter .br-header-name{padding:18px 12px}.layout-brian-baxter .br-sidebar{padding:18px 12px}.layout-brian-baxter .br-main{padding:20px 14px}.layout-brian-baxter .br-main .entry-top{flex-wrap:wrap}}
+@media(max-width:440px){.layout-brian-baxter .br-header{grid-template-columns:1fr;padding-top:14px}.layout-brian-baxter .br-yellow-panel{width:100%;height:45%}.layout-brian-baxter .br-header-photo{width:100px;height:100px;margin:0 auto 8px}.layout-brian-baxter .br-header-name{text-align:center}.layout-brian-baxter .br-body{grid-template-columns:38% 62%}.layout-brian-baxter .br-sidebar{padding-right:8px;padding-left:8px}.layout-brian-baxter .br-main{padding-right:10px;padding-left:10px}.layout-brian-baxter .br-main .skill-list{grid-template-columns:1fr}}
+@media print{.layout-brian-baxter,.layout-brian-baxter .br-header,.layout-brian-baxter .br-sidebar,.layout-brian-baxter .br-main{-webkit-print-color-adjust:exact;print-color-adjust:exact}}

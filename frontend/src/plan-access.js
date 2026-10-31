@@ -4,7 +4,7 @@ export const TEMPLATE_IDS = Object.freeze({
     'tech', 'executive', 'photo', 'timeline', 'pastel', 'bold',
     'student', 'portrait', 'card', 'photobanner', 'studio', 'luxe',
     'verve', 'arc', 'interio-designer', 'profile-split', 'peach-mint',
-    'teal-modern'
+    'teal-modern', 'brian-baxter'
   ]),
   PRO: Object.freeze([])
 });
@@ -16,7 +16,7 @@ export const FEATURE_IDS = Object.freeze({
 
 export const PRICING_FEATURES = Object.freeze([
   'Resume editor',
-  'All 24 resume templates',
+  'All 25 resume templates',
   'Unlimited text-based PDF downloads',
   'Unlimited resume-only and job-description ATS checks',
   'Cover-letter tools',

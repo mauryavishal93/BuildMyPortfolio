@@ -8,7 +8,7 @@ const expectedTemplateIds = [
   'tech', 'executive', 'photo', 'timeline', 'pastel', 'bold',
   'student', 'portrait', 'card', 'photobanner', 'studio', 'luxe',
   'verve', 'arc', 'interio-designer', 'profile-split', 'peach-mint',
-  'teal-modern'
+  'teal-modern', 'brian-baxter'
 ];
 
 test('every resume template has an isolated definition and stylesheet', () => {
@@ -175,4 +175,35 @@ test('Modern Teal template uses editable profile fields and places skills in its
   assert.match(editor, /class="tr-sidebar-sections"/);
   assert.match(editor, /s\.type==='skills'\?'\.tr-sidebar-sections':'\.tr-main \.sections-area'/);
   assert.match(editor, /const header=tmpl\.id==='profile-split'\?[^;]+\.tr-header/);
+});
+
+test('Brian Baxter template adapts editable profile and sections to its charcoal sidebar layout', () => {
+  const registry = readFileSync(new URL('../Templates/index.js', import.meta.url), 'utf8');
+  const definition = readFileSync(new URL('../Templates/brian-baxter/template.js', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../Templates/brian-baxter/style.css', import.meta.url), 'utf8');
+  const editor = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(registry, /from '\.\/brian-baxter\/template\.js'/);
+  assert.match(definition, /name: 'Brian Baxter'/);
+  assert.match(definition, /layout: 'single'/);
+  assert.match(styles, /\.layout-brian-baxter \.br-yellow-panel/);
+  assert.match(styles, /\.layout-brian-baxter \.br-sidebar/);
+  assert.match(styles, /\.layout-brian-baxter \.br-main/);
+  assert.match(styles, /\.br-sidebar \[contenteditable=true\]:focus\{background:#fffaf0;color:#242424;caret-color:#242424/);
+  assert.match(styles, /\.br-sidebar-sections \.resume-section \.section-body \*?\{color:#f4f4f4!important\}/);
+  assert.match(styles, /\.br-sidebar-sections \.entry-title\{[^}]*color:#fff!important[^}]*text-transform:none/);
+  assert.match(styles, /\.br-sidebar-sections \.entry-date\{grid-column:1\/-1;color:#ffd36a!important/);
+  assert.match(styles, /\.resume-section \.section-body \[contenteditable=true\]:focus\{background:#fffaf0!important;color:#242424!important/);
+  assert.match(styles, /\.layout-brian-baxter\[data-mode=free\] \.br-main\{position:static\}/);
+  assert.match(styles, /\.layout-brian-baxter\[data-mode=free\] \.br-main \.sections-area\{inset:0\}/);
+  assert.match(editor, /const brianSidebar=tmpl\.id==='brian-baxter'\?firstPage\.querySelector\('\.br-sidebar'\):null/);
+  assert.match(editor, /const brianSidebarFirstY=brianContact\?Math\.ceil\(/);
+  assert.match(editor, /brianSidebarSection\?brianSidebarCursorByPage\[pageIndex\]:cursorByPage\[pageIndex\]/);
+  assert.match(editor, /if\(template\.id==='brian-baxter'\)\{state\.positions=\{\};state\.freePageCount=1\}/);
+  assert.match(editor, /tmpl\.id==='brian-baxter'\?2:two\?2:1/);
+  assert.match(editor, /if\(tmpl\.id==='brian-baxter'\)/);
+  assert.match(editor, /class="br-sidebar-sections"/);
+  assert.match(editor, /s\.type==='education'\|\|s\.type==='certifications'\?'\.br-sidebar-sections':'\.br-main \.sections-area'/);
+  assert.match(editor, /tmpl\.id==='brian-baxter'\?\(s\.type==='education'\|\|s\.type==='certifications'\?1:0\)/);
+  assert.match(editor, /const brianMain=tmpl\.id==='brian-baxter'\?firstPage\.querySelector\('\.br-main'\):null/);
+  assert.match(editor, /data-profile-field="\$\{field\}"/);
 });

@@ -1,7 +1,6 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
-import { confirmSignOut } from './signout-modal.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
@@ -91,6 +90,7 @@ let lastWorkedResumeWrite=Promise.resolve();
 let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
+let signOutPending=false;
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
@@ -405,6 +405,8 @@ async function updateCloudAccount(user,error){
  $('accountMenu').hidden=false;
  $('cloudResumesBtn').hidden=!user;
  $('googleSignOutBtn').hidden=!user;
+ $('googleSignOutBtn').disabled=false;
+ $('googleSignOutBtn').textContent='Sign out';
  if(user){
   const accountName=user.displayName?.trim()||user.email?.split('@')[0]||'Google user';
   const initial=Array.from(accountName)[0]?.toLocaleUpperCase()||'U';
@@ -2134,9 +2136,18 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
   });
  $('googleSignOutBtn').addEventListener('click',async()=>{
   $('accountMenu').open=false;
-  if(!await confirmSignOut())return;
+  const button=$('googleSignOutBtn');
+  if(signOutPending)return;
+  signOutPending=true;
+  button.disabled=true;
+  button.textContent='Signing out…';
   try{await signOutUser();toast('Signed out. Your local browser copy is unchanged.')}
-  catch(error){toast(error.message||'Could not sign out.')}
+  catch(error){console.error('Could not sign out.',error);toast(error.message||'Could not sign out.')}
+  finally{
+   signOutPending=false;
+   button.disabled=false;
+   button.textContent='Sign out';
+  }
  });
  $('cloudResumesBtn').addEventListener('click',()=>{$('accountMenu').open=false;openCloudModal()});
  document.addEventListener('click',event=>{if(!$('accountMenu').contains(event.target))$('accountMenu').open=false});

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createFirebaseCloudClient, googleSignInErrorMessage } from '../frontend/src/firebase-cloud.js';
 import { chooseAuthenticatedResume } from '../frontend/src/resume-persistence.js';
 
-function createFakeFirebase({ popupError = null } = {}) {
+function createFakeFirebase({ popupError = null, signOutError = null } = {}) {
   const records = new Map();
   let generatedId = 0;
   const auth = {
@@ -30,7 +30,10 @@ function createFakeFirebase({ popupError = null } = {}) {
       signedInWith = provider;
     },
     signInWithRedirect: async (_auth, provider) => { redirectedWith = provider; },
-    signOut: async () => { signedOut = true; },
+    signOut: async () => {
+      if (signOutError) throw signOutError;
+      signedOut = true;
+    },
     onAuthStateChanged: (_auth, next) => {
       authObserver = next;
       return () => { authObserver = null; };
@@ -86,6 +89,7 @@ function createFakeFirebase({ popupError = null } = {}) {
     get signedInWith() { return signedInWith; },
     get redirectedWith() { return redirectedWith; },
     get signedOut() { return signedOut; },
+    setSignOutError(error) { signOutError = error; },
     emitAuth(user) { authObserver?.(user); }
   };
 }
@@ -114,6 +118,17 @@ test('Google sign-in falls back to redirect when the browser blocks a popup', as
 
   assert.ok(firebase.redirectedWith instanceof firebase.GoogleAuthProvider);
   assert.equal(firebase.signedInWith, undefined);
+});
+
+test('Firebase sign-out errors are surfaced and the same client can retry', async () => {
+  const firebase = createFakeFirebase({ signOutError: new Error('Temporary sign-out failure') });
+
+  await assert.rejects(firebase.client.signOutUser(), /Temporary sign-out failure/);
+  assert.equal(firebase.signedOut, false);
+
+  firebase.setSignOutError(null);
+  await firebase.client.signOutUser();
+  assert.equal(firebase.signedOut, true);
 });
 
 test('Google sign-in reports actionable Firebase configuration and domain errors', () => {

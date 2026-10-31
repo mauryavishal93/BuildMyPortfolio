@@ -1,7 +1,6 @@
 import { cloudConfigured, googleSignInErrorMessage, observeAuth, signInWithGoogle, signOutUser } from './firebase-cloud.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { canUseFeature, FEATURE_IDS } from './plan-access.js';
-import { confirmSignOut } from './signout-modal.js';
 
 const nav = document.querySelector('.about-nav');
 const signInButton = document.querySelector('[data-auth-sign-in]');
@@ -13,6 +12,7 @@ const proBadge = brand ? document.createElement('span') : null;
 const standaloneTheme = nav?.querySelector(':scope > [data-theme-toggle]');
 let currentUser = null;
 let entitlementRequest = 0;
+let signOutPending = false;
 
 if (proBadge) {
   proBadge.className = 'about-pro-brand-badge';
@@ -189,6 +189,8 @@ function updateAuthControls(user, error) {
   }
   if (signOutButton) {
     signOutButton.hidden = !user;
+    signOutButton.disabled = false;
+    signOutButton.textContent = 'Sign out';
     signOutButton.title = user?.email || user?.displayName || 'Signed-in account';
   }
   if (status) status.textContent = user ? `Signed in as ${user.email || user.displayName || 'Google user'}.` : 'You are signed out.';
@@ -230,7 +232,14 @@ signInButton?.addEventListener('click', async () => {
 });
 
 signOutButton?.addEventListener('click', async () => {
-  if (!await confirmSignOut()) return;
+  if (signOutPending) return;
+  signOutPending = true;
+  signOutButton.disabled = true;
+  signOutButton.textContent = 'Signing out…';
+  if (status) {
+    status.textContent = 'Signing out…';
+    status.classList.remove('auth-error');
+  }
   try {
     await signOutUser();
   } catch (error) {
@@ -239,6 +248,10 @@ signOutButton?.addEventListener('click', async () => {
       status.textContent = error.message || 'Could not sign out.';
       status.classList.add('auth-error');
     }
+  } finally {
+    signOutPending = false;
+    signOutButton.disabled = false;
+    signOutButton.textContent = 'Sign out';
   }
 });
 

@@ -1,6 +1,6 @@
 # PersonaCraftPro
 
-A browser-based resume editor with multiple templates, editable sections, JSON project import/export, local autosave, optional Google sign-in and Firebase cloud resume storage, and high-resolution PDF export with selectable text. PDF downloads are capped below 500 KB; the exporter balances image resolution and JPEG quality, and blocks downloads if a resume cannot fit at readable settings.
+A browser-based resume editor with multiple templates, editable sections, JSON project import/export, guest browser-saving controls, Google sign-in and Firebase cloud resume storage, and high-resolution PDF export with selectable text. Signed-in users load the most recently updated resume in their account. PDF downloads are capped below 500 KB; the exporter balances image resolution and JPEG quality, and blocks downloads if a resume cannot fit at readable settings.
 
 ## Requirements
 
@@ -47,13 +47,13 @@ The site is multi-page: `/` opens the editor; `/editor.html` is the editor page;
 
 ## Data flow
 
-Resume editing and autosaving work locally in the browser without an account. If saved project data cannot be read, the editor pauses autosave, keeps the original data available for download, and asks before replacing it; a valid legacy copy can be recovered. JSON imports are limited to 5 MB and validated before replacing the current project. Optional Google sign-in and Firebase cloud resume storage remain separate from local browser drafts. Signed-in Free users may use any Pro template and get two lifetime Pro-template PDF downloads per Google account; each download counts, including repeats. Firestore rules protect the account counter from reset, and active server-verified Pro subscribers are not limited. Deploy the updated rule before enabling this allowance with `firebase deploy --only firestore:rules`.
+Guest resumes are saved in this browser by default. The editor header's **Save in this browser** toggle controls whether guest resume data is autosaved to `localStorage`; when off, edits stay in memory and are discarded on refresh or page close. The preference is remembered. Google-authenticated resumes always use account-scoped Firebase cloud storage and are never written to guest resume storage. On login, the most recently updated resume in the account is opened when one exists; otherwise, a guest draft can be migrated or a new cloud resume is created. If saved project data cannot be read, the editor pauses autosave, keeps the original data available for download, and asks before replacing it; a valid legacy copy can be recovered. JSON imports are limited to 5 MB and validated before replacing the current project. Signed-in Free users may use any Pro template and get two lifetime Pro-template PDF downloads per Google account; each download counts, including repeats. Firestore rules protect the account counter from reset, and active server-verified Pro subscribers are not limited. Deploy the updated rule before enabling this allowance with `firebase deploy --only firestore:rules`.
 
 Paid plan purchases require a signed-in Google account. The backend verifies the Firebase ID token, creates the subscription with a server-selected Razorpay plan, verifies the checkout signature and Razorpay subscription/payment state, and activates entitlements only from verified checkout/provider events. A signed-in user can cancel future renewals; access remains valid through the current paid period. Resume contents and job descriptions are not sent to Razorpay.
 
 ## Free and Pro plans
 
-Core resume editing, six templates, two lifetime Pro-template PDF downloads after Google sign-in, standard PDF export, resume-only ATS checks, basic cover-letter tools, JSON backup, and browser autosave remain free. Pro costs ₹99 per month or ₹399 per year as a recurring subscription until canceled. Pro includes all 20 templates, unlimited Pro-template PDF downloads, and job-description ATS matching.
+Core resume editing, six templates, two lifetime Pro-template PDF downloads after Google sign-in, standard PDF export, resume-only ATS checks, basic cover-letter tools, JSON backup, guest browser-saving controls, and account-based cloud resume sync remain free. Pro costs ₹99 per month or ₹399 per year as a recurring subscription until canceled. Pro includes all 20 templates, unlimited Pro-template PDF downloads, and job-description ATS matching.
 
 Checkout fails closed until the server is fully configured. Start in Razorpay test mode and:
 

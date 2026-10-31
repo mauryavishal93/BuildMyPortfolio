@@ -5,7 +5,12 @@ import { confirmSignOut } from './signout-modal.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
-import { readSavedProject } from './project-storage.js';
+import {
+ chooseAuthenticatedResume,
+ createGuestResumeStorage,
+ resolveAuthTransition,
+ resumeStorageMode
+} from './resume-persistence.js';
 import { buildResumePdf, drawPdfText } from './resume-pdf.js';
 import {
  cloudConfigured, consumeProTemplateDownload, deleteResume, getProTemplateDownloadStatus, listResumes, observeAuth, saveResume,
@@ -123,6 +128,9 @@ function normalizeState(d){
 }
 let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
+const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
+const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
+let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
@@ -175,34 +183,43 @@ function setSaveState(message){
   const wrap=node.closest('.save-state');
   if(wrap){
     const reduced=String(message).toLowerCase();
-    wrap.dataset.state=reduced.includes('saving')?'saving':reduced.includes('cloud')||reduced.includes('browser')||reduced.includes('saved')?'saved':'warning';
+    wrap.dataset.state=reduced.includes('saving')?'saving':reduced.includes('unable')||reduced.includes(' off')||reduced.includes('unavailable')||reduced.includes('recovery')?'warning':reduced.includes('cloud')||reduced.includes('browser')||reduced.includes('saved')?'saved':'warning';
   }
 }
 function currentSaveStateLabel(){
-  if(cloudUser&&activeCloudResumeId) return 'Saved in browser and cloud';
-  return 'Saved in this browser only';
+  if(cloudUser)return cloudSaveBlocked?'Unable to save changes':'All changes saved';
+  return guestResumeStorage.enabled?'Saved locally':'Browser saving is off. Refreshing will discard your resume.';
+}
+function updateBrowserPersistenceUI(){
+ const toggle=$('browserSaveControl'),input=$('browserSaveToggle');
+ if(toggle)toggle.hidden=!!cloudUser;
+ if(input)input.checked=guestResumeStorage.enabled;
+ if(!cloudUser&&!saveTimer&&!localPersistenceBlocked)setSaveState(currentSaveStateLabel());
 }
 function scheduleCloudSave(){
- if(!cloudUser||!activeCloudResumeId||cloudSaveBlocked)return;
+ if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
  clearTimeout(cloudSaveTimer);
  cloudSaveTimer=setTimeout(persistCloudResume,700);
 }
 async function persistCloudResume(){
- if(!cloudUser||!activeCloudResumeId||cloudSaveBlocked)return;
+ if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
  if(cloudSaving){cloudSavePending=true;return}
- const uid=cloudUser.uid,id=activeCloudResumeId,snapshot=deep(state),expectedRevision=activeCloudRevision;
+ const uid=cloudUser.uid,id=activeCloudResumeId,generation=cloudSessionGeneration,snapshot=deep(state),expectedRevision=id?activeCloudRevision:null;
  cloudSaving=true;
+ setSaveState('Saving…');
  try{
   const result=await saveResume(uid,id,snapshot.docName,snapshot,expectedRevision);
-  if(activeCloudResumeId===id&&cloudUser?.uid===uid){
+  if(cloudSessionGeneration===generation&&cloudUser?.uid===uid){
+   activeCloudResumeId=result.id;
    activeCloudRevision=result.revision;
-   if(JSON.stringify(snapshot)===JSON.stringify(state))setSaveState('Saved in browser and cloud');
+   if(JSON.stringify(snapshot)===JSON.stringify(state)){cloudDraftDirty=false;setSaveState('All changes saved')}
+   else cloudSavePending=true;
   }
  }catch(error){
-  if(activeCloudResumeId===id){
+  if(cloudSessionGeneration===generation&&cloudUser?.uid===uid){
    cloudSaveBlocked=true;
-   setSaveState('Cloud save paused — review the message');
-   toast(error.message||'Could not save this resume to the cloud.');
+   setSaveState('Unable to save changes');
+   $('saveState').title=error.message||'Could not save this resume to the cloud.';
   }
  }finally{
   cloudSaving=false;
@@ -210,14 +227,27 @@ async function persistCloudResume(){
  }
 }
 function saveLocal(syncCloud=true){
+ const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
+ if(persistenceMode==='cloud'){
+  cloudDraftDirty=true;
+  if(syncCloud)scheduleCloudSave();
+  if(cloudSaveBlocked)setSaveState('Unable to save changes');
+  else setSaveState('Saving…');
+  if(cloudReady&&syncCloud)scheduleCloudSave();
+  return;
+ }
+ guestResumeDirty=true;
+ if(persistenceMode==='memory'){setSaveState(currentSaveStateLabel());return}
  if(localPersistenceBlocked){setSaveState('Local recovery needed');return}
  setSaveState('Saving…');
  clearTimeout(saveTimer);
  saveTimer=setTimeout(()=>{
+  if(cloudUser||!guestResumeStorage.enabled)return;
   try{
-   localStorage.setItem('resumeStudioV2',JSON.stringify(state));
+   guestResumeStorage.save(state);
    setSaveState(currentSaveStateLabel());
-   if(syncCloud)scheduleCloudSave();
+   guestResumeLoaded=true;
+   if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');
   }catch(error){setSaveState('Local save unavailable');toast('Could not save this resume in this browser.')}
  },250);
 }
@@ -255,6 +285,7 @@ function closeCloudModal(){
 }
 async function saveCurrentAsCloudCopy(){
  if(!cloudUser){toast('Sign in with Google before saving to the cloud.');return}
+ const uid=cloudUser.uid,generation=cloudSessionGeneration;
  const suggested=state.docName||'Untitled resume';
  const name=await promptModern({
   title:'Name this cloud resume',
@@ -265,18 +296,22 @@ async function saveCurrentAsCloudCopy(){
   cancelText:'Cancel'
  });
  if(name===null)return;
+ if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
  const cleanName=String(name).trim().slice(0,120)||'Untitled resume';
  const copy=deep(state);
  copy.docName=cleanName;
  try{
-  const result=await saveResume(cloudUser.uid,null,cleanName,copy,null);
+  const result=await saveResume(uid,null,cleanName,copy,null);
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  cloudSessionGeneration++;
   activeCloudResumeId=result.id;
   activeCloudRevision=result.revision;
   cloudSaveBlocked=false;
   state=copy;
   selectedId=null;
+  history=[];redoHistory=[];
   render();
-  saveLocal(false);
+  setSaveState('All changes saved');
   await refreshCloudResumes();
   toast('Cloud resume saved. Future edits will sync automatically.');
  }catch(error){toast(error.message||'Could not save this resume to the cloud.')}
@@ -285,6 +320,9 @@ function openCloudResume(id){
  const item=cloudResumes.find(resume=>resume.id===id);
  if(!item)return;
  try{
+  cloudSessionGeneration++;
+  clearTimeout(cloudSaveTimer);
+  cloudSavePending=false;
   state=normalizeState(item.state);
   activeCloudResumeId=item.id;
   activeCloudRevision=item.revision;
@@ -292,8 +330,7 @@ function openCloudResume(id){
   history=[];redoHistory=[];
   selectedId=null;
   render();
-  saveLocal(false);
-  setSaveState('Loaded from cloud');
+  setSaveState('All changes saved');
   closeCloudModal();
   toast('Cloud resume opened. Future edits will sync automatically.');
  }catch(error){toast(`Could not open this cloud resume: ${error.message}`)}
@@ -301,6 +338,7 @@ function openCloudResume(id){
 async function removeCloudResume(id){
  const item=cloudResumes.find(resume=>resume.id===id);
  if(!item||!cloudUser)return;
+ const uid=cloudUser.uid,generation=cloudSessionGeneration;
  const confirmed=await confirmModern({
   title:'Delete cloud resume?',
   message:`Delete "${item.name||'Untitled resume'}" from your cloud resumes? This cannot be undone.`,
@@ -308,18 +346,25 @@ async function removeCloudResume(id){
   cancelText:'Cancel'
  });
  if(!confirmed)return;
+ if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
  try{
-  await deleteResume(cloudUser.uid,id);
-  if(activeCloudResumeId===id){activeCloudResumeId=null;activeCloudRevision=null;cloudSaveBlocked=false}
+  await deleteResume(uid,id);
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  if(activeCloudResumeId===id){
+   cloudSessionGeneration++;
+   clearTimeout(cloudSaveTimer);
+   activeCloudResumeId=null;activeCloudRevision=null;cloudSaveBlocked=false;
+   state=fresh();selectedId=null;history=[];redoHistory=[];render();
+   setSaveState('All changes saved');
+  }
   await refreshCloudResumes();
   toast('Cloud resume deleted.');
  }catch(error){toast(error.message||'Could not delete this cloud resume.')}
 }
 async function updateCloudAccount(user,error){
  if(error){
-  cloudUser=null;
-   proTemplateDownloadsRemaining=null;
-   verifiedEntitlement=null;
+  proTemplateDownloadsRemaining=null;
+  verifiedEntitlement=null;
   updateProTemplatePreviewAllowance();
   updateProLabel();
   $('googleSignInBtn').disabled=true;
@@ -337,7 +382,48 @@ async function updateCloudAccount(user,error){
   $('cloudAccount').textContent=error.message;
   renderCloudResumes();
   renderTemplates();
+  updateBrowserPersistenceUI();
   return;
+ }
+ const previousUser=cloudUser;
+ const transition=resolveAuthTransition(previousUser?.uid,user?.uid);
+ const accountChanged=transition!=='unchanged';
+ const guestLogin=transition==='guest-login';
+ const loggingOut=transition==='logout';
+ const accountSwitch=transition==='account-switch';
+ const hasGuestDraft=guestLogin&&(guestResumeLoaded||guestResumeDirty);
+ const generation=accountChanged?++authGeneration:authGeneration;
+ if(accountChanged){
+  clearTimeout(saveTimer);
+  clearTimeout(cloudSaveTimer);
+  cloudSessionGeneration++;
+  cloudReady=false;
+  cloudDraftDirty=false;
+  cloudSavePending=false;
+  cloudSaveBlocked=false;
+  activeCloudResumeId=null;
+  activeCloudRevision=null;
+  cloudResumes=[];
+  if((guestLogin&&!localPersistenceBlocked)||accountSwitch){
+   try{guestResumeStorage.clear()}
+   catch(storageError){console.error('Could not clear the guest resume after sign-in.',storageError)}
+  }
+  if(accountSwitch||loggingOut){
+   state=fresh();
+   selectedId=null;
+   history=[];redoHistory=[];
+   guestResumeLoaded=false;
+   guestResumeDirty=false;
+   localPersistenceBlocked=false;
+   recoverySnapshot=null;
+   $('recoveryBanner').hidden=true;
+   render();
+  }
+  if(loggingOut){
+   try{guestResumeStorage.clear()}
+   catch(storageError){console.error('Could not clear the account resume after sign-out.',storageError)}
+  }
+  if(guestLogin)guestResumeDirty=false;
  }
  cloudUser=user;
  proTemplateDownloadsRemaining=null;
@@ -365,20 +451,65 @@ async function updateCloudAccount(user,error){
   $('accountMenu').querySelector('summary').setAttribute('aria-label','Account menu');
  }
  $('cloudAccount').textContent=user?`Signed in as ${user.email||user.displayName||'Google user'}. Cloud saves are private to this account.`:'Sign in to access your resumes across devices.';
+ updateBrowserPersistenceUI();
  if(!user){
-  clearTimeout(cloudSaveTimer);
-  activeCloudResumeId=null;
-  activeCloudRevision=null;
-  cloudSaveBlocked=false;
- setSaveState('Saved in this browser only');
+  cloudReady=false;
+  setSaveState(currentSaveStateLabel());
+  if(loggingOut&&guestResumeStorage.enabled)saveLocal(false);
+  renderCloudResumes();
+  renderTemplates();
+  return;
  }
+ if(accountChanged)setSaveState('Saving…');
  renderCloudResumes();
  renderTemplates();
- if(user&&openCloudOnAuth){openCloudOnAuth=false;history.replaceState(null,'',location.pathname+location.hash);openCloudModal()}
  if(user){
+  try{
+   const resumes=await listResumes(user.uid);
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+   cloudResumes=resumes;
+   const decision=chooseAuthenticatedResume({
+    hasGuestDraft:hasGuestDraft||cloudDraftDirty,
+    resumes
+   });
+   if(decision.type==='open-latest-cloud-resume'){
+    const latest=resumes[0];
+    state=normalizeState(latest.state);
+    activeCloudResumeId=latest.id;
+    activeCloudRevision=latest.revision;
+    cloudDraftDirty=false;
+    history=[];redoHistory=[];selectedId=null;
+    render();
+   }else{
+    const snapshot=deep(state);
+    const result=await saveResume(user.uid,null,snapshot.docName,snapshot,null);
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+    activeCloudResumeId=result.id;
+    activeCloudRevision=result.revision;
+    cloudDraftDirty=false;
+    if(JSON.stringify(snapshot)!==JSON.stringify(state))cloudSavePending=true;
+   }
+   cloudReady=true;
+   renderCloudResumes();
+   if(openCloudOnAuth){
+    openCloudOnAuth=false;
+    history.replaceState(null,'',location.pathname+location.hash);
+    openCloudModal();
+   }
+   setSaveState(cloudDraftDirty||cloudSavePending?'Saving…':'All changes saved');
+   if(cloudSavePending)scheduleCloudSave();
+  }catch(error){
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+   cloudReady=false;
+   cloudSaveBlocked=true;
+   setSaveState('Unable to save changes');
+   $('saveState').title=error.message||'Could not load or save this resume to the cloud.';
+   console.error('Could not initialize the signed-in resume.',error);
+  }
   try{
    if(!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
     const usage=await getProTemplateDownloadStatus(user.uid);
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
     proTemplateDownloadsRemaining=usage.remaining;
     updateProTemplatePreviewAllowance();
    }
@@ -389,11 +520,13 @@ async function updateCloudAccount(user,error){
   try{
    const config=await loadBillingConfig();
    if(config.entitlementEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
   }catch(billingError){
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
    console.error('Could not load the signed-in account billing status.',billingError);
   }
-  if(cloudUser?.uid===user.uid){
-    updateProLabel();
+  if(authGeneration===generation&&cloudUser?.uid===user.uid){
+   updateProLabel();
    renderTemplates();
    if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
   }
@@ -907,7 +1040,18 @@ function resolveLocalRecovery(){
  if(!recoverySnapshot.state&&!confirm('Start a new resume and replace the unreadable browser data? Download the saved data first if you may need it.'))return;
  try{
   if(!recoverySnapshot.state)state=fresh();
-  localStorage.setItem('resumeStudioV2',JSON.stringify(state));
+  if(cloudUser){
+   selectedId=null;
+   recoverySnapshot=null;
+   localPersistenceBlocked=false;
+   $('recoveryBanner').hidden=true;
+   render();
+   cloudDraftDirty=true;
+   scheduleCloudSave();
+   setSaveState('Saving…');
+   return;
+  }
+  guestResumeStorage.save(state);
   selectedId=null;
   recoverySnapshot=null;
   localPersistenceBlocked=false;
@@ -2002,6 +2146,35 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
   try{await signInWithGoogle()}
   catch(error){toast(authErrorMessage(error))}
  });
+  $('browserSaveToggle').addEventListener('change',event=>{
+   if(cloudUser){updateBrowserPersistenceUI();return}
+   const enabled=event.target.checked;
+   clearTimeout(saveTimer);
+   try{guestResumeStorage.setEnabled(enabled)}
+   catch(error){
+    console.error('Could not update the browser resume-saving preference.',error);
+    $('saveState').title=error.message||'Could not update the browser-saving preference.';
+   }
+   if(!enabled){
+    localPersistenceBlocked=false;
+    recoverySnapshot=null;
+    $('recoveryBanner').hidden=true;
+    setSaveState(currentSaveStateLabel());
+   }else if(!localPersistenceBlocked){
+    guestResumeDirty=true;
+    try{
+     guestResumeStorage.save(state);
+     guestResumeLoaded=true;
+     setSaveState('Saved locally');
+    }catch(error){
+     console.error('Could not save the current resume in this browser.',error);
+     setSaveState('Unable to save changes');
+     $('saveState').title=error.message||'Could not save the current resume in this browser.';
+    }
+   }
+   updateBrowserPersistenceUI();
+   if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');
+  });
  $('googleSignOutBtn').addEventListener('click',async()=>{
   $('accountMenu').open=false;
   if(!await confirmSignOut())return;
@@ -2054,9 +2227,18 @@ document.addEventListener('keydown',e=>{
  if(modifier&&(key==='y'||(key==='z'&&e.shiftKey))){e.preventDefault();redo();return}
  if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}
 });
-const savedProject=readSavedProject(localStorage,normalizeState);
+const savedProject=guestResumeStorage.load();
 if(savedProject.state)state=savedProject.state;
+guestResumeLoaded=Boolean(savedProject.state);
 showRecoveryNotice(savedProject);
-addEventListener('pagehide',()=>{if(localPersistenceBlocked)return;try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(error){console.error('Could not save the resume while closing the page.',error)}});
-loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
+addEventListener('pagehide',()=>{
+ const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
+ if(persistenceMode==='cloud'){
+  if(cloudReady&&!cloudSaveBlocked){clearTimeout(cloudSaveTimer);void persistCloudResume()}
+  return;
+ }
+ if(persistenceMode!=='browser'||localPersistenceBlocked)return;
+ try{guestResumeStorage.save(state)}catch(error){console.error('Could not save the resume while closing the page.',error)}
+});
+loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}updateBrowserPersistenceUI();if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
 })();

@@ -15,7 +15,14 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
 <header class="topbar">
  <a class="brand" href="/home.html" aria-label="PersonaCraftPro home"><span class="logo">P</span><span>PersonaCraftPro</span><span id="proBrandBadge" class="pro-brand-badge" hidden>Pro</span></a>
  <input id="docName" class="docname" aria-label="Project name" value="Untitled resume">
- <div class="spacer"></div><span class="save-state"><span class="dot"></span><span id="saveState">Saved in this browser</span></span>
+ <div class="spacer"></div>
+ <div class="browser-persistence" id="browserPersistence">
+  <label class="browser-save-toggle" id="browserSaveControl" for="browserSaveToggle">
+   <input id="browserSaveToggle" type="checkbox" role="switch" aria-label="Save in this browser">
+   <span>Save in this browser</span>
+  </label>
+  <span class="save-state" aria-live="polite"><span class="dot"></span><span id="saveState">Saved locally</span></span>
+ </div>
  <div class="cloud-actions" id="cloudActions">
   <button class="btn google-signin" id="googleSignInBtn" type="button">
    <svg class="google-signin-logo" viewBox="0 0 24 24" aria-hidden="true">

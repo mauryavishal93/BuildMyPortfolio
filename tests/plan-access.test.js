@@ -106,15 +106,68 @@ test('photo templates show an accessible avatar placeholder when no photo is upl
   assert.match(styles, /\.photo-placeholder::after/);
 });
 
-test('billing exposes voucher entry and labels sample codes as non-redeemable examples', () => {
+test('flow pagination continues entry bullets without repeating the role header', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /if\(!a\.continuation\)el\.innerHTML=/);
+  assert.match(source, /const first=cont&&a\.k==='li'\?\{k:'entry',e:a\.e,continuation:true\}:a;/);
+  assert.match(source, /if\(cont&&a\.k==='li'\)appendAtom\(placed\.shell,a,placed\.st,s\);/);
+  assert.match(source, /addEventListener\('focusout',e=>\{[\s\S]*?recordHistory\(before\);saveLocal\(\);renderSheets\(\);/);
+});
+
+test('experience bullets split at the caret and keep focus for consecutive Enter presses', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /const caret=Math\.min\(caretOffsetWithin\(el,true\),before\.length\),left=before\.slice\(0,caret\),right=before\.slice\(caret\+selectionLength\)/);
+  assert.match(source, /details\.splice\(index,representedCount,left,right\)/);
+  assert.match(source, /if\(!directEditSnapshots\.has\(el\)\)directEditSnapshots\.set\(el,deep\(state\)\)/);
+  assert.match(source, /if\(editSnapshot\)directEditSnapshots\.set\(next,editSnapshot\)/);
+  assert.match(source, /selection\?\.removeAllRanges\(\);selection\?\.addRange\(range\)/);
+});
+
+test('experience bullet Backspace and Delete merge adjacent points at line boundaries', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /const caret=caretOffsetWithin\(el,true\),backward=e\.key==='Backspace',atBoundary=backward\?caret===0:caret===value\.length/);
+  assert.match(source, /const rows=Array\.from\(document\.querySelectorAll\('#sheets \[data-entry-field="detail"\]'\)\)\.filter\(item=>item\.dataset\.sectionId===sectionId&&item\.dataset\.entry===entryIndex\)/);
+  assert.match(source, /details\.splice\(priorIndex,count,joined\)/);
+  assert.match(source, /itemIndex-count\+joinedCount/);
+  assert.match(source, /if\(backward\)\{[\s\S]*?prior\.focus\(\)/);
+});
+
+test('experience deletion never selects an entire neighboring line or document', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /const insideField=el\.contains\(selection\.anchorNode\)&&el\.contains\(selection\.focusNode\);[\s\S]*?if\(!insideField\)e\.preventDefault\(\);[\s\S]*?return;/);
+  assert.match(source, /range\.collapse\(true\);selection\?\.removeAllRanges\(\);selection\?\.addRange\(range\)/);
+  assert.doesNotMatch(source, /document\.execCommand\('selectAll'/);
+});
+
+test('experience content reflows to the next page while the user is typing', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /function reflowOverflowingDetail\(el,force=false\)/);
+  assert.match(source, /if\(!force&&el\.getBoundingClientRect\(\)\.bottom<=limit\+\.5\)return/);
+  assert.match(source, /try\{renderSheets\(\)\}finally\{reflowingDetail=false\}/);
+  assert.match(source, /const moved=Array\.from\(document\.querySelectorAll\('#sheets \[data-entry-field="detail"\]'\)\)/);
+  assert.match(source, /reflowOverflowingDetail\(el,replacements\.length>1\)/);
+});
+
+test('billing and Plans pages expose voucher entry and label sample codes as examples', () => {
   const html = readFileSync(new URL('../frontend/billing.html', import.meta.url), 'utf8');
+  const pricingHtml = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
   const source = readFileSync(new URL('../frontend/src/billing.js', import.meta.url), 'utf8');
+  const pricingSource = readFileSync(new URL('../frontend/src/pricing.js', import.meta.url), 'utf8');
   assert.match(html, /id="voucherForm"/);
   assert.match(html, /id="voucherSection"[^>]*aria-labelledby="voucherTitle">/);
   assert.match(html, /Example formats only — these are not valid codes/);
   assert.match(source, /redeemBillingVoucher\(currentUser, code\)/);
-  assert.match(source, /const disabled = signInRequired \|\| proActive/);
-  assert.doesNotMatch(readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8'), /id="voucherForm"/);
+  assert.match(source, /const voucherUnavailable = billingConfig\?\.entitlementEnabled === false/);
+  assert.match(source, /const disabled = signInRequired \|\| voucherUnavailable/);
+  assert.match(source, /Voucher availability could not be checked\. Enter a code and the server will verify it/);
+  assert.match(source, /a valid voucher will start after your current access ends/i);
+  assert.match(source, /result\.queued/);
+  assert.match(source, /billingConfig\?\.entitlementEnabled === false/);
+  assert.match(pricingHtml, /id="pricingVoucherForm"/);
+  assert.match(pricingHtml, /id="pricingVoucherSection"[^>]*aria-labelledby="pricingVoucherTitle">/);
+  assert.match(pricingHtml, /id="pricingVoucherCode"/);
+  assert.match(pricingSource, /redeemBillingVoucher\(currentUser, code\)/);
+  assert.match(pricingSource, /result\.queued/);
 });
 
 test('Firestore rules restrict the lifetime Pro-template trial to two owner-only increments', () => {

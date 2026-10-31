@@ -14,9 +14,10 @@ const checkoutStatus = $('#checkoutStatus');
 const monthlyButton = $('#purchaseMonthly');
 const yearlyButton = $('#purchaseYearly');
 const supportDialog = $('#supportDialog');
-const voucherInput = $('#voucherCode');
-const redeemButton = $('#redeemVoucher');
-const voucherStatus = $('#voucherStatus');
+const voucherSection = $('#pricingVoucherSection');
+const voucherInput = $('#pricingVoucherCode');
+const voucherButton = $('#redeemPricingVoucher');
+const voucherStatus = $('#pricingVoucherStatus');
 let currentUser = null;
 let billingConfig = null;
 let entitlement = null;
@@ -67,6 +68,35 @@ function renderStoredPricing() {
   renderPlanPrice($('#monthlyPrice'), monthlyCurrent, monthlyActual, 'per month, recurring');
   renderPlanPrice($('#yearlyPrice'), yearlyCurrent, yearlyActual, 'per year, recurring');
   $('#freePrice').innerHTML = `${formatPrice(PLAN_CONFIG.free.price)} <span>always free</span>`;
+}
+
+function updateVoucherControls() {
+  const signInRequired = !currentUser;
+  const verificationUnavailable = billingConfig?.entitlementEnabled === false;
+  voucherInput.disabled = signInRequired || verificationUnavailable;
+  voucherButton.disabled = signInRequired || verificationUnavailable;
+  voucherSection.classList.toggle('voucher-disabled', voucherInput.disabled);
+  voucherSection.classList.toggle('voucher-pro-active', entitlement?.status === 'active');
+
+  if (signInRequired) {
+    voucherInput.placeholder = 'Sign in to redeem a voucher';
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
+  } else if (verificationUnavailable) {
+    voucherInput.placeholder = 'Voucher redemption unavailable';
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = 'Voucher redemption is unavailable because server-side account verification is not configured.';
+  } else if (entitlement?.status === 'active') {
+    voucherInput.placeholder = 'Enter voucher code';
+    voucherStatus.dataset.state = 'success';
+    voucherStatus.textContent = `Pro is already active. A valid voucher will start after your current access ends${entitlement.validUntil ? ` on ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}` : ''}.`;
+  } else {
+    voucherInput.placeholder = 'Enter voucher code';
+    voucherStatus.dataset.state = '';
+    voucherStatus.textContent = billingConfig
+      ? 'Enter a voucher code to check it for this account.'
+      : 'Voucher availability could not be checked. Enter a code and the server will verify it.';
+  }
 }
 
 async function loadPublicPricingConfig() {
@@ -172,6 +202,7 @@ async function refreshPricingState(user) {
   updateVoucherControls();
   if (!user) {
     checkoutStatus.textContent = 'Sign in with Google before starting a purchase.';
+    updateVoucherControls();
     return;
   }
   try {
@@ -276,7 +307,7 @@ yearlyButton.addEventListener('click', () => entitlement?.status === 'active'
   ? window.location.assign('/billing.html')
   : startCheckout('yearly'));
 
-$('#voucherForm')?.addEventListener('submit', async event => {
+$('#pricingVoucherForm').addEventListener('submit', async event => {
   event.preventDefault();
   const code = voucherInput.value.trim();
   if (!currentUser) {
@@ -284,29 +315,27 @@ $('#voucherForm')?.addEventListener('submit', async event => {
     voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
     return;
   }
-  if (entitlement?.status === 'active') {
-    voucherStatus.dataset.state = 'success';
-    voucherStatus.textContent = 'Pro is already active. Voucher redemption is unavailable while your plan is active.';
-    return;
-  }
   if (!code) return;
 
-  redeemButton.disabled = true;
+  voucherButton.disabled = true;
   voucherStatus.dataset.state = '';
   voucherStatus.textContent = 'Checking voucher…';
-
   try {
-    entitlement = await redeemBillingVoucher(currentUser, code);
+    const result = await redeemBillingVoucher(currentUser, code);
+    entitlement = result.entitlement;
     voucherInput.value = '';
-    voucherStatus.dataset.state = 'success';
-    voucherStatus.textContent = `Voucher redeemed. Pro is active through ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}.`;
     updatePurchaseControls();
     updateVoucherControls();
-    await refreshPricingState(currentUser);
+    voucherStatus.dataset.state = 'success';
+    voucherStatus.textContent = result.queued
+      ? `Voucher accepted. It will add ${result.entitlement.pendingVoucherCount} voucher${result.entitlement.pendingVoucherCount === 1 ? '' : 's'} after your current Pro access ends${result.entitlement.pendingVoucherStartAt ? ` on ${new Date(result.entitlement.pendingVoucherStartAt).toLocaleDateString('en-IN')}` : ''}.`
+      : `Voucher redeemed. Pro is active through ${new Date(result.entitlement.validUntil).toLocaleDateString('en-IN')}.`;
   } catch (error) {
+    console.error('Could not redeem voucher from the Plans page.', error);
     voucherStatus.dataset.state = 'error';
     voucherStatus.textContent = error.message || 'Could not redeem this voucher.';
-    updateVoucherControls();
+  } finally {
+    voucherButton.disabled = !currentUser || billingConfig?.entitlementEnabled === false;
   }
 });
 
@@ -316,14 +345,17 @@ loadBillingConfig().then(config => {
     checkoutStatus.textContent = 'Pro checkout is temporarily unavailable. Please try again later.';
   }
   updatePurchaseControls();
+  updateVoucherControls();
 }).catch(error => {
   console.error('Could not load checkout configuration.', error);
   checkoutStatus.textContent = error.message;
+  updateVoucherControls();
 });
 
 if (!cloudConfigured) {
   void refreshPricingState(null);
   checkoutStatus.textContent = 'Google sign-in is not configured on this site. Purchases are unavailable.';
+  updateVoucherControls();
 } else {
   observeAuth((user, error) => {
     if (error) {
@@ -332,6 +364,7 @@ if (!cloudConfigured) {
       entitlement = null;
       checkoutStatus.textContent = 'Sign-in could not be initialized. Paid purchases are unavailable.';
       updatePurchaseControls();
+      updateVoucherControls();
       return;
     }
     refreshPricingState(user);

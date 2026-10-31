@@ -6,7 +6,7 @@ import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
 import { readSavedProject } from './project-storage.js';
-import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from './resume-pdf.js';
+import { buildResumePdf, drawPdfText } from './resume-pdf.js';
 import {
  cloudConfigured, consumeProTemplateDownload, deleteResume, getProTemplateDownloadStatus, listResumes, observeAuth, saveResume,
  signInWithGoogle, signOutUser
@@ -521,7 +521,7 @@ function appendAtom(shell,a,st,s){
  const entryIndex=a.e&&s.entries?s.entries.indexOf(a.e):-1;
  if(a.k==='entry'){
   el=document.createElement('div');el.className='entry';
-  el.innerHTML=`<div class="entry-top"><span class="entry-title" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="role" title="Click to edit role">${$esc(a.e.role)}</span><span class="entry-date" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="date" title="Click to edit dates">${$esc(a.e.date)}</span></div>${a.e.company?`<div class="entry-sub" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="company" title="Click to edit organization">${$esc(a.e.company)}</div>`:''}`;
+  if(!a.continuation)el.innerHTML=`<div class="entry-top"><span class="entry-title" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="role" title="Click to edit role">${$esc(a.e.role)}</span><span class="entry-date" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="date" title="Click to edit dates">${$esc(a.e.date)}</span></div>${a.e.company?`<div class="entry-sub" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="company" title="Click to edit organization">${$esc(a.e.company)}</div>`:''}`;
   body.appendChild(el);st.ul=null;
  }else if(a.k==='li'){
   if(!st.ul){const last=body.lastElementChild;st.ul=document.createElement((s.listStyle||'bullet')==='number'?'ol':'ul');st.ul.className='pointer-list';(last||body).appendChild(st.ul)}
@@ -566,7 +566,7 @@ function flowSections(root,tmpl){
     if(fits(cur.si,cur.pi)){i++;continue}
     el.remove();lastSi=cur.si;cur=null;cont=true;
    }
-   const first=a.k==='li'?{k:'entry',e:a.e,first:a.t,cont:true}:a;
+   const first=cont&&a.k==='li'?{k:'entry',e:a.e,continuation:true}:a;
    let placed=null;
    if(!cont){
     const order=two?[pref,1-pref]:[0];
@@ -576,6 +576,7 @@ function flowSections(root,tmpl){
    if(!placed){
     const si=lastSi;streams[si].page++;if(streams[si].page>=pages.length)addPage();
     placed=attempt(si,streams[si].page,s,cont,first,true);   /* forced: a single block taller than a page is kept, never dropped */
+    if(cont&&a.k==='li')appendAtom(placed.shell,a,placed.st,s);
    }
    cur=placed;i++;
   }
@@ -966,6 +967,51 @@ function addPDFLinks(doc,sheet){
   }
  });
 }
+function pdfColor(value){
+ const match=/^rgba?\((.+)\)$/i.exec(value.trim());if(!match)return null;
+ const parts=match[1].split(/[\s,/]+/).filter(Boolean);
+ if(parts.length<3)return null;
+ const channels=parts.slice(0,3).map(part=>parseFloat(part)*(part.endsWith('%')?2.55:1));
+ const alphaText=parts[3],alpha=alphaText===undefined?1:parseFloat(alphaText)*(alphaText.endsWith('%')?.01:1);
+ if(channels.some(channel=>!Number.isFinite(channel))||!Number.isFinite(alpha)||alpha<=0)return null;
+ return channels.map(channel=>Math.round(channel*alpha+255*(1-alpha)));
+}
+function addPdfDecorations(doc,sheet){
+ const bounds=sheet.getBoundingClientRect(),scaleX=210/bounds.width,scaleY=297/bounds.height;
+ const elements=[sheet,...sheet.querySelectorAll('*')];
+ for(const element of elements){
+  if(element.tagName==='IMG')continue;
+  const rect=element.getBoundingClientRect();
+  if(!rect.width||!rect.height)continue;
+  const x=(rect.left-bounds.left)*scaleX,y=(rect.top-bounds.top)*scaleY,w=rect.width*scaleX,h=rect.height*scaleY;
+  const style=getComputedStyle(element),background=pdfColor(style.backgroundColor);
+  if(background){doc.setFillColor(...background);doc.rect(x,y,w,h,'F')}
+  for(const [side,startX,startY,endX,endY] of [
+   ['Top',x,y,x+w,y],['Right',x+w,y,x+w,y+h],['Bottom',x,y+h,x+w,y+h],['Left',x,y,x,y+h]
+  ]){
+   const width=parseFloat(style[`border${side}Width`])||0,color=pdfColor(style[`border${side}Color`]);
+   if(!width||!color)continue;
+   doc.setDrawColor(...color);doc.setLineWidth(width*(scaleX+scaleY)/2);doc.line(startX,startY,endX,endY);
+  }
+ }
+ for(const image of sheet.querySelectorAll('img')){
+  if(!image.complete||!image.naturalWidth||!image.naturalHeight)throw new Error('A profile photo could not be loaded for the PDF. Remove it or try again.');
+  const rect=image.getBoundingClientRect();
+  if(!rect.width||!rect.height)continue;
+  const side=Math.min(image.naturalWidth,image.naturalHeight);
+  const sourceX=(image.naturalWidth-side)/2,sourceY=(image.naturalHeight-side)/2;
+  const canvas=document.createElement('canvas');
+  canvas.width=side;canvas.height=side;
+  const context=canvas.getContext('2d');
+  const style=getComputedStyle(image),round=style.borderTopLeftRadius.includes('%')
+   ||parseFloat(style.borderTopLeftRadius)>=Math.min(rect.width,rect.height)/2;
+  if(round){context.beginPath();context.arc(side/2,side/2,side/2,0,Math.PI*2);context.clip()}
+  context.drawImage(image,sourceX,sourceY,side,side,0,0,side,side);
+  const format=round?'PNG':'JPEG',imageData=canvas.toDataURL(`image/${format.toLowerCase()}`,.84);
+  doc.addImage(imageData,format,(rect.left-bounds.left)*scaleX,(rect.top-bounds.top)*scaleY,rect.width*scaleX,rect.height*scaleY,undefined,'MEDIUM');
+  canvas.width=0;canvas.height=0;
+ }
+}
 async function exportPDF(templateId=null){
  const originalState=state,originalSelection=selectedId,originalZoom=zoom;
  if(templateId){
@@ -993,26 +1039,18 @@ async function exportPDF(templateId=null){
  try{
   $('sheets').classList.add('exporting');sheets.forEach(sheet=>sheet.style.transform='none');
   if(document.fonts&&document.fonts.ready)await document.fonts.ready;
-  const [{default:html2canvas},{jsPDF}]=await Promise.all([import('html2canvas'),import('jspdf')]);
+  const {jsPDF}=await import('jspdf');
   if(generation!==pdfPreviewGeneration)return;
-  $('sheets').classList.add('pdf-rasterizing');
-  try{
-   for(let i=0;i<sheets.length;i++){
-    const canvas=await html2canvas(sheets[i],{scale:RESUME_PDF_RENDER_SCALE,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
-    if(generation!==pdfPreviewGeneration)return;
-    renderedPages.push({canvas,sheet:sheets[i]});
-   }
-  }finally{$('sheets').classList.remove('pdf-rasterizing')}
+  for(const sheet of sheets){
+   const images=[...sheet.querySelectorAll('img')];
+   await Promise.all(images.map(image=>image.decode()));
+   if(generation!==pdfPreviewGeneration)return;
+   renderedPages.push({sheet});
+  }
   const {blob}=await buildResumePdf(jsPDF,renderedPages,{
+   addPdfDecorations,
    addSelectableText,
    addPDFLinks,
-   resizeCanvas:(source,scale)=>{
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(source.width*scale));
-    canvas.height=Math.max(1,Math.round(source.height*scale));
-    canvas.getContext('2d',{alpha:false}).drawImage(source,0,0,canvas.width,canvas.height);
-    return canvas;
-   }
   });
   if(generation!==pdfPreviewGeneration)return;
   showPdfPreview(blob,`${(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')}.pdf`,sheets.length,'Preview your resume PDF');
@@ -1020,7 +1058,6 @@ async function exportPDF(templateId=null){
   console.error(e);
   status.textContent=e.message||'PDF preview could not be created. Close this window and try again.';
  }finally{
-  renderedPages.forEach(({canvas})=>{canvas.width=0;canvas.height=0});
   $('sheets').classList.remove('exporting');
   btn.disabled=false;
   btn.textContent='Export PDF';
@@ -1034,7 +1071,6 @@ function openPdfPreview(){
  $('closePdfPreview').focus();
 }
 function showPdfPreview(blob,filename,pageCount,title){
- if(blob.size>=MAX_PDF_BYTES)throw new Error('This PDF is larger than 500 KB and cannot be downloaded. Reduce the resume content and try again.');
  if(pdfPreviewUrl)URL.revokeObjectURL(pdfPreviewUrl);
  pdfPreviewBlob=blob;
  pdfPreviewFilename=filename;
@@ -1049,7 +1085,7 @@ function showPdfPreview(blob,filename,pageCount,title){
     ? ' · Free Pro-template allowance will be checked when downloading'
     : ` · ${proTemplateDownloadsRemaining} free Pro-template PDF download${proTemplateDownloadsRemaining===1?'':'s'} remaining`
   : '';
- $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading — the button is ready when you are.`;
+ $('pdfPreviewStatus').textContent=`Text is selectable and searchable. ${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading — the button is ready when you are.`;
  $('downloadPdfPreview').disabled=false;
  $('downloadPdfPreview').textContent='Download PDF';
 }
@@ -1594,6 +1630,7 @@ $('sectionList').addEventListener('dragend',e=>{const row=e.target.closest('[dat
 $('sectionList').addEventListener('dragover',e=>{if(e.target.closest('[data-section-row]')){e.preventDefault();e.dataTransfer.dropEffect='move'}});
 $('sectionList').addEventListener('drop',e=>{e.preventDefault();const row=e.target.closest('[data-section-row]'),id=e.dataTransfer.getData('text/plain');if(!row||!id||id===row.dataset.sectionRow)return;transact(()=>{const from=state.sections.findIndex(x=>x.id===id),to=state.sections.findIndex(x=>x.id===row.dataset.sectionRow);if(from<0||to<0)return;const [item]=state.sections.splice(from,1);state.sections.splice(to,0,item)})});
 const directEditSnapshots=new WeakMap();
+let reflowingDetail=false;
 function syncInspectorField(attribute,value){
  const el=$('inspector')?.querySelector(`[${attribute}]`);
  if(el&&!el.isContentEditable&&document.activeElement!==el)el.value=value;
@@ -1635,12 +1672,12 @@ function directEditValue(el){
  value=value.replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/\n{2,}$/g,'\n');
  return value;
 }
-function caretOffsetWithin(el){
+function caretOffsetWithin(el,includeLineBreaks=false){
  const selection=window.getSelection();if(!selection||!selection.rangeCount||!el.contains(selection.anchorNode))return directEditValue(el).length;
  if(selection.anchorNode.nodeType===Node.TEXT_NODE && selection.anchorNode.parentNode===el)return selection.anchorOffset;
  const range=selection.getRangeAt(0).cloneRange();range.selectNodeContents(el);range.setEnd(selection.anchorNode,selection.anchorOffset);
- const prefix=range.toString().replace(/\u00a0/g,' ').replace(/\n/g,'');
- return prefix.length;
+ const prefix=range.toString().replace(/\u00a0/g,' ');
+ return includeLineBreaks?prefix.length:prefix.replace(/\n/g,'').length;
 }
 function focusTextLine(sectionId,lineIndex,caretOffset=0){
  requestAnimationFrame(()=>{
@@ -1649,9 +1686,31 @@ function focusTextLine(sectionId,lineIndex,caretOffset=0){
   if(target.firstChild&&caretOffset>0&&target.firstChild.nodeType===Node.TEXT_NODE){range.setStart(target.firstChild,Math.min(caretOffset,target.firstChild.textContent.length));range.collapse(true)}else{range.collapse(true)}selection.removeAllRanges();selection.addRange(range);
  });
 }
+function reflowOverflowingDetail(el,force=false){
+ if(state.mode!=='flow')return;
+ requestAnimationFrame(()=>{
+  if(!el.isConnected||document.activeElement!==el)return;
+  const area=el.closest('.sheet')?.querySelector('.sections-area');
+  if(!area)return;
+  const limit=area.getBoundingClientRect().bottom-parseFloat(getComputedStyle(area).paddingBottom);
+  if(!force&&el.getBoundingClientRect().bottom<=limit+.5)return;
+  const sectionId=el.dataset.sectionId,entryIndex=el.dataset.entry,detailIndex=Number(el.dataset.detailIndex);
+  const caret=caretOffsetWithin(el,true),snapshot=directEditSnapshots.get(el);
+  reflowingDetail=true;
+  try{renderSheets()}finally{reflowingDetail=false}
+  const moved=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).find(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex&&Number(item.dataset.detailIndex)===detailIndex);
+  if(!moved)return;
+  if(snapshot)directEditSnapshots.set(moved,snapshot);
+  moved.focus();
+  const range=document.createRange(),selection=window.getSelection(),textNode=moved.firstChild;
+  if(textNode?.nodeType===Node.TEXT_NODE)range.setStart(textNode,Math.min(caret,textNode.textContent.length));
+  else range.selectNodeContents(moved);
+  range.collapse(true);selection?.removeAllRanges();selection?.addRange(range);
+ });
+}
 $('sheets').addEventListener('focusin',e=>{
  const el=e.target.closest('[contenteditable="true"]');if(!el)return;
- directEditSnapshots.set(el,deep(state));
+ if(!directEditSnapshots.has(el))directEditSnapshots.set(el,deep(state));
  if(!el.dataset.currentText)el.dataset.currentText=el.dataset.detailSource||el.dataset.textSource||directEditValue(el);
  if(el.dataset.entryField==='detail'&&!el.dataset.detailCount)el.dataset.detailCount='1';
 });
@@ -1674,7 +1733,7 @@ $('sheets').addEventListener('input',e=>{
    if(detailIndex>=0&&detailIndex<details.length)details.splice(detailIndex,representedCount,...replacements);
    else if(detailIndex>=0)details.splice(detailIndex,0,...replacements);
    entry.details=details.join('\n');el.dataset.detailCount=String(replacements.length||1);el.dataset.currentText=value;
-   if(replacements.length>1)requestAnimationFrame(()=>renderSheets());
+   reflowOverflowingDetail(el,replacements.length>1);
   }
   else if(el.dataset.skillIndex!==undefined){
    const skills=String(section?.content||'').split(/[,:\n]/).map(x=>x.trim()).filter(Boolean),index=Number(el.dataset.skillIndex);
@@ -1696,7 +1755,8 @@ $('sheets').addEventListener('input',e=>{
 });
 $('sheets').addEventListener('focusout',e=>{
  const el=e.target.closest('[contenteditable="true"]');if(!el)return;
- const before=directEditSnapshots.get(el);if(before&&JSON.stringify(before)!==JSON.stringify(state)){recordHistory(before);saveLocal();renderInspector();updateUndoButton();toast('Resume updated')}
+ if(reflowingDetail)return;
+ const before=directEditSnapshots.get(el);if(before&&JSON.stringify(before)!==JSON.stringify(state)){recordHistory(before);saveLocal();renderSheets();renderInspector();updateUndoButton();toast('Resume updated')}
  directEditSnapshots.delete(el);delete el.dataset.currentText;
 });
 $('sheets').addEventListener('keydown',e=>{
@@ -1717,14 +1777,9 @@ $('sheets').addEventListener('keydown',e=>{
   }
  }
  if((e.key==='Backspace'||e.key==='Delete')&&selection&&!selection.isCollapsed&&selection.rangeCount){
-  const range=selection.getRangeAt(0),selectedRoot=$('sheets').contains(range.commonAncestorContainer)&&range.commonAncestorContainer;
-  if(selectedRoot){
-   e.preventDefault();range.deleteContents();selection.removeAllRanges();
-   document.querySelectorAll('#sheets [contenteditable="true"]').forEach(editable=>editable.dispatchEvent(new Event('input',{bubbles:true})));
-   saveLocal();renderInspector();
-   const focusTarget=el.isConnected&&el.closest('[contenteditable="true"]')?el:document.querySelector('#sheets [contenteditable="true"]');
-   focusTarget?.focus();return;
-  }
+  const insideField=el.contains(selection.anchorNode)&&el.contains(selection.focusNode);
+  if(!insideField)e.preventDefault();
+  return;
  }
 
  if((e.key==='Backspace'||e.key==='Delete')&&el.dataset.textIndex!==undefined){
@@ -1751,20 +1806,77 @@ $('sheets').addEventListener('keydown',e=>{
  }
  if((e.key==='Backspace'||e.key==='Delete')&&el.dataset.entryField==='detail'){
   const value=directEditValue(el);
+  const selection=window.getSelection();
+  if(value.trim()&&selection?.isCollapsed){
+   const caret=caretOffsetWithin(el,true),backward=e.key==='Backspace',atBoundary=backward?caret===0:caret===value.length;
+   if(atBoundary){
+    e.preventDefault();
+    const sectionId=el.dataset.sectionId,entryIndex=el.dataset.entry;
+    const rows=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).filter(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex);
+    const position=rows.indexOf(el),neighbor=rows[position+(backward?-1:1)];
+    if(!neighbor)return;
+    const prior=backward?neighbor:el,next=backward?el:neighbor;
+    const priorIndex=Number(prior.dataset.detailIndex),nextIndex=Number(next.dataset.detailIndex);
+    const priorCount=Math.max(1,Number(prior.dataset.detailCount)||1),nextCount=Math.max(1,Number(next.dataset.detailCount)||1);
+    if(!Number.isInteger(priorIndex)||nextIndex!==priorIndex+priorCount)return;
+    const entry=sectionById(sectionId)?.entries?.[Number(entryIndex)],details=entry&&detailLines(entry.details);
+    if(!details||nextIndex+nextCount>details.length)return;
+    const priorText=directEditValue(prior),joined=priorText+directEditValue(next),count=priorCount+nextCount,joinedCount=Math.max(1,joined.split('\n').length);
+    details.splice(priorIndex,count,joined);entry.details=details.join('\n');
+    prior.textContent=joined;prior.dataset.detailIndex=String(priorIndex);prior.dataset.detailCount=String(joinedCount);prior.dataset.detailSource=joined;prior.dataset.currentText=joined;
+    prior.classList.toggle('blank-bullet',!joined.trim());
+    next.remove();
+    rows.filter(item=>item!==prior&&item!==next).forEach(item=>{
+     const itemIndex=Number(item.dataset.detailIndex);
+     if(Number.isFinite(itemIndex)&&itemIndex>=priorIndex+count)item.dataset.detailIndex=String(itemIndex-count+joinedCount);
+    });
+    syncInspectorForInlineEdit(prior,joined);saveLocal();
+    const editSnapshot=directEditSnapshots.get(el);
+    if(backward){
+     if(editSnapshot)directEditSnapshots.set(prior,editSnapshot);
+     directEditSnapshots.set(el,deep(state));
+     prior.focus();
+    }
+    const restoreCaret=()=>{
+     const focusTarget=prior.isConnected?prior:Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).find(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex&&Number(item.dataset.detailIndex)===priorIndex);
+     if(!focusTarget)return;
+     if(document.activeElement!==focusTarget)focusTarget.focus();
+     const textNode=focusTarget.firstChild,offset=backward?priorText.length:Math.min(caret,joined.length),range=document.createRange();
+     if(textNode?.nodeType===Node.TEXT_NODE)range.setStart(textNode,Math.min(offset,textNode.textContent.length));
+     else range.selectNodeContents(focusTarget);
+     range.collapse(true);selection.removeAllRanges();selection.addRange(range);
+    };
+    if(prior.isConnected)restoreCaret();else requestAnimationFrame(restoreCaret);
+    return;
+   }
+  }
   if(!value.trim()){
    e.preventDefault();
    const section=sectionById(el.dataset.sectionId),entry=section?.entries?.[Number(el.dataset.entry)],index=Number(el.dataset.detailIndex);
    if(entry&&Number.isInteger(index)&&index>=0){
     const details=detailLines(entry.details);
+    if(details.length<=1)return;
+    const snapshot=directEditSnapshots.get(el);
     details.splice(index,1);entry.details=details.join('\n');saveLocal();
-    const ul=el.closest('ul'),items=ul?Array.from(ul.querySelectorAll(':scope > li')):[],position=items.indexOf(el);
-    const focusIndex=Math.max(0,position-1);
-    el.remove();
-    items.filter(item=>item!==el).forEach(item=>{const itemIndex=Number(item.dataset.detailIndex);if(Number.isFinite(itemIndex)&&itemIndex>index)item.dataset.detailIndex=String(itemIndex-1)});
+    const sectionId=el.dataset.sectionId,entryIndex=el.dataset.entry;
+    const rows=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).filter(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex);
+    const position=rows.indexOf(el),backward=e.key==='Backspace';
+    const neighbor=rows[position+(backward?-1:1)]||rows[position+(backward?1:-1)];
+    const neighborIndex=neighbor?Number(neighbor.dataset.detailIndex):-1;
+    rows.filter(item=>item!==el).forEach(item=>{const itemIndex=Number(item.dataset.detailIndex);if(Number.isFinite(itemIndex)&&itemIndex>index)item.dataset.detailIndex=String(itemIndex-1)});
+    directEditSnapshots.delete(el);
+    if(snapshot&&JSON.stringify(snapshot)!==JSON.stringify(state)){recordHistory(snapshot);updateUndoButton()}
     syncInspectorForInlineEdit(el,'');
-    const remaining=ul?Array.from(ul.querySelectorAll(':scope > li')):[];
-    const focusTarget=remaining[focusIndex]||remaining[remaining.length-1]||el.closest('.entry');
-    if(focusTarget?.isContentEditable){focusTarget.focus();document.execCommand('selectAll',false,null)}
+    renderSheets();renderInspector();
+    const targetIndex=neighborIndex>index?neighborIndex-1:neighborIndex;
+    const focusTarget=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).find(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex&&Number(item.dataset.detailIndex)===targetIndex);
+    if(focusTarget?.isContentEditable){
+     focusTarget.focus();
+     const range=document.createRange(),textNode=focusTarget.firstChild;
+     if(textNode?.nodeType===Node.TEXT_NODE)range.setStart(textNode,backward?textNode.textContent.length:0);
+     else range.selectNodeContents(focusTarget);
+     range.collapse(true);selection?.removeAllRanges();selection?.addRange(range);
+    }
    }
    return;
   }
@@ -1772,22 +1884,31 @@ $('sheets').addEventListener('keydown',e=>{
  if(e.key==='Enter'&&!e.shiftKey&&el.dataset.entryField==='detail'){
   e.preventDefault();
   const section=sectionById(el.dataset.sectionId),entry=section?.entries?.[Number(el.dataset.entry)];if(!entry)return;
-  const details=detailLines(entry.details),index=Number(el.dataset.detailIndex),before=directEditValue(el);
+  const details=detailLines(entry.details),index=Number(el.dataset.detailIndex),before=directEditValue(el),representedCount=Math.max(1,Number(el.dataset.detailCount)||1);
   if(!Number.isInteger(index)||index<0)return;
-  if(index<details.length)details[index]=before;
-  details.splice(index+1,0,'');
-  entry.details=details.join('\n');saveLocal();syncInspectorForInlineEdit(el,before);
+  const selection=window.getSelection(),selectionLength=selection?.rangeCount&&el.contains(selection.anchorNode)&&el.contains(selection.focusNode)?selection.toString().length:0;
+  const caret=Math.min(caretOffsetWithin(el,true),before.length),left=before.slice(0,caret),right=before.slice(caret+selectionLength);
+  details.splice(index,representedCount,left,right);
+  entry.details=details.join('\n');saveLocal();syncInspectorForInlineEdit(el,left);
   const ul=el.closest('ul');if(!ul)return;
+  el.textContent=left;el.dataset.detailSource=left;el.dataset.detailCount='1';el.dataset.currentText=left;
+  el.classList.toggle('blank-bullet',!left.trim());
   const next=document.createElement('li');
   next.contentEditable='true';next.spellcheck=true;next.title='Click to edit bullet';
-  next.dataset.sectionId=section.id;next.dataset.entry=String(el.dataset.entry);next.dataset.entryField='detail';next.dataset.detailIndex=String(index+1);  next.dataset.detailSource='';next.dataset.currentText='';next.textContent='';next.className='blank-bullet';
+  next.dataset.sectionId=section.id;next.dataset.entry=String(el.dataset.entry);next.dataset.entryField='detail';next.dataset.detailIndex=String(index+1);next.dataset.detailSource=right;next.dataset.detailCount='1';next.dataset.currentText=right;next.textContent=right;next.classList.toggle('blank-bullet',!right.trim());
   ul.insertBefore(next,el.nextElementSibling);
-  let incrementFollowing=false;
+  const indexDelta=2-representedCount;
   Array.from(ul.querySelectorAll(':scope > li')).forEach(item=>{
-   if(item===next){item.dataset.detailIndex=String(index+1);incrementFollowing=true;return}
-   if(incrementFollowing)item.dataset.detailIndex=String(Number(item.dataset.detailIndex)+1);
+   if(item===next)return;
+   const itemIndex=Number(item.dataset.detailIndex);
+   if(item!==el&&Number.isFinite(itemIndex)&&itemIndex>=index+representedCount)item.dataset.detailIndex=String(itemIndex+indexDelta);
   });
+  const editSnapshot=directEditSnapshots.get(el);
+  directEditSnapshots.set(el,deep(state));
+  if(editSnapshot)directEditSnapshots.set(next,editSnapshot);
   next.focus();
+  const range=document.createRange();range.selectNodeContents(next);range.collapse(true);
+  selection?.removeAllRanges();selection?.addRange(range);
   return;
  }
  if(e.key==='Enter'&&!e.shiftKey&&el.dataset.textSource!==undefined){

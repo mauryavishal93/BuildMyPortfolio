@@ -67,7 +67,8 @@ function renderHistory(activity) {
 function updateVoucherControls() {
   const signInRequired = !currentUser;
   const proActive = entitlement?.status === 'active';
-  const disabled = signInRequired || proActive;
+  const voucherUnavailable = billingConfig?.entitlementEnabled === false;
+  const disabled = signInRequired || voucherUnavailable;
   voucherInput.disabled = disabled;
   redeemButton.disabled = disabled;
   $('#voucherSection').classList.toggle('voucher-disabled', disabled);
@@ -78,15 +79,21 @@ function updateVoucherControls() {
     voucherInput.placeholder = 'Sign in to redeem a voucher';
     voucherStatus.dataset.state = 'error';
     voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
-  } else if (proActive) {
-    voucherInput.value = '';
-    voucherInput.placeholder = 'Pro access is already active';
-    voucherStatus.dataset.state = 'success';
-    voucherStatus.textContent = 'Pro is already active. Voucher redemption is unavailable while your plan is active.';
+  } else if (!billingConfig) {
+    voucherInput.placeholder = 'Enter voucher code';
+    voucherStatus.dataset.state = billingConfigError ? 'error' : '';
+    voucherStatus.textContent = billingConfigError
+      ? 'Voucher availability could not be checked. Enter a code and the server will verify it.'
+      : 'Checking voucher availability…';
+  } else if (voucherUnavailable) {
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = 'Voucher redemption is unavailable because server-side account verification is not configured.';
   } else {
     voucherInput.placeholder = 'Enter voucher code';
-    voucherStatus.dataset.state = '';
-    voucherStatus.textContent = 'Enter a voucher code to check it for this account.';
+    voucherStatus.dataset.state = proActive ? 'success' : '';
+    voucherStatus.textContent = proActive
+      ? `Pro is already active. A valid voucher will start after your current access ends${entitlement.validUntil ? ` on ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}` : ''}.`
+      : 'Enter a voucher code to check it for this account.';
   }
 }
 
@@ -223,9 +230,9 @@ $('#voucherForm').addEventListener('submit', async event => {
     voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
     return;
   }
-  if (entitlement?.status === 'active') {
-    voucherStatus.dataset.state = 'success';
-    voucherStatus.textContent = 'Pro is already active. Voucher redemption is unavailable while your plan is active.';
+  if (billingConfig?.entitlementEnabled === false) {
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = 'Voucher redemption is unavailable because server-side account verification is not configured.';
     return;
   }
   if (!code) return;
@@ -234,11 +241,15 @@ $('#voucherForm').addEventListener('submit', async event => {
   voucherStatus.dataset.state = '';
   voucherStatus.textContent = 'Checking voucher…';
   try {
-    entitlement = await redeemBillingVoucher(currentUser, code);
+    const result = await redeemBillingVoucher(currentUser, code);
+    entitlement = result.entitlement;
     voucherInput.value = '';
     voucherStatus.dataset.state = 'success';
-    voucherStatus.textContent = `Voucher redeemed. Pro is active through ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}.`;
     await refreshBillingPage(currentUser);
+    voucherStatus.dataset.state = 'success';
+    voucherStatus.textContent = result.queued
+      ? `Voucher accepted. It will add ${result.entitlement.pendingVoucherCount} voucher${result.entitlement.pendingVoucherCount === 1 ? '' : 's'} after your current Pro access ends${result.entitlement.pendingVoucherStartAt ? ` on ${new Date(result.entitlement.pendingVoucherStartAt).toLocaleDateString('en-IN')}` : ''}.`
+      : `Voucher redeemed. Pro is active through ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}.`;
   } catch (error) {
     voucherStatus.dataset.state = 'error';
     voucherStatus.textContent = error.message || 'Could not redeem this voucher.';

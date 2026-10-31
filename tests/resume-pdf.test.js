@@ -1,100 +1,53 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { jsPDF } from 'jspdf';
-import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from '../frontend/src/resume-pdf.js';
+import { buildResumePdf, drawPdfText } from '../frontend/src/resume-pdf.js';
 
-function mockPdfLibrary() {
-  return class MockPdf {
-    constructor() {
-      this.imageBytes = 0;
-    }
-
-    addPage() {}
-
-    addImage(imageData) {
-      this.imageBytes += imageData.length;
-    }
-
-    output() {
-      return new Blob([new Uint8Array(this.imageBytes + 1200)]);
-    }
-  };
+class UncompressedJsPDF extends jsPDF {
+  constructor(options) {
+    super({ ...options, compress: false });
+  }
 }
 
-function mockCanvas(encodedBytes) {
-  return {
-    width: 2400,
-    height: 3400,
-    encodedBytes,
-    toDataURL(_format, quality) {
-      const byteLength = Math.round(encodedBytes * quality / 0.84);
-      return `data:image/jpeg;base64,${'x'.repeat(byteLength)}`;
-    }
-  };
-}
-
-function mockResizeCanvas(canvas, scale) {
-  return {
-    width: Math.round(canvas.width * scale),
-    height: Math.round(canvas.height * scale),
-    toDataURL(_format, quality) {
-      const byteLength = Math.round(canvas.encodedBytes * scale ** 2 * quality / 0.84);
-      return `data:image/jpeg;base64,${'x'.repeat(byteLength)}`;
-    }
-  };
-}
-
-test('chooses the highest balanced render resolution and quality that fit below 500 KB', async () => {
-  const pages = Array.from({ length: 3 }, () => ({
-    canvas: mockCanvas(190_000),
-    sheet: {}
-  }));
-  let selectableTextPages = 0;
-  const result = await buildResumePdf(mockPdfLibrary(), pages, {
-    addSelectableText: () => { selectableTextPages++; },
-    addPDFLinks: () => {},
-    resizeCanvas: mockResizeCanvas
-  });
-
-  assert.ok(result.blob.size < MAX_PDF_BYTES);
-  assert.equal(result.scale, 2.1);
-  assert.equal(result.quality, 0.84);
-  assert.ok(selectableTextPages >= pages.length);
-});
-
-test('reduces image dimensions only when JPEG quality alone cannot meet the file-size limit', async () => {
-  const pages = Array.from({ length: 4 }, () => ({
-    canvas: mockCanvas(250_000),
-    sheet: {}
-  }));
-  const result = await buildResumePdf(mockPdfLibrary(), pages, {
-    addSelectableText: () => {},
-    addPDFLinks: () => {},
-    resizeCanvas: mockResizeCanvas
-  });
-
-  assert.ok(result.blob.size < MAX_PDF_BYTES);
-  assert.equal(result.scale, 1.8);
-  assert.equal(result.quality, 0.72);
-});
-
-test('refuses to provide a PDF when even the lowest supported readable settings exceed the cap', async () => {
-  const pages = Array.from({ length: 10 }, () => ({
-    canvas: mockCanvas(500_000),
-    sheet: {}
-  }));
-  await assert.rejects(
-    buildResumePdf(mockPdfLibrary(), pages, {
-      addSelectableText: () => {},
-      addPDFLinks: () => {},
-      resizeCanvas: mockResizeCanvas
+test('builds selectable text across resume pages without flattening pages into images', async () => {
+  const result = buildResumePdf(UncompressedJsPDF, [
+    { sheet: { text: 'Vector resume page one' } },
+    { sheet: { text: 'Vector resume page two' } }
+  ], {
+    addPdfDecorations: () => {},
+    addSelectableText: (doc, sheet) => drawPdfText(doc, sheet.text, 24, 36, {
+      font: 'helvetica',
+      style: 'normal',
+      size: 12,
+      color: [24, 42, 58]
     }),
-    /cannot fit under 500 KB/
-  );
+    addPDFLinks: () => {}
+  });
+  const pdf = Buffer.from(await result.blob.arrayBuffer()).toString('latin1');
+
+  assert.match(pdf, /^%PDF-/);
+  assert.match(pdf, /\(Vector resume page one\) Tj/);
+  assert.match(pdf, /\(Vector resume page two\) Tj/);
+  assert.doesNotMatch(pdf, /\/Subtype\s*\/Image/);
+});
+
+test('exports large text resumes without a raster-based file size limit', async () => {
+  const result = buildResumePdf(UncompressedJsPDF, [{ sheet: { text: 'R'.repeat(520_000) } }], {
+    addPdfDecorations: () => {},
+    addSelectableText: (doc, sheet) => drawPdfText(doc, sheet.text, 24, 36, {
+      font: 'helvetica',
+      style: 'normal',
+      size: 12,
+      color: [24, 42, 58]
+    }),
+    addPDFLinks: () => {}
+  });
+
+  assert.ok(result.blob.size > 500_000);
 });
 
 test('draws resume text with visible vector PDF text operators', () => {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: false });
+  const doc = new UncompressedJsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   drawPdfText(doc, 'Sharp Vector Resume Text', 24, 36, {
     font: 'helvetica',
     style: 'bold',
@@ -105,4 +58,5 @@ test('draws resume text with visible vector PDF text operators', () => {
   const pdf = doc.output();
   assert.match(pdf, /\(Sharp Vector Resume Text\) Tj/);
   assert.doesNotMatch(pdf, /3 Tr/);
+  assert.doesNotMatch(pdf, /\/Subtype\s*\/Image/);
 });

@@ -1,5 +1,32 @@
 import { getFirebaseIdToken } from './firebase-cloud.js';
 
+export async function parseBillingResponse(response) {
+  const responseText = await response.text();
+  let result = {};
+  if (responseText) {
+    try {
+      const parsed = JSON.parse(responseText);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) result = parsed;
+    } catch {
+      if (!response.ok) {
+        const detail = response.status === 404
+          ? 'The billing API route was not found. Check that /api is routed to the backend.'
+          : response.status >= 500
+            ? 'The backend returned an unexpected response. Check its deployment and server logs.'
+            : 'The backend returned an unexpected response. Please retry.';
+        throw new Error(`Billing request failed (HTTP ${response.status}). ${detail}`);
+      }
+      throw new Error(`The billing service returned an invalid response (HTTP ${response.status}).`);
+    }
+  }
+  if (!response.ok) {
+    throw new Error(typeof result.error === 'string' && result.error
+      ? result.error
+      : `Billing request failed (HTTP ${response.status}).`);
+  }
+  return result;
+}
+
 async function billingRequest(path, user, options = {}) {
   const token = await getFirebaseIdToken(user);
   const response = await fetch(`/api/billing/${path}`, {
@@ -11,9 +38,7 @@ async function billingRequest(path, user, options = {}) {
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {})
   });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || 'The billing service could not complete this request.');
-  return result;
+  return parseBillingResponse(response);
 }
 
 export async function loadBillingConfig() {
@@ -42,11 +67,10 @@ export async function loadBillingEntitlement(user) {
 }
 
 export async function redeemBillingVoucher(user, code) {
-  const result = await billingRequest('vouchers/redeem', user, {
+  return billingRequest('vouchers/redeem', user, {
     method: 'POST',
     body: { code }
   });
-  return result.entitlement;
 }
 
 export async function createBillingSubscription(user, planKey) {

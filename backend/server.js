@@ -169,8 +169,46 @@ function userCheckoutDocument(db, uid) {
   return db.doc(`users/${uid}/billing/checkout`);
 }
 
+function activatePendingVouchers(entitlement, now = Date.now()) {
+  const pendingVouchers = Array.isArray(entitlement?.pendingVouchers)
+    ? entitlement.pendingVouchers
+    : [];
+  const currentValidUntil = Number(entitlement?.validUntil) || 0;
+  if (!pendingVouchers.length || currentValidUntil > now) return null;
+
+  const durationMs = pendingVouchers.reduce((total, voucher) => {
+    if (!Number.isInteger(voucher?.durationDays) || voucher.durationDays < 1 || voucher.durationDays > 3650) {
+      throw new Error('Stored pending voucher duration is invalid.');
+    }
+    return total + voucher.durationDays * 24 * 60 * 60 * 1000;
+  }, 0);
+  return {
+    ...entitlement,
+    planId: 'pro',
+    billingPlan: 'voucher',
+    status: 'active',
+    source: 'server-verified',
+    validUntil: now + durationMs,
+    subscriptionId: null,
+    cancelAtCycleEnd: false,
+    voucherId: pendingVouchers.at(-1).voucherId,
+    pendingVouchers: [],
+    updatedAt: now
+  };
+}
+
+function schedulePendingVouchers(pendingVouchers, startsAt) {
+  let nextStartAt = startsAt;
+  return pendingVouchers.map(voucher => {
+    const scheduledVoucher = { ...voucher, startsAt: nextStartAt };
+    nextStartAt += voucher.durationDays * 24 * 60 * 60 * 1000;
+    return scheduledVoucher;
+  });
+}
+
 function publicEntitlement(data) {
   const validUntil = Number(data?.validUntil) || 0;
+  const pendingVouchers = Array.isArray(data?.pendingVouchers) ? data.pendingVouchers : [];
   const hasLiveSubscription = Boolean(data?.subscriptionId) || data?.status === 'active';
   const status = hasLiveSubscription || validUntil > Date.now() ? 'active' : 'inactive';
   return {
@@ -183,7 +221,11 @@ function publicEntitlement(data) {
     cancelAtCycleEnd: data?.cancelAtCycleEnd === true,
     scheduledPlan: Object.hasOwn(BILLING_PLANS, data?.scheduledPlan) ? data.scheduledPlan : null,
     scheduledAt: Number(data?.scheduledAt) || null,
-    planChangeStatus: data?.planChangeStatus || null
+    planChangeStatus: data?.planChangeStatus || null,
+    pendingVoucherCount: pendingVouchers.length,
+    pendingVoucherStartAt: pendingVouchers.length
+      ? Number(pendingVouchers[0].startsAt) || validUntil || null
+      : null
   };
 }
 
@@ -326,7 +368,7 @@ app.get('/api/billing/config', (_request, response) => {
   response.json({
     checkoutEnabled: billingConfigured(),
     entitlementEnabled: firebaseAdminConfigured(),
-    voucherEnabled: firebaseAdminConfigured() && Boolean(configuredVouchers()),
+    voucherEnabled: firebaseAdminConfigured(),
     keyId: billingConfigured() ? process.env.RAZORPAY_KEY_ID : null,
     plans: Object.fromEntries(Object.entries(BILLING_PLANS).map(([key, plan]) => [
       key,
@@ -442,13 +484,22 @@ app.post('/api/billing/webhook', async (request, response) => {
           } : {}),
           updatedAt: Date.now()
         }, { merge: true });
-        transaction.set(entitlementRef, entitlement || {
-          planId: 'free',
-          billingPlan: mapping.planKey,
-          status: 'inactive',
-          source: 'server-verified',
-          validUntil: 0
-        });
+        const nextEntitlement = {
+          ...(entitlement || {
+            planId: 'free',
+            billingPlan: mapping.planKey,
+            status: 'inactive',
+            source: 'server-verified',
+            validUntil: 0
+          }),
+          pendingVouchers: schedulePendingVouchers(
+            Array.isArray(currentEntitlement.data()?.pendingVouchers)
+              ? currentEntitlement.data().pendingVouchers
+              : [],
+            Number(entitlement?.validUntil) || 0
+          )
+        };
+        transaction.set(entitlementRef, activatePendingVouchers(nextEntitlement) || nextEntitlement);
         if (currentCheckout.data()?.subscriptionId === subscriptionId) {
           if (['subscription.completed', 'subscription.expired'].includes(event.event) && !isPaidThrough) {
             transaction.delete(checkoutRef);
@@ -499,9 +550,19 @@ app.get('/api/billing/activity', requireEntitlementConfig, requireFirebaseUser, 
 app.get('/api/billing/entitlement', requireEntitlementConfig, requireFirebaseUser, async (request, response) => {
   try {
     const { db } = await getFirebaseAdmin();
-    const snapshot = await userEntitlementDocument(db, request.user.uid).get();
-    const entitlement = publicEntitlement(snapshot.data());
-    if (!entitlement.subscriptionId) {
+    const entitlementRef = userEntitlementDocument(db, request.user.uid);
+    const snapshot = await entitlementRef.get();
+    let data = snapshot.data() || {};
+    if (Array.isArray(data.pendingVouchers) && Number(data.validUntil) <= Date.now()) {
+      await db.runTransaction(async transaction => {
+        const currentSnapshot = await transaction.get(entitlementRef);
+        const current = currentSnapshot.data() || {};
+        data = activatePendingVouchers(current) || current;
+        if (data !== current) transaction.set(entitlementRef, data);
+      });
+    }
+    const entitlement = publicEntitlement(data);
+    if (!entitlement.subscriptionId && entitlement.billingPlan !== 'voucher') {
       const checkoutSnapshot = await userCheckoutDocument(db, request.user.uid).get();
       const checkoutSubscriptionId = typeof checkoutSnapshot.data()?.subscriptionId === 'string'
         ? checkoutSnapshot.data().subscriptionId.trim()
@@ -554,7 +615,7 @@ app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFireba
     const userVoucherRef = db.doc(`users/${request.user.uid}/vouchers/${voucherId}`);
     const entitlementRef = userEntitlementDocument(db, request.user.uid);
     const now = Date.now();
-    let validUntil;
+    let queued = false;
     await db.runTransaction(async transaction => {
       const [voucherSnapshot, adminVoucherSnapshot, userVoucherSnapshot, entitlementSnapshot] = await Promise.all([
         transaction.get(voucherRef),
@@ -567,19 +628,27 @@ app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFireba
         error.status = 409;
         throw error;
       }
-      const currentEntitlement = entitlementSnapshot.data();
-      if (Number(currentEntitlement?.validUntil) > now) {
-        const error = new Error('Your current Pro access is still active. Redeem a voucher after it expires.');
-        error.status = 409;
-        throw error;
-      }
+      const currentEntitlement = entitlementSnapshot.data() || {};
+      const currentValidUntil = Number(currentEntitlement.validUntil) || 0;
+      const hasActiveAccess = currentValidUntil > now;
+      queued = hasActiveAccess;
       const redeemedCount = Number(voucherSnapshot.data()?.redeemedCount) || 0;
       if (redeemedCount >= voucher.maxRedemptions) {
         const error = new Error('That voucher has reached its redemption limit.');
         error.status = 409;
         throw error;
       }
-      validUntil = now + voucher.durationDays * 24 * 60 * 60 * 1000;
+      const pendingVouchers = Array.isArray(currentEntitlement.pendingVouchers)
+        ? currentEntitlement.pendingVouchers
+        : [];
+      const newVoucher = { voucherId, durationDays: voucher.durationDays };
+      const nextPendingVouchers = hasActiveAccess
+        ? schedulePendingVouchers([...pendingVouchers, newVoucher], currentValidUntil)
+        : [];
+      const activationQueue = hasActiveAccess ? nextPendingVouchers : [...pendingVouchers, newVoucher];
+      const validUntil = hasActiveAccess
+        ? currentValidUntil
+        : now + activationQueue.reduce((total, item) => total + item.durationDays * 24 * 60 * 60 * 1000, 0);
       transaction.set(voucherRef, {
         redeemedCount: redeemedCount + 1,
         updatedAt: now
@@ -593,28 +662,30 @@ app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFireba
         }, { merge: true });
       }
       transaction.create(userVoucherRef, { redeemedAt: now });
-      transaction.set(entitlementRef, {
-        planId: 'pro',
-        billingPlan: 'voucher',
-        status: 'active',
-        source: 'server-verified',
-        validUntil,
-        subscriptionId: null,
-        cancelAtCycleEnd: false,
-        voucherId,
-        updatedAt: now
-      });
+      if (hasActiveAccess) {
+        transaction.set(entitlementRef, {
+          pendingVouchers: nextPendingVouchers,
+          updatedAt: now
+        }, { merge: true });
+      } else {
+        transaction.set(entitlementRef, {
+          planId: 'pro',
+          billingPlan: 'voucher',
+          status: 'active',
+          source: 'server-verified',
+          validUntil,
+          subscriptionId: null,
+          cancelAtCycleEnd: false,
+          voucherId,
+          pendingVouchers: [],
+          updatedAt: now
+        });
+      }
     });
+    const updatedEntitlement = (await entitlementRef.get()).data();
     response.json({
-      entitlement: publicEntitlement({
-        planId: 'pro',
-        billingPlan: 'voucher',
-        status: 'active',
-        source: 'server-verified',
-        validUntil,
-        subscriptionId: null,
-        cancelAtCycleEnd: false
-      })
+      entitlement: publicEntitlement(updatedEntitlement),
+      queued
     });
     await recordBillingActivity(db, request.user.uid, {
       type: 'voucher', status: 'success', title: 'Pro voucher redeemed',

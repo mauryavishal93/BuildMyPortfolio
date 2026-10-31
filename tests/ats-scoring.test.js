@@ -6,6 +6,12 @@ import { buildCoverLetterDraft } from '../frontend/src/cover-letter.js';
 import { buildCoverLetterPdf } from '../frontend/src/cover-letter-pdf.js';
 import { zoomFromPinch } from '../frontend/src/zoom.js';
 
+class UncompressedJsPDF extends jsPDF {
+  constructor(options) {
+    super({ ...options, compress: false });
+  }
+}
+
 test('generic readiness factor weights total 100 percent', () => {
   assert.equal(Object.values(GENERIC_ATS_WEIGHTING).reduce((sum, weight) => sum + weight, 0), 100);
 });
@@ -63,12 +69,15 @@ test('cover letter draft does not invent experience when resume details are abse
 });
 
 test('cover letter PDF is A4 and paginates long content', () => {
-  const pdf = buildCoverLetterPdf(jsPDF, 'Ada Example\nada@example.com\n\nDear Hiring Team,\n\nA concise letter.');
+  const pdf = buildCoverLetterPdf(UncompressedJsPDF, 'Ada Example\nada@example.com\n\nDear Hiring Team,\n\nA concise letter.');
   assert.ok(Math.abs(pdf.internal.pageSize.getWidth() - 210) < 0.01);
   assert.ok(Math.abs(pdf.internal.pageSize.getHeight() - 297) < 0.01);
-  assert.equal(Buffer.from(pdf.output('arraybuffer')).subarray(0, 5).toString(), '%PDF-');
+  const pdfSource = pdf.output();
+  assert.equal(Buffer.from(pdfSource).subarray(0, 5).toString(), '%PDF-');
+  assert.match(pdfSource, /\(Ada Example\) Tj/);
+  assert.doesNotMatch(pdfSource, /\/Subtype\s*\/Image/);
 
-  const longPdf = buildCoverLetterPdf(jsPDF, `Ada Example\nada@example.com\n\n${'A long line '.repeat(1000)}`);
+  const longPdf = buildCoverLetterPdf(UncompressedJsPDF, `Ada Example\nada@example.com\n\n${'A long line '.repeat(1000)}`);
   assert.ok(longPdf.getNumberOfPages() > 1);
 });
 

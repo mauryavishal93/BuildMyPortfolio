@@ -1081,10 +1081,104 @@ function pdfColor(value){
  if(channels.some(channel=>!Number.isFinite(channel))||!Number.isFinite(alpha)||alpha<=0)return null;
  return channels.map(channel=>Math.round(channel*alpha+255*(1-alpha)));
 }
+function pdfRadius(style,property,width,height){
+ const [horizontal,vertical=horizontal]=String(style[property]||'0').trim().split(/\s+/);
+ const value=(part,dimension)=>{
+  const parsed=parseFloat(part);
+  return Number.isFinite(parsed)?(part.endsWith('%')?parsed*dimension/100:parsed):0;
+ };
+ return {x:value(horizontal,width),y:value(vertical,height)};
+}
+function pdfRoundedRectPath(context,x,y,width,height,style){
+ const radii=[
+  pdfRadius(style,'borderTopLeftRadius',width,height),
+  pdfRadius(style,'borderTopRightRadius',width,height),
+  pdfRadius(style,'borderBottomRightRadius',width,height),
+  pdfRadius(style,'borderBottomLeftRadius',width,height)
+ ];
+ const factor=Math.min(
+  1,
+  width/Math.max(1,radii[0].x+radii[1].x),
+  width/Math.max(1,radii[3].x+radii[2].x),
+  height/Math.max(1,radii[0].y+radii[3].y),
+  height/Math.max(1,radii[1].y+radii[2].y)
+ );
+ radii.forEach(radius=>{radius.x*=factor;radius.y*=factor});
+ const [topLeft,topRight,bottomRight,bottomLeft]=radii;
+ context.beginPath();
+ context.moveTo(x+topLeft.x,y);
+ context.lineTo(x+width-topRight.x,y);
+ context.ellipse(x+width-topRight.x,y+topRight.y,topRight.x,topRight.y,0,-Math.PI/2,0);
+ context.lineTo(x+width,y+height-bottomRight.y);
+ context.ellipse(x+width-bottomRight.x,y+height-bottomRight.y,bottomRight.x,bottomRight.y,0,0,Math.PI/2);
+ context.lineTo(x+bottomLeft.x,y+height);
+ context.ellipse(x+bottomLeft.x,y+height-bottomLeft.y,bottomLeft.x,bottomLeft.y,0,Math.PI/2,Math.PI);
+ context.lineTo(x,y+topLeft.y);
+ context.ellipse(x+topLeft.x,y+topLeft.y,topLeft.x,topLeft.y,0,Math.PI,Math.PI*1.5);
+ context.closePath();
+}
+function addBrianPhotoFrames(doc,sheet,bounds,scaleX,scaleY){
+ for(const frame of sheet.querySelectorAll('.br-header-photo')){
+  const frameRect=frame.getBoundingClientRect();
+  if(!frameRect.width||!frameRect.height)continue;
+  const resolution=3,canvas=document.createElement('canvas');
+  canvas.width=Math.ceil(frameRect.width*resolution);
+  canvas.height=Math.ceil(frameRect.height*resolution);
+  const context=canvas.getContext('2d');
+  context.scale(resolution,resolution);
+  const frameStyle=getComputedStyle(frame);
+  pdfRoundedRectPath(context,0,0,frameRect.width,frameRect.height,frameStyle);
+  context.fillStyle=frameStyle.backgroundColor;
+  context.fill();
+  const borderWidth=parseFloat(frameStyle.borderTopWidth)||0;
+  if(borderWidth){
+   context.lineWidth=borderWidth*2;
+   context.strokeStyle=frameStyle.borderTopColor;
+   context.stroke();
+  }
+  const portrait=frame.querySelector('.br-portrait');
+  if(portrait){
+   const portraitRect=portrait.getBoundingClientRect();
+   const x=portraitRect.left-frameRect.left,y=portraitRect.top-frameRect.top;
+   context.save();
+   pdfRoundedRectPath(context,0,0,frameRect.width,frameRect.height,frameStyle);
+   context.clip();
+   pdfRoundedRectPath(context,x,y,portraitRect.width,portraitRect.height,getComputedStyle(portrait));
+   context.clip();
+   if(portrait instanceof HTMLImageElement){
+    if(!portrait.complete||!portrait.naturalWidth||!portrait.naturalHeight){
+     throw new Error('A profile photo could not be loaded for the PDF. Remove it or try again.');
+    }
+    const sourceAspect=portrait.naturalWidth/portrait.naturalHeight;
+    const targetAspect=portraitRect.width/portraitRect.height;
+    const sourceWidth=sourceAspect>targetAspect?portrait.naturalHeight*targetAspect:portrait.naturalWidth;
+    const sourceHeight=sourceAspect>targetAspect?portrait.naturalHeight:portrait.naturalWidth/targetAspect;
+    const sourceX=(portrait.naturalWidth-sourceWidth)/2,sourceY=(portrait.naturalHeight-sourceHeight)/2;
+    context.drawImage(portrait,sourceX,sourceY,sourceWidth,sourceHeight,x,y,portraitRect.width,portraitRect.height);
+   }else{
+    context.fillStyle=getComputedStyle(portrait).backgroundColor;
+    context.fillRect(x,y,portraitRect.width,portraitRect.height);
+   }
+   context.restore();
+  }
+  doc.addImage(
+   canvas.toDataURL('image/png'),
+   'PNG',
+   (frameRect.left-bounds.left)*scaleX,
+   (frameRect.top-bounds.top)*scaleY,
+   frameRect.width*scaleX,
+   frameRect.height*scaleY,
+   undefined,
+   'MEDIUM'
+  );
+  canvas.width=0;canvas.height=0;
+ }
+}
 function addPdfDecorations(doc,sheet){
  const bounds=sheet.getBoundingClientRect(),scaleX=210/bounds.width,scaleY=297/bounds.height;
  const elements=[sheet,...sheet.querySelectorAll('*')];
  for(const element of elements){
+  if(element.closest('.br-header-photo'))continue;
   if(element.tagName==='IMG')continue;
   const rect=element.getBoundingClientRect();
   if(!rect.width||!rect.height)continue;
@@ -1099,7 +1193,9 @@ function addPdfDecorations(doc,sheet){
    doc.setDrawColor(...color);doc.setLineWidth(width*(scaleX+scaleY)/2);doc.line(startX,startY,endX,endY);
   }
  }
+ addBrianPhotoFrames(doc,sheet,bounds,scaleX,scaleY);
  for(const image of sheet.querySelectorAll('img')){
+  if(image.closest('.br-header-photo'))continue;
   if(!image.complete||!image.naturalWidth||!image.naturalHeight)throw new Error('A profile photo could not be loaded for the PDF. Remove it or try again.');
   const rect=image.getBoundingClientRect();
   if(!rect.width||!rect.height)continue;

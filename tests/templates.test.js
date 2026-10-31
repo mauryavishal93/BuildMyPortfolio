@@ -188,6 +188,7 @@ test('Brian Baxter template adapts editable profile and sections to its charcoal
   assert.match(styles, /\.layout-brian-baxter \.br-yellow-panel/);
   assert.match(styles, /\.layout-brian-baxter \.br-sidebar/);
   assert.match(styles, /\.layout-brian-baxter \.br-main/);
+  assert.match(styles, /\.br-header-photo\{[^}]*border-radius:50% 50% 50% 10%/);
   assert.match(styles, /\.br-sidebar \[contenteditable=true\]:focus\{background:#fffaf0;color:#242424;caret-color:#242424/);
   assert.match(styles, /\.br-sidebar-sections \.resume-section \.section-body \*?\{color:#f4f4f4!important\}/);
   assert.match(styles, /\.br-sidebar-sections \.entry-title\{[^}]*color:#fff!important[^}]*text-transform:none/);
@@ -201,6 +202,9 @@ test('Brian Baxter template adapts editable profile and sections to its charcoal
   assert.match(editor, /if\(template\.id==='brian-baxter'\)\{state\.positions=\{\};state\.freePageCount=1\}/);
   assert.match(editor, /tmpl\.id==='brian-baxter'\?2:two\?2:1/);
   assert.match(editor, /if\(tmpl\.id==='brian-baxter'\)/);
+  assert.match(editor, /function addBrianPhotoFrames\(doc,sheet,bounds,scaleX,scaleY\)/);
+  assert.match(editor, /pdfRoundedRectPath\(context,x,y,portraitRect\.width,portraitRect\.height,getComputedStyle\(portrait\)\)/);
+  assert.match(editor, /addBrianPhotoFrames\(doc,sheet,bounds,scaleX,scaleY\)/);
   assert.match(editor, /class="br-sidebar-sections"/);
   assert.match(editor, /s\.type==='education'\|\|s\.type==='certifications'\?'\.br-sidebar-sections':'\.br-main \.sections-area'/);
   assert.match(editor, /tmpl\.id==='brian-baxter'\?\(s\.type==='education'\|\|s\.type==='certifications'\?1:0\)/);

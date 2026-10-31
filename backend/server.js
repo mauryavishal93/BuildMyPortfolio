@@ -31,6 +31,16 @@ let firebaseAdmin;
 
 app.disable('x-powered-by');
 
+app.get('/api/health', (_request, response) => {
+  response
+    .status(200)
+    .set({
+      'Cache-Control': 'no-store',
+      'Content-Length': '0'
+    })
+    .end();
+});
+
 app.use((request, response, next) => {
   const hostname = String(request.hostname || '').toLowerCase();
   if (hostname === 'buildmyportfolio.onrender.com') {
@@ -310,13 +320,6 @@ async function loadPricingConfigFromStore() {
     return normalizePricingConfig({});
   }
 }
-
-app.get('/api/health', (_request, response) => {
-  response
-    .status(200)
-    .set('Cache-Control', 'no-store')
-    .end();
-});
 
 app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '256kb' }));
 app.use(express.json({ limit: '32kb' }));

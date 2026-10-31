@@ -120,11 +120,14 @@ async function request(path, { method = 'GET', token, body, headers = {} } = {})
   });
 }
 
-test('health check returns an empty success response', async () => {
-  const response = await request('/api/health');
+test('health check returns a zero-byte success response before domain redirects', async () => {
+  const response = await request('/api/health', {
+    headers: { host: 'buildmyportfolio.onrender.com' }
+  });
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('content-length'), '0');
   assert.equal(await response.text(), '');
 });
 

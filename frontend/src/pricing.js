@@ -1,11 +1,8 @@
 import {
-  cancelBillingSubscription,
   createBillingSubscription,
-  loadBillingActivity,
   loadBillingConfig,
   loadBillingEntitlement,
   redeemBillingVoucher,
-  scheduleBillingPlanChange,
   verifyBillingCheckout
 } from './billing-client.js';
 import { cloudConfigured, observeAuth, signInWithGoogle } from './firebase-cloud.js';
@@ -13,14 +10,27 @@ import { PLAN_CONFIG, PRICING_FEATURES } from './plan-access.js';
 
 const $ = selector => document.querySelector(selector);
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
-const accountStatus = $('#billingAccountStatus');
 const checkoutStatus = $('#checkoutStatus');
 const monthlyButton = $('#purchaseMonthly');
 const yearlyButton = $('#purchaseYearly');
+const supportDialog = $('#supportDialog');
+const voucherSection = $('#pricingVoucherSection');
+const voucherInput = $('#pricingVoucherCode');
+const voucherButton = $('#redeemPricingVoucher');
+const voucherStatus = $('#pricingVoucherStatus');
 let currentUser = null;
 let billingConfig = null;
 let entitlement = null;
-let voucherSignInPromise = null;
+
+$('#supportLink')?.addEventListener('click', event => {
+  event.preventDefault();
+  if (typeof supportDialog?.showModal === 'function') supportDialog.showModal();
+  else window.location.href = 'mailto:buildymyportfolio@gmail.com';
+});
+$('#closeSupportDialog')?.addEventListener('click', () => supportDialog?.close());
+supportDialog?.addEventListener('click', event => {
+  if (event.target === supportDialog) supportDialog.close();
+});
 
 const formatPrice = amount => new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -28,9 +38,86 @@ const formatPrice = amount => new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 0
 }).format(amount);
 
-$('#freePrice').innerHTML = `${formatPrice(PLAN_CONFIG.free.price)} <span>always free</span>`;
-$('#monthlyPrice').innerHTML = `${formatPrice(PLAN_CONFIG.pro.monthly.price)} <span>per month, recurring</span>`;
-$('#yearlyPrice').innerHTML = `${formatPrice(PLAN_CONFIG.pro.yearly.price)} <span>per year, recurring</span>`;
+function getConfiguredPrice(planKey, fallback) {
+  const value = Number(window.__pricingConfig?.[planKey]?.currentPrice ?? fallback);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function getConfiguredActualPrice(planKey, fallback) {
+  const value = Number(window.__pricingConfig?.[planKey]?.actualPrice ?? fallback);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function renderStoredPricing() {
+  const monthlyActual = getConfiguredActualPrice('monthly', PLAN_CONFIG.pro.monthly.price);
+  const monthlyCurrent = getConfiguredPrice('monthly', PLAN_CONFIG.pro.monthly.price);
+  const yearlyActual = getConfiguredActualPrice('yearly', PLAN_CONFIG.pro.yearly.price);
+  const yearlyCurrent = getConfiguredPrice('yearly', PLAN_CONFIG.pro.yearly.price);
+
+  const renderPlanPrice = (node, currentPrice, actualPrice, suffixLabel) => {
+    const discount = actualPrice > currentPrice ? Math.round(((actualPrice - currentPrice) / actualPrice) * 100) : 0;
+    const actualMarkup = actualPrice > currentPrice
+      ? `<span class="price-original">${formatPrice(actualPrice)}</span>`
+      : '';
+    const discountMarkup = discount > 0
+      ? `<span class="price-discount">Save ${discount}%</span>`
+      : '';
+    node.innerHTML = `${actualMarkup}${formatPrice(currentPrice)} <span>${suffixLabel}${discountMarkup}</span>`;
+  };
+
+  renderPlanPrice($('#monthlyPrice'), monthlyCurrent, monthlyActual, 'per month, recurring');
+  renderPlanPrice($('#yearlyPrice'), yearlyCurrent, yearlyActual, 'per year, recurring');
+  $('#freePrice').innerHTML = `${formatPrice(PLAN_CONFIG.free.price)} <span>always free</span>`;
+}
+
+function updateVoucherControls() {
+  const signInRequired = !currentUser;
+  const verificationUnavailable = billingConfig?.entitlementEnabled === false;
+  voucherInput.disabled = signInRequired || verificationUnavailable;
+  voucherButton.disabled = signInRequired || verificationUnavailable;
+  voucherSection.classList.toggle('voucher-disabled', voucherInput.disabled);
+  voucherSection.classList.toggle('voucher-pro-active', entitlement?.status === 'active');
+
+  if (signInRequired) {
+    voucherInput.placeholder = 'Sign in to redeem a voucher';
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
+  } else if (verificationUnavailable) {
+    voucherInput.placeholder = 'Voucher redemption unavailable';
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = 'Voucher redemption is unavailable because server-side account verification is not configured.';
+  } else if (entitlement?.status === 'active') {
+    voucherInput.placeholder = 'Enter voucher code';
+    voucherStatus.dataset.state = 'success';
+    voucherStatus.textContent = `Pro is already active. A valid voucher will start after your current access ends${entitlement.validUntil ? ` on ${new Date(entitlement.validUntil).toLocaleDateString('en-IN')}` : ''}.`;
+  } else {
+    voucherInput.placeholder = 'Enter voucher code';
+    voucherStatus.dataset.state = '';
+    voucherStatus.textContent = billingConfig
+      ? 'Enter a voucher code to check it for this account.'
+      : 'Voucher availability could not be checked. Enter a code and the server will verify it.';
+  }
+}
+
+async function loadPublicPricingConfig() {
+  try {
+    const response = await fetch('/api/pricing/config', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Unable to load pricing configuration.');
+    const body = await response.json();
+    window.__pricingConfig = body.pricing || { monthly: { currentPrice: PLAN_CONFIG.pro.monthly.price, actualPrice: PLAN_CONFIG.pro.monthly.price }, yearly: { currentPrice: PLAN_CONFIG.pro.yearly.price, actualPrice: PLAN_CONFIG.pro.yearly.price } };
+    renderStoredPricing();
+  } catch (error) {
+    console.error('Pricing config could not be loaded.', error);
+    window.__pricingConfig = {
+      monthly: { currentPrice: PLAN_CONFIG.pro.monthly.price, actualPrice: PLAN_CONFIG.pro.monthly.price },
+      yearly: { currentPrice: PLAN_CONFIG.pro.yearly.price, actualPrice: PLAN_CONFIG.pro.yearly.price }
+    };
+    renderStoredPricing();
+  }
+}
+
+renderStoredPricing();
+void loadPublicPricingConfig();
 
 const tableBody = $('#pricingFeatures');
 for (const feature of PRICING_FEATURES) {
@@ -45,218 +132,65 @@ for (const feature of PRICING_FEATURES) {
 }
 
 function updatePurchaseControls() {
+  const checkoutReady = Boolean(billingConfig?.checkoutEnabled);
   const active = entitlement?.status === 'active';
   const activePlan = active ? entitlement.billingPlan : null;
-  const yearlyScheduled = active && entitlement.scheduledPlan === 'yearly';
-  const canPurchase = Boolean(currentUser && billingConfig?.checkoutEnabled && !active);
-  const canSwitchYearly = Boolean(currentUser && billingConfig?.checkoutEnabled
-    && activePlan === 'monthly' && !yearlyScheduled && !entitlement.cancelAtCycleEnd);
-  monthlyButton.disabled = !canPurchase;
-  yearlyButton.disabled = !(canPurchase || canSwitchYearly);
 
-  monthlyButton.textContent = !currentUser
-    ? 'Sign in to purchase monthly'
-    : !active
-      ? billingConfig?.checkoutEnabled ? 'Start monthly subscription' : 'Checkout unavailable'
-      : activePlan === 'voucher' ? 'Pro voucher active'
-        : activePlan === 'monthly' ? 'Monthly plan active' : 'Yearly plan active';
-  yearlyButton.textContent = !currentUser
-    ? 'Sign in to purchase yearly'
-    : !active
-      ? billingConfig?.checkoutEnabled ? 'Start yearly subscription' : 'Checkout unavailable'
-      : activePlan === 'yearly'
-        ? 'Yearly plan active'
-        : activePlan === 'voucher'
-          ? 'Pro voucher active'
-        : yearlyScheduled
-          ? 'Yearly switch scheduled'
-          : entitlement.cancelAtCycleEnd
-            ? 'Subscription ending'
-            : 'Switch to yearly';
+  monthlyButton.disabled = true;
+  yearlyButton.disabled = true;
+
+  if (!checkoutReady) {
+    monthlyButton.textContent = 'Coming soon';
+    yearlyButton.textContent = 'Coming soon';
+    checkoutStatus.textContent = 'Checkout is coming soon. Please check back later.  Till then user voucher code is available for free access. Please contact support for more details.';
+  } else if (!currentUser) {
+    monthlyButton.textContent = 'Sign in to purchase monthly';
+    yearlyButton.textContent = 'Sign in to purchase yearly';
+    monthlyButton.disabled = false;
+    yearlyButton.disabled = false;
+  } else if (active) {
+    monthlyButton.textContent = 'Manage billing';
+    yearlyButton.textContent = 'Manage billing';
+  } else {
+    monthlyButton.textContent = 'Start monthly subscription';
+    yearlyButton.textContent = 'Start yearly subscription';
+    monthlyButton.disabled = false;
+    yearlyButton.disabled = false;
+  }
 
   const monthlyBadge = $('#monthlyPlanBadge');
   const yearlyBadge = $('#yearlyPlanBadge');
   monthlyBadge.textContent = 'Active';
   monthlyBadge.hidden = activePlan !== 'monthly';
-  yearlyBadge.textContent = activePlan === 'yearly' ? 'Active' : 'Scheduled';
-  yearlyBadge.classList.toggle('scheduled', activePlan !== 'yearly');
-  yearlyBadge.hidden = activePlan !== 'yearly' && !yearlyScheduled;
+  yearlyBadge.textContent = 'Active';
+  yearlyBadge.classList.remove('scheduled');
+  yearlyBadge.hidden = activePlan !== 'yearly';
 
-  let cancel = $('#billingCancel');
-  if (!cancel) {
-    cancel = document.createElement('button');
-    cancel.id = 'billingCancel';
-    cancel.className = 'btn outline';
-    cancel.type = 'button';
-    cancel.textContent = 'Cancel subscription';
-    cancel.hidden = true;
-    $('#billingAccountStatus').after(cancel);
-    cancel.addEventListener('click', cancelCurrentSubscription);
-  }
-  cancel.hidden = !active || !entitlement?.subscriptionId || Boolean(entitlement?.cancelAtCycleEnd);
-  updateVoucherControls();
 }
 
-function updateVoucherControls() {
-  const section = $('#voucherSection');
-  const button = $('#redeemVoucher');
-  const input = $('#voucherCode');
-  if (!section || !button) return;
-  section.hidden = !billingConfig?.voucherEnabled;
-  const proActive = entitlement?.status === 'active';
-  const unavailable = !billingConfig?.voucherEnabled || proActive;
-  button.disabled = unavailable;
-  input.disabled = unavailable;
-  section.classList.toggle('voucher-pro-active', proActive);
-  if (proActive) {
-    input.value = '';
-    input.placeholder = 'Pro access is already active';
-    const status = $('#voucherStatus');
-    status.dataset.state = 'success';
-    status.textContent = 'Pro is active — voucher redemption is unavailable while your plan is active.';
-  } else {
-    input.placeholder = 'Enter voucher code';
-  }
-}
-
-function promptVoucherSignIn() {
-  if (currentUser || voucherSignInPromise) return voucherSignInPromise;
-
-  const status = $('#voucherStatus');
-  if (!cloudConfigured) {
-    status.dataset.state = 'error';
-    status.textContent = 'Google sign-in is not configured on this site.';
-    return Promise.resolve();
-  }
-
-  status.dataset.state = '';
-  status.textContent = 'Sign in with Google to redeem a voucher.';
-  voucherSignInPromise = signInWithGoogle()
-    .catch(error => {
-      console.error('Google sign-in for voucher redemption failed.', error);
-      status.dataset.state = 'error';
-      status.textContent = error.message || 'Could not sign in with Google.';
-    })
-    .finally(() => {
-      voucherSignInPromise = null;
-    });
-  return voucherSignInPromise;
-}
-
-function formatBillingDate(value) {
-  if (!Number(value)) return 'Date unavailable';
-  return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(Number(value)));
-}
-
-async function refreshBillingHistory(user) {
-  const container = $('#billingHistory');
-  try {
-    const activity = await loadBillingActivity(user);
-    if (currentUser?.uid !== user.uid) return;
-    if (!activity.length) {
-      container.innerHTML = '<p class="billing-history-empty">No billing activity yet.</p>';
-      return;
-    }
-    container.innerHTML = activity.map(item => `
-      <article class="billing-history-item">
-        <span class="billing-history-icon" aria-hidden="true">${item.status === 'success' || item.status === 'active' ? '✓' : '•'}</span>
-        <div><strong>${item.title}</strong><p>${item.detail || 'Billing activity updated.'}</p></div>
-        <time datetime="${new Date(Number(item.occurredAt)).toISOString()}">${formatBillingDate(item.occurredAt)}</time>
-      </article>`).join('');
-  } catch (error) {
-    container.innerHTML = `<p class="billing-history-empty">${error.message || 'Billing activity is temporarily unavailable.'}</p>`;
-  }
-}
-
-async function refreshBillingState(user) {
+async function refreshPricingState(user) {
   currentUser = user;
   entitlement = null;
   updatePurchaseControls();
-
+  updateVoucherControls();
   if (!user) {
-    accountStatus.textContent = 'Sign in with Google before you can purchase or manage a subscription.';
-    $('#billingHistory').textContent = 'Sign in to view billing activity.';
+    checkoutStatus.textContent = 'Sign in with Google before starting a purchase.';
+    updateVoucherControls();
     return;
   }
-  $('#billingHistory').textContent = 'Loading billing activity…';
-
-  const voucherStatus = $('#voucherStatus');
-  if (voucherStatus.textContent === 'Sign in with Google to redeem a voucher.') {
-    voucherStatus.dataset.state = '';
-    voucherStatus.textContent = 'Signed in. Enter your voucher code and redeem.';
-  }
-  accountStatus.textContent = `Signed in as ${user.email || user.displayName || 'Google user'}. Purchases are attached to this account.`;
   try {
     if (!billingConfig) billingConfig = await loadBillingConfig();
-    $('#voucherSection').hidden = !billingConfig.voucherEnabled;
     if (billingConfig.entitlementEnabled) entitlement = await loadBillingEntitlement(user);
     if (currentUser?.uid !== user.uid) return;
-
-    await refreshBillingHistory(user);
-
-    if (entitlement?.status === 'active') {
-      const date = entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleDateString() : 'the current paid period';
-      const scheduled = entitlement.scheduledPlan === 'yearly'
-        ? ` Yearly billing is scheduled to start after ${date}.`
-        : '';
-      accountStatus.textContent = entitlement.billingPlan === 'voucher'
-        ? `Pro voucher access is active through ${date}.`
-        : `Pro ${entitlement.billingPlan || ''} is active through ${date}.${entitlement.cancelAtCycleEnd ? ' It will not renew.' : scheduled}`;
-    }
-
     updatePurchaseControls();
+    updateVoucherControls();
   } catch (error) {
     console.error('Could not load billing status.', error);
     checkoutStatus.textContent = error.message;
     updatePurchaseControls();
-  }
-}
-
-const voucherInput = $('#voucherCode');
-const voucherButton = $('#redeemVoucher');
-voucherInput.addEventListener('focus', () => {
-  if (!currentUser) void promptVoucherSignIn();
-});
-voucherInput.addEventListener('click', () => {
-  if (!currentUser) void promptVoucherSignIn();
-});
-voucherButton.addEventListener('click', event => {
-  if (currentUser) return;
-  event.preventDefault();
-  void promptVoucherSignIn();
-});
-
-$('#voucherForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const codeInput = $('#voucherCode');
-  const status = $('#voucherStatus');
-  const button = $('#redeemVoucher');
-  const code = codeInput.value.trim();
-  if (!currentUser) {
-    void promptVoucherSignIn();
-    return;
-  }
-  if (!billingConfig?.voucherEnabled || !code) return;
-  const user = currentUser;
-  button.disabled = true;
-  status.dataset.state = '';
-  status.textContent = 'Checking voucher…';
-  try {
-    const redeemedEntitlement = await redeemBillingVoucher(user, code);
-    if (currentUser?.uid !== user.uid) return;
-    entitlement = redeemedEntitlement;
-    codeInput.value = '';
-    status.dataset.state = 'success';
-    status.textContent = `Voucher redeemed. Pro is active through ${new Date(entitlement.validUntil).toLocaleDateString()}.`;
-    accountStatus.textContent = `Pro voucher access is active through ${new Date(entitlement.validUntil).toLocaleDateString()}.`;
-    updatePurchaseControls();
-  } catch (error) {
-    if (currentUser?.uid !== user.uid) return;
-    status.dataset.state = 'error';
-    status.textContent = error.message || 'Could not redeem this voucher.';
     updateVoucherControls();
   }
-});
+}
 
 async function loadRazorpayCheckout() {
   if (window.Razorpay) return;
@@ -270,12 +204,12 @@ async function loadRazorpayCheckout() {
 }
 
 async function startCheckout(planKey) {
-  if (!currentUser) {
-    checkoutStatus.textContent = 'Sign in with Google before starting a purchase.';
+  if (!billingConfig?.checkoutEnabled) {
+    checkoutStatus.textContent = 'Checkout is coming soon. Please check back later. Till then user voucher code is available for free access. Please contact support for more details.';
     return;
   }
-  if (!billingConfig?.checkoutEnabled) {
-    checkoutStatus.textContent = 'Checkout is not enabled on this server yet.';
+  if (!currentUser) {
+    checkoutStatus.textContent = 'Sign in with Google before starting a purchase.';
     return;
   }
 
@@ -339,67 +273,73 @@ async function startCheckout(planKey) {
   }
 }
 
-async function scheduleYearlySwitch() {
-  if (!currentUser || entitlement?.billingPlan !== 'monthly' || !billingConfig?.checkoutEnabled) return;
-  const date = entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleDateString() : 'the end of this billing period';
-  if (!window.confirm(`Schedule Pro Yearly to begin after ${date}? Your monthly access continues until then; ₹399/year will be charged when the switch takes effect.`)) return;
-
-  yearlyButton.disabled = true;
-  checkoutStatus.textContent = 'Scheduling your yearly plan…';
-  try {
-    const result = await scheduleBillingPlanChange(currentUser, 'yearly');
-    checkoutStatus.textContent = `Yearly plan scheduled for ${new Date(result.scheduledAt).toLocaleDateString()}. Your monthly access continues until then.`;
-    await refreshBillingState(currentUser);
-  } catch (error) {
-    console.error('Could not schedule the yearly plan.', error);
-    checkoutStatus.textContent = error.message;
-    updatePurchaseControls();
-  }
-}
-
-async function cancelCurrentSubscription() {
-  if (!currentUser || !entitlement?.subscriptionId) return;
-  if (!window.confirm('Cancel future renewals? Pro remains active until the current paid period ends.')) return;
-  try {
-    await cancelBillingSubscription(currentUser, entitlement.subscriptionId);
-    checkoutStatus.textContent = 'Cancellation scheduled. Pro remains active through the current paid period.';
-    await refreshBillingState(currentUser);
-  } catch (error) {
-    console.error('Could not cancel subscription.', error);
-    checkoutStatus.textContent = error.message;
-  }
-}
-
-monthlyButton.addEventListener('click', () => startCheckout('monthly'));
-yearlyButton.addEventListener('click', () => entitlement?.status === 'active' && entitlement.billingPlan === 'monthly'
-  ? scheduleYearlySwitch()
+monthlyButton.addEventListener('click', () => entitlement?.status === 'active'
+  ? window.location.assign('/billing.html')
+  : startCheckout('monthly'));
+yearlyButton.addEventListener('click', () => entitlement?.status === 'active'
+  ? window.location.assign('/billing.html')
   : startCheckout('yearly'));
+
+$('#pricingVoucherForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const code = voucherInput.value.trim();
+  if (!currentUser) {
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = 'Sign in with Google before redeeming a voucher.';
+    return;
+  }
+  if (!code) return;
+
+  voucherButton.disabled = true;
+  voucherStatus.dataset.state = '';
+  voucherStatus.textContent = 'Checking voucher…';
+  try {
+    const result = await redeemBillingVoucher(currentUser, code);
+    entitlement = result.entitlement;
+    voucherInput.value = '';
+    updatePurchaseControls();
+    updateVoucherControls();
+    voucherStatus.dataset.state = 'success';
+    voucherStatus.textContent = result.queued
+      ? `Voucher accepted. It will add ${result.entitlement.pendingVoucherCount} voucher${result.entitlement.pendingVoucherCount === 1 ? '' : 's'} after your current Pro access ends${result.entitlement.pendingVoucherStartAt ? ` on ${new Date(result.entitlement.pendingVoucherStartAt).toLocaleDateString('en-IN')}` : ''}.`
+      : `Voucher redeemed. Pro is active through ${new Date(result.entitlement.validUntil).toLocaleDateString('en-IN')}.`;
+  } catch (error) {
+    console.error('Could not redeem voucher from the Plans page.', error);
+    voucherStatus.dataset.state = 'error';
+    voucherStatus.textContent = error.message || 'Could not redeem this voucher.';
+  } finally {
+    voucherButton.disabled = !currentUser || billingConfig?.entitlementEnabled === false;
+  }
+});
 
 loadBillingConfig().then(config => {
   billingConfig = config;
-  $('#voucherSection').hidden = !config.voucherEnabled;
   if (!config.checkoutEnabled) {
     checkoutStatus.textContent = 'Pro checkout is temporarily unavailable. Please try again later.';
   }
   updatePurchaseControls();
+  updateVoucherControls();
 }).catch(error => {
   console.error('Could not load checkout configuration.', error);
   checkoutStatus.textContent = error.message;
+  updateVoucherControls();
 });
 
 if (!cloudConfigured) {
-  refreshBillingState(null);
-  accountStatus.textContent = 'Google sign-in is not configured on this site. Purchases are unavailable.';
+  void refreshPricingState(null);
+  checkoutStatus.textContent = 'Google sign-in is not configured on this site. Purchases are unavailable.';
+  updateVoucherControls();
 } else {
   observeAuth((user, error) => {
     if (error) {
       console.error('Could not observe Firebase sign-in state.', error);
       currentUser = null;
       entitlement = null;
-      accountStatus.textContent = 'Sign-in could not be initialized. Paid purchases are unavailable.';
+      checkoutStatus.textContent = 'Sign-in could not be initialized. Paid purchases are unavailable.';
       updatePurchaseControls();
+      updateVoucherControls();
       return;
     }
-    refreshBillingState(user);
+    refreshPricingState(user);
   });
 }

@@ -1,13 +1,19 @@
 import { estimateExperienceYears, GENERIC_ATS_WEIGHTING, weightedScore } from './ats-scoring.js';
 import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
-import { confirmSignOut } from './signout-modal.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
-import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
-import { readSavedProject } from './project-storage.js';
-import { buildResumePdf, drawPdfText, MAX_PDF_BYTES, RESUME_PDF_RENDER_SCALE } from './resume-pdf.js';
+import { alertModern, confirmModern, promptModern } from './modern-modal.js';
+import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
 import {
- cloudConfigured, consumeProTemplateDownload, deleteResume, getProTemplateDownloadStatus, listResumes, observeAuth, saveResume,
+ chooseAuthenticatedResume,
+ createGuestResumeStorage,
+ resolveAuthTransition,
+ resumeStorageMode,
+ shouldShowBrowserSaveToggle
+} from './resume-persistence.js';
+import { buildResumePdf, drawPdfText } from './resume-pdf.js';
+import {
+ cloudConfigured, consumeProTemplateDownload, deleteResume, getLastWorkedResumeId, getProTemplateDownloadStatus, googleSignInErrorMessage, listResumes, observeAuth, saveResume, setLastWorkedResumeId,
  signInWithGoogle, signOutUser
 } from './firebase-cloud.js';
 import { zoomFromPinch } from './zoom.js';
@@ -35,16 +41,21 @@ const templateDefs=[
 {id:'portrait',name:'Portrait Left',sub:'Photo + rule',accent:'#2f4a7a',cls:'layout-portrait',layout:'single',photo:true,photoPos:'left'},
 {id:'card',name:'Centered Card',sub:'Photo on top',accent:'#6a4c7d',cls:'layout-card',layout:'single',photo:true,photoPos:'center'},
 {id:'photobanner',name:'Photo Banner',sub:'Banner + photo',accent:'#1f5d73',cls:'layout-photobanner',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'studio',name:'Studio',sub:'Serif + frame',accent:'#8a4b2d',cls:'layout-studio',layout:'single',banner:true,photo:true,photoPos:'right'}
+{id:'studio',name:'Studio',sub:'Serif + frame',accent:'#8a4b2d',cls:'layout-studio',layout:'single',banner:true,photo:true,photoPos:'right'},
+{id:'luxe',name:'Luxe',sub:'Luxury serif',accent:'#7b4b42',cls:'layout-luxe',layout:'single',banner:true},
+{id:'verve',name:'Verve',sub:'Vibrant modern',accent:'#6d28d9',cls:'layout-verve',layout:'single',banner:true},
+{id:'arc',name:'Arc',sub:'Rounded profile',accent:'#0f766e',cls:'layout-arc',layout:'single',banner:true,photo:true,photoPos:'right'}
 ];
-const makeSections=()=>[
-{id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
-{id:uid(),type:'experience',title:'Work Experience',visible:true,entries:[{role:'Senior QA Automation Engineer',company:'Example Technology Company',date:'2022 — Present',details:'Designed and maintained scalable UI and API automation suites.\nImproved regression reliability and reduced repetitive manual effort.\nCollaborated with developers and product teams to resolve release risks.'},{role:'QA Engineer',company:'Previous Company',date:'2019 — 2022',details:'Built automated tests and reusable test utilities.\nReported defects with clear reproduction steps and impact analysis.'}]},
-{id:uid(),type:'skills',title:'Technical Skills',visible:true,content:'Playwright, Selenium, JavaScript, TypeScript, API Testing, CI/CD, SQL, Git, Test Strategy'},
-{id:uid(),type:'education',title:'Education',visible:true,entries:[{role:'Bachelor of Engineering',company:'University Name',date:'2015 — 2019',details:'Relevant coursework, projects or academic achievements.'}]},
-{id:uid(),type:'projects',title:'Selected Projects',visible:true,entries:[{role:'Automation Framework Modernization',company:'Personal / Professional Project',date:'2024',details:'Created reusable automation components and reporting workflows.\nIntegrated test execution into a repeatable CI process.'}]},
-{id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
-];
+const makeSections=()=>{
+  return [
+    {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
+    {id:uid(),type:'experience',title:'Work Experience',visible:true,entries:[{role:'Senior QA Automation Engineer',company:'Example Technology Company',date:'2022 — Present',details:'Designed and maintained scalable UI and API automation suites.\nImproved regression reliability and reduced repetitive manual effort.\nCollaborated with developers and product teams to resolve release risks.'},{role:'QA Engineer',company:'Previous Company',date:'2019 — 2022',details:'Built automated tests and reusable test utilities.\nReported defects with clear reproduction steps and impact analysis.'}]},
+    {id:uid(),type:'skills',title:'Technical Skills',visible:true,content:'Playwright, Selenium, JavaScript, TypeScript, API Testing, CI/CD, SQL, Git, Test Strategy'},
+    {id:uid(),type:'education',title:'Education',visible:true,entries:[{role:'Bachelor of Engineering',company:'University Name',date:'2015 — 2019',details:'Relevant coursework, projects or academic achievements.'}]},
+    {id:uid(),type:'projects',title:'Selected Projects',visible:true,entries:[{role:'Automation Framework Modernization',company:'Personal / Professional Project',date:'2024',details:'Created reusable automation components and reporting workflows.\nIntegrated test execution into a repeatable CI process.'}]},
+    {id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
+  ];
+};
 const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
@@ -71,47 +82,111 @@ function normalizeState(d){
  if(pos&&typeof pos==='object')for(const [k,p] of Object.entries(pos)){if(!seen.has(k)||!p||typeof p!=='object')continue;const x=Number(p.x),y=Number(p.y),w=Number(p.w);if(![x,y,w].every(Number.isFinite))continue;if(ver<3&&x===0&&w===610)continue;out.positions[k]={x:clamp(x,0,PAGE_W,0),y:clamp(y,0,PAGE_H,0),w:clamp(w,120,PAGE_W,610)}}
  return out;
 }
-let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=300,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null;
+let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
+const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
+const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
+let lastWorkedResumeWrite=Promise.resolve();
+let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
-let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null;
+let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
+let signOutPending=false;
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
 const $esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lines=v=>String(v||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 const detailLines=v=>String(v||'').replace(/\r\n?/g,'\n').split('\n');
+function pointerMarker(style,index){return style==='number'?`${index+1}.`:({bullet:'•',arrow:'→',check:'✓',dash:'–',diamond:'◆'}[style]||'')}
+function renderDetailInputs(entry,index){const style=sectionById(selectedId)?.listStyle||'bullet';return detailLines(entry.details).map((line,lineIndex)=>`<div class="detail-bullet-row"><span class="detail-bullet-marker" aria-hidden="true">${pointerMarker(style,lineIndex)}</span><input aria-label="Detail bullet ${lineIndex+1}" data-entry-detail-line data-index="${index}" data-line="${lineIndex}" value="${$esc(line)}"><button class="detail-bullet-remove" type="button" data-remove-detail-line="${lineIndex}" data-index="${index}" aria-label="Remove bullet ${lineIndex+1}" title="Remove bullet">×</button></div>`).join('')}
+function renderPointerInputs(section){return detailLines(section.content).map((line,lineIndex)=>`<div class="detail-bullet-row"><span class="detail-bullet-marker" aria-hidden="true">${pointerMarker(section.listStyle,lineIndex)}</span><input aria-label="Pointer line ${lineIndex+1}" data-section-pointer-line data-section-id="${$esc(section.id)}" data-line="${lineIndex}" value="${$esc(line)}"><button class="detail-bullet-remove" type="button" data-remove-pointer-line="${lineIndex}" data-section-id="${$esc(section.id)}" aria-label="Remove line ${lineIndex+1}" title="Remove line">×</button></div>`).join('')}
+function insertEntryDetailLine(index,afterLine){
+ const section=sectionById(selectedId),entry=section?.entries?.[index];if(!entry)return;
+ const details=detailLines(entry.details);
+ let lineIndex;
+ if(Number.isInteger(afterLine)){lineIndex=Math.min(afterLine+1,details.length);details.splice(lineIndex,0,'')}
+ else if(details.length===1&&!details[0])lineIndex=0;
+ else{lineIndex=details.length;details.push('')}
+ entry.details=details.join('\n');saveLocal();
+ const list=$('inspector').querySelector(`[data-entry-details="${index}"]`);if(list)list.innerHTML=renderDetailInputs(entry,index);
+ renderSheets();
+ requestAnimationFrame(()=>$('inspector').querySelector(`[data-entry-detail-line][data-index="${index}"][data-line="${lineIndex}"]`)?.focus());
+}
+function insertPointerLine(sectionId,afterLine){
+ const section=sectionById(sectionId);if(!section)return;
+ const contentLines=detailLines(section.content);
+ let lineIndex;
+ if(Number.isInteger(afterLine)){lineIndex=Math.min(afterLine+1,contentLines.length);contentLines.splice(lineIndex,0,'')}
+ else if(contentLines.length===1&&!contentLines[0])lineIndex=0;
+ else{lineIndex=contentLines.length;contentLines.push('')}
+ section.content=contentLines.join('\n');saveLocal();
+ const list=$('inspector').querySelector(`[data-pointer-lines="${sectionId}"]`);if(list)list.innerHTML=renderPointerInputs(section);
+ renderSheets();
+ requestAnimationFrame(()=>$('inspector').querySelector(`[data-section-pointer-line][data-section-id="${sectionId}"][data-line="${lineIndex}"]`)?.focus());
+}
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
 function updateProLabel(){const isPro=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);const badge=$('proBrandBadge');if(badge)badge.hidden=!isPro;document.title=isPro?`${baseDocumentTitle} | Pro`:baseDocumentTitle}
 function authErrorMessage(error){
- const code=error?.code;
- if(code==='auth/configuration-not-found'||code==='auth/operation-not-allowed'){
-  return 'Google sign-in is not enabled for this Firebase project. In Firebase Console, open Authentication → Sign-in method, enable Google, and save.';
- }
- if(code==='auth/unauthorized-domain'){
-  return `This website domain is not authorized for Firebase sign-in. Add "${location.hostname}" under Authentication → Settings → Authorized domains.`;
- }
- return error?.message||'Could not sign in with Google.';
+ return googleSignInErrorMessage(error);
+}
+function setSaveState(message){
+  const node=$('saveState');
+  if(!node)return;
+  node.textContent=message;
+  const wrap=node.closest('.save-state');
+  if(wrap){
+    const reduced=String(message).toLowerCase();
+    wrap.dataset.state=reduced.includes('saving')?'saving':reduced.includes('unable')||reduced.includes(' off')||reduced.includes('unavailable')||reduced.includes('recovery')?'warning':reduced.includes('cloud')||reduced.includes('browser')||reduced.includes('saved')?'saved':'warning';
+  }
+}
+function currentSaveStateLabel(){
+  if(cloudUser)return cloudSaveBlocked?'Unable to save changes':'All changes saved';
+  return guestResumeStorage.enabled?'Saved locally':'Browser saving is off. Refreshing will discard your resume.';
+}
+function updateBrowserPersistenceUI(){
+ const toggle=$('browserSaveControl'),input=$('browserSaveToggle');
+ if(toggle)toggle.hidden=!shouldShowBrowserSaveToggle(cloudUser,authStateResolved);
+ if(input)input.checked=guestResumeStorage.enabled;
+ if(!cloudUser&&!saveTimer&&!localPersistenceBlocked)setSaveState(currentSaveStateLabel());
 }
 function scheduleCloudSave(){
- if(!cloudUser||!activeCloudResumeId||cloudSaveBlocked)return;
+ if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
  clearTimeout(cloudSaveTimer);
  cloudSaveTimer=setTimeout(persistCloudResume,700);
 }
+async function rememberLastWorkedResume(uid,resumeId,generation=cloudSessionGeneration){
+ if(!resumeId||cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+ const write=lastWorkedResumeWrite.catch(()=>{}).then(async()=>{
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  await setLastWorkedResumeId(uid,resumeId);
+ });
+ lastWorkedResumeWrite=write;
+ try{
+  await write;
+ }catch(error){
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  console.error('Could not remember the last-opened cloud resume.',error);
+  toast('Your resume is saved, but we could not remember it as your last-opened resume.');
+ }
+}
 async function persistCloudResume(){
- if(!cloudUser||!activeCloudResumeId||cloudSaveBlocked)return;
+ if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
  if(cloudSaving){cloudSavePending=true;return}
- const uid=cloudUser.uid,id=activeCloudResumeId,snapshot=deep(state),expectedRevision=activeCloudRevision;
+ const uid=cloudUser.uid,id=activeCloudResumeId,generation=cloudSessionGeneration,snapshot=deep(state),expectedRevision=id?activeCloudRevision:null;
  cloudSaving=true;
+ setSaveState('Saving…');
  try{
   const result=await saveResume(uid,id,snapshot.docName,snapshot,expectedRevision);
-  if(activeCloudResumeId===id&&cloudUser?.uid===uid){
+  if(cloudSessionGeneration===generation&&cloudUser?.uid===uid){
+   activeCloudResumeId=result.id;
    activeCloudRevision=result.revision;
-   if(JSON.stringify(snapshot)===JSON.stringify(state))$('saveState').textContent='Saved in cloud and browser';
+   void rememberLastWorkedResume(uid,result.id,generation);
+   if(JSON.stringify(snapshot)===JSON.stringify(state)){cloudDraftDirty=false;setSaveState('All changes saved')}
+   else cloudSavePending=true;
   }
  }catch(error){
-  if(activeCloudResumeId===id){
+  if(cloudSessionGeneration===generation&&cloudUser?.uid===uid){
    cloudSaveBlocked=true;
-   $('saveState').textContent='Cloud save stopped—check message';
-   toast(error.message||'Could not save this resume to the cloud.');
+   setSaveState('Unable to save changes');
+   $('saveState').title=error.message||'Could not save this resume to the cloud.';
   }
  }finally{
   cloudSaving=false;
@@ -119,15 +194,28 @@ async function persistCloudResume(){
  }
 }
 function saveLocal(syncCloud=true){
- if(localPersistenceBlocked){$('saveState').textContent='Local recovery needed';return}
- $('saveState').textContent='Saving…';
+ const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
+ if(persistenceMode==='cloud'){
+  cloudDraftDirty=true;
+  if(syncCloud)scheduleCloudSave();
+  if(cloudSaveBlocked)setSaveState('Unable to save changes');
+  else setSaveState('Saving…');
+  if(cloudReady&&syncCloud)scheduleCloudSave();
+  return;
+ }
+ guestResumeDirty=true;
+ if(persistenceMode==='memory'){setSaveState(currentSaveStateLabel());return}
+ if(localPersistenceBlocked){setSaveState('Local recovery needed');return}
+ setSaveState('Saving…');
  clearTimeout(saveTimer);
  saveTimer=setTimeout(()=>{
+  if(cloudUser||!guestResumeStorage.enabled)return;
   try{
-   localStorage.setItem('resumeStudioV2',JSON.stringify(state));
-   $('saveState').textContent='Saved in this browser';
-   if(syncCloud)scheduleCloudSave();
-  }catch(error){$('saveState').textContent='Local save unavailable';toast('Could not save this resume in this browser.')}
+   guestResumeStorage.save(state);
+   setSaveState(currentSaveStateLabel());
+   guestResumeLoaded=true;
+   if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');
+  }catch(error){setSaveState('Local save unavailable');toast('Could not save this resume in this browser.')}
  },250);
 }
 function renderCloudResumes(){
@@ -164,21 +252,34 @@ function closeCloudModal(){
 }
 async function saveCurrentAsCloudCopy(){
  if(!cloudUser){toast('Sign in with Google before saving to the cloud.');return}
+ const uid=cloudUser.uid,generation=cloudSessionGeneration;
  const suggested=state.docName||'Untitled resume';
- const name=window.prompt('Name this cloud resume:',suggested);
+ const name=await promptModern({
+  title:'Name this cloud resume',
+  message:'Choose a name for this saved cloud copy.',
+  defaultValue:suggested,
+  placeholder:'Resume name',
+  confirmText:'Save',
+  cancelText:'Cancel'
+ });
  if(name===null)return;
- const cleanName=name.trim().slice(0,120)||'Untitled resume';
+ if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+ const cleanName=String(name).trim().slice(0,120)||'Untitled resume';
  const copy=deep(state);
  copy.docName=cleanName;
  try{
-  const result=await saveResume(cloudUser.uid,null,cleanName,copy,null);
+  const result=await saveResume(uid,null,cleanName,copy,null);
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  cloudSessionGeneration++;
   activeCloudResumeId=result.id;
   activeCloudRevision=result.revision;
   cloudSaveBlocked=false;
   state=copy;
   selectedId=null;
+  history=[];redoHistory=[];
   render();
-  saveLocal(false);
+  void rememberLastWorkedResume(uid,result.id,cloudSessionGeneration);
+  setSaveState('All changes saved');
   await refreshCloudResumes();
   toast('Cloud resume saved. Future edits will sync automatically.');
  }catch(error){toast(error.message||'Could not save this resume to the cloud.')}
@@ -187,6 +288,9 @@ function openCloudResume(id){
  const item=cloudResumes.find(resume=>resume.id===id);
  if(!item)return;
  try{
+  cloudSessionGeneration++;
+  clearTimeout(cloudSaveTimer);
+  cloudSavePending=false;
   state=normalizeState(item.state);
   activeCloudResumeId=item.id;
   activeCloudRevision=item.revision;
@@ -194,8 +298,8 @@ function openCloudResume(id){
   history=[];redoHistory=[];
   selectedId=null;
   render();
-  saveLocal(false);
-  $('saveState').textContent='Loaded from cloud';
+  void rememberLastWorkedResume(cloudUser.uid,item.id,cloudSessionGeneration);
+  setSaveState('All changes saved');
   closeCloudModal();
   toast('Cloud resume opened. Future edits will sync automatically.');
  }catch(error){toast(`Could not open this cloud resume: ${error.message}`)}
@@ -203,28 +307,93 @@ function openCloudResume(id){
 async function removeCloudResume(id){
  const item=cloudResumes.find(resume=>resume.id===id);
  if(!item||!cloudUser)return;
- if(!window.confirm(`Delete "${item.name||'Untitled resume'}" from your cloud resumes? This cannot be undone.`))return;
+ const uid=cloudUser.uid,generation=cloudSessionGeneration;
+ const confirmed=await confirmModern({
+  title:'Delete cloud resume?',
+  message:`Delete "${item.name||'Untitled resume'}" from your cloud resumes? This cannot be undone.`,
+  confirmText:'OK',
+  cancelText:'Cancel'
+ });
+ if(!confirmed)return;
+ if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
  try{
-  await deleteResume(cloudUser.uid,id);
-  if(activeCloudResumeId===id){activeCloudResumeId=null;activeCloudRevision=null;cloudSaveBlocked=false}
+  await deleteResume(uid,id);
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  if(activeCloudResumeId===id){
+   cloudSessionGeneration++;
+   clearTimeout(cloudSaveTimer);
+   activeCloudResumeId=null;activeCloudRevision=null;cloudSaveBlocked=false;
+   state=fresh();selectedId=null;history=[];redoHistory=[];render();
+   setSaveState('All changes saved');
+  }
   await refreshCloudResumes();
   toast('Cloud resume deleted.');
  }catch(error){toast(error.message||'Could not delete this cloud resume.')}
 }
 async function updateCloudAccount(user,error){
+ authStateResolved=true;
  if(error){
-  cloudUser=null;
-   proTemplateDownloadsRemaining=null;
-   verifiedEntitlement=null;
+  proTemplateDownloadsRemaining=null;
+  verifiedEntitlement=null;
   updateProTemplatePreviewAllowance();
   updateProLabel();
   $('googleSignInBtn').disabled=true;
   $('googleSignInLabel').textContent='Cloud setup needed';
   $('googleSignInBtn').title=error.message;
+  $('cloudActions').hidden=false;
+  $('accountMenu').hidden=false;
+  $('cloudResumesBtn').hidden=true;
+  $('googleSignOutBtn').hidden=true;
+  $('accountUserName').textContent='Guest';
+  $('accountUserEmail').textContent='';
+  $('accountAvatar').textContent='G';
+  $('accountAvatarLarge').textContent='G';
+  $('accountMenu').querySelector('summary').setAttribute('aria-label','Account menu');
   $('cloudAccount').textContent=error.message;
   renderCloudResumes();
   renderTemplates();
+  updateBrowserPersistenceUI();
   return;
+ }
+ const previousUser=cloudUser;
+ const transition=resolveAuthTransition(previousUser?.uid,user?.uid);
+ const accountChanged=transition!=='unchanged';
+ const guestLogin=transition==='guest-login';
+ const loggingOut=transition==='logout';
+ const accountSwitch=transition==='account-switch';
+ const hasGuestDraft=guestLogin&&(guestResumeLoaded||guestResumeDirty);
+ const generation=accountChanged?++authGeneration:authGeneration;
+ if(accountChanged){
+  clearTimeout(saveTimer);
+  clearTimeout(cloudSaveTimer);
+  cloudSessionGeneration++;
+  cloudReady=false;
+  cloudDraftDirty=false;
+  cloudSavePending=false;
+  cloudSaveBlocked=false;
+  activeCloudResumeId=null;
+  activeCloudRevision=null;
+  cloudResumes=[];
+  if((guestLogin&&!localPersistenceBlocked)||accountSwitch){
+   try{guestResumeStorage.clear()}
+   catch(storageError){console.error('Could not clear the guest resume after sign-in.',storageError)}
+  }
+  if(accountSwitch||loggingOut){
+   state=fresh();
+   selectedId=null;
+   history=[];redoHistory=[];
+   guestResumeLoaded=false;
+   guestResumeDirty=false;
+   localPersistenceBlocked=false;
+   recoverySnapshot=null;
+   $('recoveryBanner').hidden=true;
+   render();
+  }
+  if(loggingOut){
+   try{guestResumeStorage.clear()}
+   catch(storageError){console.error('Could not clear the account resume after sign-out.',storageError)}
+  }
+  if(guestLogin)guestResumeDirty=false;
  }
  cloudUser=user;
  proTemplateDownloadsRemaining=null;
@@ -232,22 +401,98 @@ async function updateCloudAccount(user,error){
  updateProTemplatePreviewAllowance({checking:!!user});
  updateProLabel();
  $('googleSignInBtn').hidden=!!user;
+ $('cloudActions').hidden=!!user;
+ $('accountMenu').hidden=false;
  $('cloudResumesBtn').hidden=!user;
  $('googleSignOutBtn').hidden=!user;
- $('cloudAccount').textContent=user?`Signed in as ${user.email||user.displayName||'Google user'}. Cloud saves are private to this account.`:'Sign in to access your resumes across devices.';
- if(!user){
-  clearTimeout(cloudSaveTimer);
-  activeCloudResumeId=null;
-  activeCloudRevision=null;
-  cloudSaveBlocked=false;
-  $('saveState').textContent='Saved in this browser';
+ $('googleSignOutBtn').disabled=false;
+ $('googleSignOutBtn').textContent='Sign out';
+ if(user){
+  const accountName=user.displayName?.trim()||user.email?.split('@')[0]||'Google user';
+  const initial=Array.from(accountName)[0]?.toLocaleUpperCase()||'U';
+  $('accountMenu').querySelector('summary').setAttribute('aria-label',`Account menu for ${accountName}`);
+  $('accountUserName').textContent=accountName;
+  $('accountUserEmail').textContent=user.email||'';
+  $('accountAvatar').textContent=initial;
+  $('accountAvatarLarge').textContent=initial;
+ }else{
+  $('accountUserName').textContent='Guest';
+  $('accountUserEmail').textContent='';
+  $('accountAvatar').textContent='G';
+  $('accountAvatarLarge').textContent='G';
+  $('accountMenu').querySelector('summary').setAttribute('aria-label','Account menu');
  }
+ $('cloudAccount').textContent=user?`Signed in as ${user.email||user.displayName||'Google user'}. Cloud saves are private to this account.`:'Sign in to access your resumes across devices.';
+ updateBrowserPersistenceUI();
+ if(!user){
+  cloudReady=false;
+  setSaveState(currentSaveStateLabel());
+  if(loggingOut&&guestResumeStorage.enabled)saveLocal(false);
+  renderCloudResumes();
+  renderTemplates();
+  return;
+ }
+ if(accountChanged)setSaveState('Saving…');
  renderCloudResumes();
  renderTemplates();
  if(user){
   try{
+   const resumes=await listResumes(user.uid);
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+   cloudResumes=resumes;
+   let lastWorkedResumeId=null;
+   try{
+    lastWorkedResumeId=await getLastWorkedResumeId(user.uid);
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+   }catch(error){
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+    console.error('Could not load the last-opened cloud resume preference.',error);
+    toast('Could not load your last-opened resume. Opening your most recently updated resume instead.');
+   }
+   const decision=chooseAuthenticatedResume({
+    hasGuestDraft:hasGuestDraft||cloudDraftDirty,
+    resumes,
+    lastWorkedResumeId
+   });
+   if(decision.type==='open-cloud-resume'){
+    const selectedResume=resumes.find(resume=>resume.id===decision.resumeId);
+    state=normalizeState(selectedResume.state);
+    activeCloudResumeId=selectedResume.id;
+    activeCloudRevision=selectedResume.revision;
+    void rememberLastWorkedResume(user.uid,selectedResume.id,cloudSessionGeneration);
+    cloudDraftDirty=false;
+    history=[];redoHistory=[];selectedId=null;
+    render();
+   }else{
+    const snapshot=deep(state);
+    const result=await saveResume(user.uid,null,snapshot.docName,snapshot,null);
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+    activeCloudResumeId=result.id;
+    activeCloudRevision=result.revision;
+    cloudDraftDirty=false;
+    if(JSON.stringify(snapshot)!==JSON.stringify(state))cloudSavePending=true;
+   }
+   cloudReady=true;
+   renderCloudResumes();
+   if(openCloudOnAuth){
+    openCloudOnAuth=false;
+    history.replaceState(null,'',location.pathname+location.hash);
+    openCloudModal();
+   }
+   setSaveState(cloudDraftDirty||cloudSavePending?'Saving…':'All changes saved');
+   if(cloudSavePending)scheduleCloudSave();
+  }catch(error){
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+   cloudReady=false;
+   cloudSaveBlocked=true;
+   setSaveState('Unable to save changes');
+   $('saveState').title=error.message||'Could not load or save this resume to the cloud.';
+   console.error('Could not initialize the signed-in resume.',error);
+  }
+  try{
    if(!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
     const usage=await getProTemplateDownloadStatus(user.uid);
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
     proTemplateDownloadsRemaining=usage.remaining;
     updateProTemplatePreviewAllowance();
    }
@@ -258,13 +503,14 @@ async function updateCloudAccount(user,error){
   try{
    const config=await loadBillingConfig();
    if(config.entitlementEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
   }catch(billingError){
+   if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
    console.error('Could not load the signed-in account billing status.',billingError);
   }
-  if(cloudUser?.uid===user.uid){
-    updateProLabel();
+  if(authGeneration===generation&&cloudUser?.uid===user.uid){
+   updateProLabel();
    renderTemplates();
-   if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
   }
  }
 }
@@ -286,7 +532,6 @@ window.addEventListener('focus',async()=>{
   }
   updateProLabel();
   renderTemplates();
-  if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
  }catch(error){
   console.error('Could not refresh the signed-in account billing status.',error);
  }
@@ -311,8 +556,26 @@ function templateCardMarkup(t){
 function renderTemplates(){
  $('templates').innerHTML=templateDefs.map(templateCardMarkup).join('');
 }
+function getSectionStarterOptions(){
+  return [
+    { type: 'summary', label: 'Add Summary' },
+    { type: 'experience', label: 'Add Experience' }
+  ];
+}
 function renderSectionList(){
- $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${s.id}"><span class="grip">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" data-toggle="${s.id}" title="${s.visible?'Hide':'Show'} section">${s.visible?'◉':'○'}</button></div>`).join('');
+ if(!state.sections.length){
+  const starterOptions=getSectionStarterOptions();
+  $('sectionList').innerHTML=`<div class="section-empty"><strong>No sections yet</strong><p>Start with a Summary or Experience section to build your first resume.</p><div class="section-empty-actions">${starterOptions.map(option=>`<button class="btn soft small" type="button" data-add="${option.type}">${option.label}</button>`).join('')}</div></div>`;
+  return;
+ }
+ $('sectionList').innerHTML=state.sections.map(s=>`<div class="section-row ${s.id===selectedId?'active':''}" draggable="true" data-section-row="${$esc(s.id)}"><span class="grip" aria-hidden="true">⠿</span><span class="sect-name">${$esc(s.title)}</span><button class="vis" type="button" data-toggle="${$esc(s.id)}" title="${s.visible?'Hide':'Show'} section" aria-label="${s.visible?'Hide':'Show'} ${$esc(s.title)}">${s.visible?'◉':'○'}</button><button class="section-delete" type="button" data-delete-section="${$esc(s.id)}" title="Delete ${$esc(s.title)}" aria-label="Delete ${$esc(s.title)}">×</button></div>`).join('');
+}
+function deleteSectionById(id){
+ const section=state.sections.find(item=>item.id===id);
+ if(!section)return;
+ if(!window.confirm(`Delete “${section.title}” from this resume? This removes the section and its contents.`))return;
+ transact(()=>{state.sections=state.sections.filter(item=>item.id!==id);delete state.positions[id];if(selectedId===id)selectedId=null});
+ toast('Section deleted.');
 }
 
 /* ---------- Sheet construction ---------- */
@@ -365,7 +628,7 @@ function appendAtom(shell,a,st,s){
  const entryIndex=a.e&&s.entries?s.entries.indexOf(a.e):-1;
  if(a.k==='entry'){
   el=document.createElement('div');el.className='entry';
-  el.innerHTML=`<div class="entry-top"><span class="entry-title" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="role" title="Click to edit role">${$esc(a.e.role)}</span><span class="entry-date" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="date" title="Click to edit dates">${$esc(a.e.date)}</span></div>${a.e.company?`<div class="entry-sub" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="company" title="Click to edit organization">${$esc(a.e.company)}</div>`:''}`;
+  if(!a.continuation)el.innerHTML=`<div class="entry-top"><span class="entry-title" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="role" title="Click to edit role">${$esc(a.e.role)}</span><span class="entry-date" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="date" title="Click to edit dates">${$esc(a.e.date)}</span></div>${a.e.company?`<div class="entry-sub" contenteditable="true" spellcheck="true" data-section-id="${$esc(s.id)}" data-entry="${entryIndex}" data-entry-field="company" title="Click to edit organization">${$esc(a.e.company)}</div>`:''}`;
   body.appendChild(el);st.ul=null;
  }else if(a.k==='li'){
   if(!st.ul){const last=body.lastElementChild;st.ul=document.createElement((s.listStyle||'bullet')==='number'?'ol':'ul');st.ul.className='pointer-list';(last||body).appendChild(st.ul)}
@@ -410,7 +673,7 @@ function flowSections(root,tmpl){
     if(fits(cur.si,cur.pi)){i++;continue}
     el.remove();lastSi=cur.si;cur=null;cont=true;
    }
-   const first=a.k==='li'?{k:'entry',e:a.e,first:a.t,cont:true}:a;
+   const first=cont&&a.k==='li'?{k:'entry',e:a.e,continuation:true}:a;
    let placed=null;
    if(!cont){
     const order=two?[pref,1-pref]:[0];
@@ -420,6 +683,7 @@ function flowSections(root,tmpl){
    if(!placed){
     const si=lastSi;streams[si].page++;if(streams[si].page>=pages.length)addPage();
     placed=attempt(si,streams[si].page,s,cont,first,true);   /* forced: a single block taller than a page is kept, never dropped */
+    if(cont&&a.k==='li')appendAtom(placed.shell,a,placed.st,s);
    }
    cur=placed;i++;
   }
@@ -577,7 +841,7 @@ function updateProTemplatePreviewAllowance({checking=false,error=false}={}){
 /* ---------- Inspector ---------- */
 function field(label,key,value,type='text',extra=''){return `<div class="field"><label>${label}</label><input data-profile="${key}" type="${type}" value="${$esc(value)}" ${extra}></div>`}
 function renderInspector(){
- const s=sectionById(selectedId),d=state.design,tmplHasPhoto=!!activeTemplate().photo;let h=`<div class="inspector-head"><h2>Design & properties</h2><button class="size-btn" data-panel-size="-24" title="Decrease panel width">−</button><button class="size-btn" data-panel-size="24" title="Increase panel width">＋</button><button class="size-btn" id="collapsePanel" title="Collapse / expand">⇥</button></div>
+ const s=sectionById(selectedId),d=state.design,tmplHasPhoto=!!activeTemplate().photo;let h=`<div class="inspector-head"><h2>Design & properties</h2></div>
  <div class="tabs rtabs" role="tablist" aria-label="Properties"><button class="tab ${rightTab==='design'?'active':''}" role="tab" aria-selected="${rightTab==='design'}" data-rtab="design">Design & properties</button><button class="tab ${rightTab==='section'?'active':''}" role="tab" aria-selected="${rightTab==='section'}" data-rtab="section">Selected section</button></div>
  ${rightTab==='design'?`<div class="field"><label>Name & header alignment</label><div class="seg" role="group" aria-label="Header alignment">${[['','Template'],['left','Left'],['center','Center'],['right','Right']].map(([v,l])=>`<button type="button" data-halign="${v}" class="${(d.headerAlign||'')===v?'active':''}" aria-pressed="${(d.headerAlign||'')===v}">${l}</button>`).join('')}</div></div>
  <div class="rule"></div>
@@ -598,12 +862,14 @@ function renderInspector(){
  if(rightTab==='section'&&s){
    h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
    if(s.entries){
-     h+=s.entries.map((e,i)=>`<div style="border:1px solid var(--line);border-radius:8px;padding:9px;margin-bottom:9px"><b style="font-size:11px">Entry ${i+1}</b><div class="field"><label>Role / qualification</label><input data-entry="role" data-index="${i}" value="${$esc(e.role)}"></div><div class="field"><label>Company / institution</label><input data-entry="company" data-index="${i}" value="${$esc(e.company)}"></div><div class="field"><label>Date</label><input data-entry="date" data-index="${i}" value="${$esc(e.date)}"></div><div class="field"><label>Details (one bullet per line)</label><textarea data-entry="details" data-index="${i}">${$esc(e.details)}</textarea></div><button class="btn danger small" data-remove-entry="${i}">Remove entry</button></div>`).join('');
+    h+=s.entries.map((e,i)=>`<details class="inspector-entry"${i===0?' open':''}><summary><span>Entry ${i+1}</span><span class="inspector-entry-title" data-entry-summary="${i}">${$esc(e.role||e.company||'Add entry details')}</span></summary><div class="inspector-entry-content"><div class="field"><label>Role / qualification</label><input data-entry="role" data-index="${i}" value="${$esc(e.role)}"></div><div class="field"><label>Company / institution</label><input data-entry="company" data-index="${i}" value="${$esc(e.company)}"></div><div class="field"><label>Date</label><input data-entry="date" data-index="${i}" value="${$esc(e.date)}"></div><div class="field"><label>Details</label><div class="detail-bullet-list" data-entry-details="${i}">${renderDetailInputs(e,i)}</div><button class="btn outline small" type="button" data-add-detail-line="${i}">＋ Add bullet</button></div><button class="btn danger small" data-remove-entry="${i}">Remove entry</button></div></details>`).join('');
      h+='<button class="btn outline small" id="addEntry">＋ Add entry</button>';
-   }else h+=`<div class="field"><label>Content (use new lines for paragraphs; comma-separated skills work too)</label><textarea id="sectionContent">${$esc(s.content||'')}</textarea></div>`;
+  }else if(s.type!=='skills'&&s.listStyle!=='none')h+=`<div class="field"><label>Pointer lines</label><div class="detail-bullet-list" data-pointer-lines="${$esc(s.id)}">${renderPointerInputs(s)}</div><button class="btn outline small" type="button" data-add-pointer-line="${$esc(s.id)}">＋ Add line</button></div>`;
+  else h+=`<div class="field"><label>Content (use new lines for paragraphs; comma-separated skills work too)</label><textarea id="sectionContent">${$esc(s.content||'')}</textarea></div>`;
    h+='<div class="field-row" style="margin-top:12px"><button class="btn outline small" id="duplicateSection">Duplicate section</button><button class="btn danger small" id="deleteSection">Delete section</button></div>';
  }else if(rightTab==='section')h+='<div class="small-note">Choose a section in the list or click a section on the resume to edit its content.</div>';
  $('inspector').innerHTML=h;
+ $('inspector').querySelectorAll('.inspector-entry').forEach((entry,index)=>{entry.open=inspectorEntriesExpanded||index===0});
  $('inspector').querySelectorAll('[data-profile]').forEach(el=>el.addEventListener('input',()=>{state.profile[el.dataset.profile]=el.value;saveLocal();document.querySelectorAll('[data-profile-field]').forEach(sheetField=>{if(sheetField.dataset.profileField===el.dataset.profile&&sheetField!==document.activeElement)sheetField.textContent=el.value})}));
  $('inspector').querySelectorAll('[data-design]').forEach(el=>el.addEventListener('change',()=>{
   const k=el.dataset.design;let v;
@@ -615,22 +881,56 @@ function renderInspector(){
  const photo=$('photoInput');photo?.addEventListener('change',()=>{const f=photo.files&&photo.files[0];if(!f)return;if(!f.type.startsWith('image/')||f.size>8*1024*1024){toast('Choose an image under 8 MB');return}const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const scale=Math.min(1,500/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,im.width*scale);c.height=Math.max(1,im.height*scale);c.getContext('2d').drawImage(im,0,0,c.width,c.height);transact(()=>state.profile.photo=c.toDataURL('image/jpeg',.84))};im.onerror=()=>toast('That image could not be read');im.src=String(r.result)};r.readAsDataURL(f)});
  $('removePhoto')?.addEventListener('click',()=>transact(()=>state.profile.photo=''));
  $('sectionTitle')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.title=e.target.value||'Untitled section';saveLocal();syncSheetFields();});
- $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();});
+ $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();renderInspector();});
  $('sectionContent')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.content=e.target.value;saveLocal();syncSheetFields();});
- $('inspector').querySelectorAll('[data-entry]').forEach(el=>el.addEventListener('input',()=>{const x=sectionById(selectedId),i=+el.dataset.index;if(!x?.entries?.[i])return;x.entries[i][el.dataset.entry]=el.value;saveLocal();syncSheetFields();if(el.dataset.entry==='details')renderSheets();}));
+ $('inspector').querySelectorAll('[data-entry]').forEach(el=>el.addEventListener('input',()=>{const x=sectionById(selectedId),i=+el.dataset.index;if(!x?.entries?.[i])return;x.entries[i][el.dataset.entry]=el.value;if(el.dataset.entry==='role'||el.dataset.entry==='company')updateInspectorEntryTitle(i,x.entries[i]);saveLocal();syncSheetFields();}));
+ $('inspector').oninput=event=>{
+  const detailInput=event.target.closest('[data-entry-detail-line]');
+  if(detailInput){const x=sectionById(selectedId),i=+detailInput.dataset.index,lineIndex=+detailInput.dataset.line;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details[lineIndex]=detailInput.value;x.entries[i].details=details.join('\n');saveLocal();renderSheets();return}
+  const pointerInput=event.target.closest('[data-section-pointer-line]');
+  if(pointerInput){const section=sectionById(pointerInput.dataset.sectionId),lineIndex=+pointerInput.dataset.line;if(!section)return;const contentLines=detailLines(section.content);contentLines[lineIndex]=pointerInput.value;section.content=contentLines.join('\n');saveLocal();renderSheets()}
+ };
+ $('inspector').onkeydown=event=>{
+  if(event.key!=='Enter')return;
+  const detailInput=event.target.closest('[data-entry-detail-line]');
+  if(detailInput){event.preventDefault();const x=sectionById(selectedId),i=+detailInput.dataset.index,lineIndex=+detailInput.dataset.line;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details[lineIndex]=detailInput.value;x.entries[i].details=details.join('\n');insertEntryDetailLine(i,lineIndex);return}
+  const pointerInput=event.target.closest('[data-section-pointer-line]');
+  if(pointerInput){event.preventDefault();const section=sectionById(pointerInput.dataset.sectionId),lineIndex=+pointerInput.dataset.line;if(!section)return;const contentLines=detailLines(section.content);contentLines[lineIndex]=pointerInput.value;section.content=contentLines.join('\n');insertPointerLine(section.id,lineIndex)}
+ };
+ $('inspector').onclick=event=>{
+  const detailButton=event.target.closest('[data-remove-detail-line]');
+  if(detailButton){const x=sectionById(selectedId),i=+detailButton.dataset.index,lineIndex=+detailButton.dataset.removeDetailLine;if(!x?.entries?.[i])return;const details=detailLines(x.entries[i].details);details.splice(lineIndex,1);if(!details.length)details.push('');x.entries[i].details=details.join('\n');saveLocal();const list=$('inspector').querySelector(`[data-entry-details="${i}"]`);if(list)list.innerHTML=renderDetailInputs(x.entries[i],i);renderSheets();$('inspector').querySelector(`[data-entry-detail-line][data-index="${i}"][data-line="${Math.min(lineIndex,details.length-1)}"]`)?.focus();return}
+  const pointerButton=event.target.closest('[data-remove-pointer-line]');
+  if(pointerButton){const section=sectionById(pointerButton.dataset.sectionId),lineIndex=+pointerButton.dataset.removePointerLine;if(!section)return;const contentLines=detailLines(section.content);contentLines.splice(lineIndex,1);if(!contentLines.length)contentLines.push('');section.content=contentLines.join('\n');saveLocal();const list=$('inspector').querySelector(`[data-pointer-lines="${section.id}"]`);if(list)list.innerHTML=renderPointerInputs(section);renderSheets();$('inspector').querySelector(`[data-section-pointer-line][data-section-id="${section.id}"][data-line="${Math.min(lineIndex,contentLines.length-1)}"]`)?.focus();}
+ };
+ $('inspector').querySelectorAll('[data-add-pointer-line]').forEach(button=>button.addEventListener('click',()=>insertPointerLine(button.dataset.addPointerLine)));
+ $('inspector').querySelectorAll('[data-add-detail-line]').forEach(button=>button.addEventListener('click',()=>insertEntryDetailLine(+button.dataset.addDetailLine)));
  $('inspector').querySelectorAll('[data-remove-entry]').forEach(el=>el.addEventListener('click',()=>transact(()=>{const x=sectionById(selectedId);if(x)x.entries.splice(+el.dataset.removeEntry,1)})));
  $('addEntry')?.addEventListener('click',()=>transact(()=>{const x=sectionById(selectedId);if(x)x.entries.push({role:'New role',company:'Organization',date:'Year',details:'Add details here.'})}));
  $('duplicateSection')?.addEventListener('click',()=>transact(()=>{const i=state.sections.findIndex(x=>x.id===selectedId);if(i>=0){const n=deep(state.sections[i]);n.id=uid();n.title+=' (copy)';state.sections.splice(i+1,0,n);selectedId=n.id}}));
- $('deleteSection')?.addEventListener('click',()=>{if(confirm('Delete this section?'))transact(()=>{state.sections=state.sections.filter(x=>x.id!==selectedId);delete state.positions[selectedId];selectedId=null})});
- $('inspector').querySelectorAll('[data-panel-size]').forEach(b=>b.addEventListener('click',()=>resizePanel(+b.dataset.panelSize)));
- $('collapsePanel')?.addEventListener('click',togglePanel);
+ $('deleteSection')?.addEventListener('click',()=>deleteSectionById(selectedId));
  $('inspector').querySelectorAll('[data-rtab]').forEach(b=>b.addEventListener('click',()=>setRightTab(b.dataset.rtab)));
  $('inspector').querySelectorAll('[data-palign]').forEach(b=>b.addEventListener('click',()=>transact(()=>{state.design.photoAlign=b.dataset.palign})));
  $('inspector').querySelectorAll('[data-halign]').forEach(b=>b.addEventListener('click',()=>transact(()=>{state.design.headerAlign=b.dataset.halign})));
 }
 const LW=[200,420],RW=[235,480];
-function applyPanels(){const L=$('layout'),r=document.documentElement.style;L.classList.toggle('collapsed-l',leftCollapsed);L.classList.toggle('collapsed-r',collapsed);r.setProperty('--lw',(leftCollapsed?36:leftWidth)+'px');r.setProperty('--rw',(collapsed?36:panelWidth)+'px');
- const cl=$('collapseLeft');if(cl)cl.textContent=leftCollapsed?'⇥':'⇤'}
+function applyPanels(){
+ const L=$('layout'),r=document.documentElement.style;
+ const leftToggle=$('toggleLeftPanel'),rightToggle=$('toggleRightPanel');
+ L.classList.toggle('collapsed-l',leftCollapsed);L.classList.toggle('collapsed-r',collapsed);
+ r.setProperty('--lw',(leftCollapsed?36:leftWidth)+'px');
+ r.setProperty('--rw',(collapsed?36:panelWidth)+'px');
+ if(leftToggle){
+  leftToggle.classList.toggle('is-collapsed',leftCollapsed);
+  leftToggle.setAttribute('aria-label',leftCollapsed?'Show left panel':'Hide left panel');
+  leftToggle.title=leftCollapsed?'Show left panel':'Hide left panel';
+ }
+ if(rightToggle){
+  rightToggle.classList.toggle('is-collapsed',collapsed);
+  rightToggle.setAttribute('aria-label',collapsed?'Show right panel':'Hide right panel');
+  rightToggle.title=collapsed?'Show right panel':'Hide right panel';
+ }
+}
 function resizePanel(delta){collapsed=false;panelWidth=Math.max(RW[0],Math.min(RW[1],panelWidth+delta));applyPanels();savePrefs()}
 function togglePanel(){collapsed=!collapsed;applyPanels();savePrefs()}
 function toggleLeft(){leftCollapsed=!leftCollapsed;applyPanels();savePrefs()}
@@ -640,40 +940,86 @@ function savePrefs(){try{localStorage.setItem('resumeStudioUI',JSON.stringify({l
 function loadPrefs(){try{const u=JSON.parse(localStorage.getItem('resumeStudioUI')||'null');if(u){leftWidth=clamp(u.leftWidth,LW[0],LW[1],260);panelWidth=clamp(u.panelWidth,RW[0],RW[1],300);leftCollapsed=!!u.leftCollapsed;collapsed=!!u.collapsed;leftTab=u.leftTab==='sections'?'sections':'templates';rightTab=u.rightTab==='section'?'section':'design';onboardingDismissed=u.onboardingDismissed===true}}catch(e){}}
 function render(){renderTemplates();renderSectionList();renderSheets();renderInspector();$('docName').value=state.docName;$('pageLayout').value=state.layout;$('editMode').value=state.mode;updateUndoButton()}
 /* Selecting only toggles highlight classes: no re-layout, so the page never jumps while you click around. */
-function selectSection(id){selectedId=id;rightTab='section';renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
-function addSection(type,title,content){const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};if(['experience','education','projects'].includes(type))s.entries=[{role:type==='education'?'Degree / qualification':type==='projects'?'Project name':'Job title',company:'Organization',date:'Year',details:'Add one detail per line.'}];else s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');state.sections.push(s);selectedId=s.id}
+function selectSection(id,expandEntries=false){selectedId=id;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
+function addSection(type,title,content){
+ const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};
+ if(['experience','education','projects'].includes(type)){
+  const defaultRole = type==='education'?'Degree / qualification':type==='projects'?'Project name':'Role / milestone';
+  s.entries=[{role:defaultRole,company:'Organization',date:'Year',details:'Add one detail per line.'}];
+ } else {
+  s.content=content||(type==='skills'?'Skill one, Skill two, Skill three':'Add your content here.');
+ }
+ state.sections.push(s);selectedId=s.id;rightTab='section';return s;
+}
 function download(filename,blob){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
 function exportJSON(){download((state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'.json',new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));toast('JSON backup downloaded')}
-function importJSON(file){if(file.size>5*1024*1024){alert('Could not load project: JSON backups must be smaller than 5 MB.');return}const r=new FileReader();r.onload=()=>{try{const next=normalizeState(JSON.parse(r.result));localPersistenceBlocked=false;recoverySnapshot=null;$('recoveryBanner').hidden=true;transact(()=>{state=next;selectedId=null});toast('Project loaded')}catch(e){alert('Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message))}};r.onerror=()=>alert('Could not read that file.');r.readAsText(file)}
+async function importJSON(file){
+ if(file.size>5*1024*1024){
+  await alertModern({ title: 'Import failed', message: 'Could not load project: JSON backups must be smaller than 5 MB.' });
+  return;
+ }
+ const r=new FileReader();
+ r.onload=async()=>{
+  try{
+   const next=normalizeState(JSON.parse(r.result));
+   localPersistenceBlocked=false;
+   recoverySnapshot=null;
+   $('recoveryBanner').hidden=true;
+   transact(()=>{state=next;selectedId=null});
+   toast('Project loaded');
+  }catch(e){
+   await alertModern({ title: 'Import failed', message: 'Could not load project: '+(e instanceof SyntaxError?'the file is not valid JSON.':e.message) });
+  }
+ };
+ r.onerror=async()=>{
+  await alertModern({ title: 'Import failed', message: 'Could not read that file.' });
+ };
+ r.readAsText(file);
+}
 function showRecoveryNotice(recovery){
  if(!recovery.error)return;
  recoverySnapshot=recovery;
  localPersistenceBlocked=true;
  const recoveredOlder=Boolean(recovery.state);
- $('recoveryTitle').textContent=recovery.storageUnavailable?'Browser storage is unavailable':recoveredOlder?'A saved resume could not be read':'Saved resume could not be recovered';
- $('recoveryMessage').textContent=recovery.storageUnavailable
-  ?'The browser did not allow access to saved resume data. Autosave is paused. Check your browser storage settings and reload before continuing.'
+ $('recoveryTitle').textContent=recovery.storageUnavailable
+  ?'Browser backup is unavailable'
   :recoveredOlder
-  ?'A valid older browser copy was loaded. Autosave is paused so it will not overwrite the unreadable saved data. Download the saved data or explicitly continue with the recovered copy.'
-  :'Your saved browser data could not be read. Autosave is paused to protect it. Download a copy before starting again or importing a backup.';
- $('resolveRecovery').textContent=recoveredOlder?'Continue with recovered resume':'Start with a new resume';
+   ?'Recovered a saved draft'
+   :'Found an older saved draft';
+ $('recoveryMessage').textContent=recovery.storageUnavailable
+  ?'This browser cannot read or write local backups right now. Export a JSON copy before continuing so your work is not lost.'
+  :recoveredOlder
+   ?'We found a saved draft from this browser. Continue with it or start fresh, and keep this backup if you want a safety copy.'
+   :'A browser copy was found, but it could not be read cleanly. Continue with the recovered draft or create a fresh resume.';
+ $('resolveRecovery').textContent=recoveredOlder?'Use recovered draft':'Start fresh';
  $('resolveRecovery').hidden=Boolean(recovery.storageUnavailable);
  $('downloadRecoveryBackup').hidden=!recovery.raw;
  $('recoveryBanner').hidden=false;
- $('saveState').textContent='Local recovery needed';
+ setSaveState('Recovered draft ready');
 }
 function resolveLocalRecovery(){
  if(!recoverySnapshot)return;
  if(!recoverySnapshot.state&&!confirm('Start a new resume and replace the unreadable browser data? Download the saved data first if you may need it.'))return;
  try{
   if(!recoverySnapshot.state)state=fresh();
-  localStorage.setItem('resumeStudioV2',JSON.stringify(state));
+  if(cloudUser){
+   selectedId=null;
+   recoverySnapshot=null;
+   localPersistenceBlocked=false;
+   $('recoveryBanner').hidden=true;
+   render();
+   cloudDraftDirty=true;
+   scheduleCloudSave();
+   setSaveState('Saving…');
+   return;
+  }
+  guestResumeStorage.save(state);
   selectedId=null;
   recoverySnapshot=null;
   localPersistenceBlocked=false;
   $('recoveryBanner').hidden=true;
   render();
-  $('saveState').textContent='Saved in this browser';
+  setSaveState(currentSaveStateLabel());
   scheduleCloudSave();
  }catch(error){
   console.error('Unable to replace unreadable resume data in this browser.',error);
@@ -727,6 +1073,51 @@ function addPDFLinks(doc,sheet){
   }
  });
 }
+function pdfColor(value){
+ const match=/^rgba?\((.+)\)$/i.exec(value.trim());if(!match)return null;
+ const parts=match[1].split(/[\s,/]+/).filter(Boolean);
+ if(parts.length<3)return null;
+ const channels=parts.slice(0,3).map(part=>parseFloat(part)*(part.endsWith('%')?2.55:1));
+ const alphaText=parts[3],alpha=alphaText===undefined?1:parseFloat(alphaText)*(alphaText.endsWith('%')?.01:1);
+ if(channels.some(channel=>!Number.isFinite(channel))||!Number.isFinite(alpha)||alpha<=0)return null;
+ return channels.map(channel=>Math.round(channel*alpha+255*(1-alpha)));
+}
+function addPdfDecorations(doc,sheet){
+ const bounds=sheet.getBoundingClientRect(),scaleX=210/bounds.width,scaleY=297/bounds.height;
+ const elements=[sheet,...sheet.querySelectorAll('*')];
+ for(const element of elements){
+  if(element.tagName==='IMG')continue;
+  const rect=element.getBoundingClientRect();
+  if(!rect.width||!rect.height)continue;
+  const x=(rect.left-bounds.left)*scaleX,y=(rect.top-bounds.top)*scaleY,w=rect.width*scaleX,h=rect.height*scaleY;
+  const style=getComputedStyle(element),background=pdfColor(style.backgroundColor);
+  if(background){doc.setFillColor(...background);doc.rect(x,y,w,h,'F')}
+  for(const [side,startX,startY,endX,endY] of [
+   ['Top',x,y,x+w,y],['Right',x+w,y,x+w,y+h],['Bottom',x,y+h,x+w,y+h],['Left',x,y,x,y+h]
+  ]){
+   const width=parseFloat(style[`border${side}Width`])||0,color=pdfColor(style[`border${side}Color`]);
+   if(!width||!color)continue;
+   doc.setDrawColor(...color);doc.setLineWidth(width*(scaleX+scaleY)/2);doc.line(startX,startY,endX,endY);
+  }
+ }
+ for(const image of sheet.querySelectorAll('img')){
+  if(!image.complete||!image.naturalWidth||!image.naturalHeight)throw new Error('A profile photo could not be loaded for the PDF. Remove it or try again.');
+  const rect=image.getBoundingClientRect();
+  if(!rect.width||!rect.height)continue;
+  const side=Math.min(image.naturalWidth,image.naturalHeight);
+  const sourceX=(image.naturalWidth-side)/2,sourceY=(image.naturalHeight-side)/2;
+  const canvas=document.createElement('canvas');
+  canvas.width=side;canvas.height=side;
+  const context=canvas.getContext('2d');
+  const style=getComputedStyle(image),round=style.borderTopLeftRadius.includes('%')
+   ||parseFloat(style.borderTopLeftRadius)>=Math.min(rect.width,rect.height)/2;
+  if(round){context.beginPath();context.arc(side/2,side/2,side/2,0,Math.PI*2);context.clip()}
+  context.drawImage(image,sourceX,sourceY,side,side,0,0,side,side);
+  const format=round?'PNG':'JPEG',imageData=canvas.toDataURL(`image/${format.toLowerCase()}`,.84);
+  doc.addImage(imageData,format,(rect.left-bounds.left)*scaleX,(rect.top-bounds.top)*scaleY,rect.width*scaleX,rect.height*scaleY,undefined,'MEDIUM');
+  canvas.width=0;canvas.height=0;
+ }
+}
 async function exportPDF(templateId=null){
  const originalState=state,originalSelection=selectedId,originalZoom=zoom;
  if(templateId){
@@ -754,26 +1145,18 @@ async function exportPDF(templateId=null){
  try{
   $('sheets').classList.add('exporting');sheets.forEach(sheet=>sheet.style.transform='none');
   if(document.fonts&&document.fonts.ready)await document.fonts.ready;
-  const [{default:html2canvas},{jsPDF}]=await Promise.all([import('html2canvas'),import('jspdf')]);
+  const {jsPDF}=await import('jspdf');
   if(generation!==pdfPreviewGeneration)return;
-  $('sheets').classList.add('pdf-rasterizing');
-  try{
-   for(let i=0;i<sheets.length;i++){
-    const canvas=await html2canvas(sheets[i],{scale:RESUME_PDF_RENDER_SCALE,backgroundColor:'#ffffff',useCORS:true,logging:false,scrollX:0,scrollY:0});
-    if(generation!==pdfPreviewGeneration)return;
-    renderedPages.push({canvas,sheet:sheets[i]});
-   }
-  }finally{$('sheets').classList.remove('pdf-rasterizing')}
+  for(const sheet of sheets){
+   const images=[...sheet.querySelectorAll('img')];
+   await Promise.all(images.map(image=>image.decode()));
+   if(generation!==pdfPreviewGeneration)return;
+   renderedPages.push({sheet});
+  }
   const {blob}=await buildResumePdf(jsPDF,renderedPages,{
+   addPdfDecorations,
    addSelectableText,
    addPDFLinks,
-   resizeCanvas:(source,scale)=>{
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(source.width*scale));
-    canvas.height=Math.max(1,Math.round(source.height*scale));
-    canvas.getContext('2d',{alpha:false}).drawImage(source,0,0,canvas.width,canvas.height);
-    return canvas;
-   }
   });
   if(generation!==pdfPreviewGeneration)return;
   showPdfPreview(blob,`${(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')}.pdf`,sheets.length,'Preview your resume PDF');
@@ -781,7 +1164,6 @@ async function exportPDF(templateId=null){
   console.error(e);
   status.textContent=e.message||'PDF preview could not be created. Close this window and try again.';
  }finally{
-  renderedPages.forEach(({canvas})=>{canvas.width=0;canvas.height=0});
   $('sheets').classList.remove('exporting');
   btn.disabled=false;
   btn.textContent='Export PDF';
@@ -795,7 +1177,6 @@ function openPdfPreview(){
  $('closePdfPreview').focus();
 }
 function showPdfPreview(blob,filename,pageCount,title){
- if(blob.size>=MAX_PDF_BYTES)throw new Error('This PDF is larger than 500 KB and cannot be downloaded. Reduce the resume content and try again.');
  if(pdfPreviewUrl)URL.revokeObjectURL(pdfPreviewUrl);
  pdfPreviewBlob=blob;
  pdfPreviewFilename=filename;
@@ -810,8 +1191,9 @@ function showPdfPreview(blob,filename,pageCount,title){
     ? ' · Free Pro-template allowance will be checked when downloading'
     : ` · ${proTemplateDownloadsRemaining} free Pro-template PDF download${proTemplateDownloadsRemaining===1?'':'s'} remaining`
   : '';
- $('pdfPreviewStatus').textContent=`${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading.`;
+ $('pdfPreviewStatus').textContent=`Text is selectable and searchable. ${pageCount} A4 page${pageCount===1?'':'s'}${trialText}. Review before downloading — the button is ready when you are.`;
  $('downloadPdfPreview').disabled=false;
+ $('downloadPdfPreview').textContent='Download PDF';
 }
 function closePdfPreview(){
  pdfPreviewGeneration++;
@@ -829,6 +1211,7 @@ async function downloadPreviewPdf(){
  const button=$('downloadPdfPreview');
  const usesProTemplate=pdfPreviewUsesProTemplate;
  button.disabled=true;
+ button.textContent='Preparing download…';
  try{
   if(usesProTemplate&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){
    if(!cloudUser){
@@ -857,6 +1240,7 @@ async function downloadPreviewPdf(){
    ? `${proTemplateDownloadsRemaining} free Pro-template PDF downloads remaining`
    : 'PDF downloaded');
  }finally{
+  button.textContent='Download PDF';
   if(pdfPreviewBlob)button.disabled=false;
  }
 }
@@ -1132,11 +1516,9 @@ function openAts(){
  $('atsModalBg').classList.add('show');
  $('atsModalBg').setAttribute('aria-hidden','false');
  $('jobDescription').focus();
- runAtsChecks({promptUpgrade:false});
 }
 function closeAts(){
  ++atsCheckGeneration;
- window.clearTimeout(window.atsDebounce);
  $('runAtsBtn').disabled=false;
  $('runAtsBtn').textContent='Run checks';
  $('atsModalBg').classList.remove('show');
@@ -1303,9 +1685,8 @@ function runAtsChecks({promptUpgrade=true}={}){
  const generation=++atsCheckGeneration;
  const runButton=$('runAtsBtn');
  const jobText=$('jobDescription').value.trim();
- const hasAdvancedAccess=canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS,verifiedEntitlement);
- const lockedJobMatch=Boolean(jobText&&!hasAdvancedAccess);
- if(lockedJobMatch&&promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Compare resume skills with a target role, review matched and missing terms, and see role-specific diagnostics.');
+ const lockedJobMatch=shouldPromptForJobDescriptionAtsUpgrade(jobText,verifiedEntitlement);
+ if(lockedJobMatch&&promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Free includes resume-only ATS checks. Comparing your resume with a job description, including another role, requires Pro.');
  const stages=[
   {label:'Reading resume sections',detail:'Collecting the details available in your resume.'},
   {label:'Checking structure and completeness',detail:'Reviewing contact details, sections, and formatting.'},
@@ -1346,15 +1727,20 @@ $('templates').addEventListener('click',e=>{
  if(isProTemplate(b.dataset.template)&&!canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement)){void requestProTemplate(b.dataset.template);return}
  if(b.dataset.template===state.template)return;
  transact(()=>{state.template=b.dataset.template;const t=activeTemplate();state.layout=t.layout;state.design.accent=t.accent;selectedId=null});toast('Applied '+activeTemplate().name)});
-$('sectionList').addEventListener('click',e=>{const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
+$('sectionList').addEventListener('click',e=>{const deleteButton=e.target.closest('[data-delete-section]');if(deleteButton){e.preventDefault();e.stopPropagation();deleteSectionById(deleteButton.dataset.deleteSection);return}const toggle=e.target.closest('[data-toggle]');if(toggle){transact(()=>{const s=sectionById(toggle.dataset.toggle);if(s)s.visible=!s.visible});return}const row=e.target.closest('[data-section-row]');if(row)selectSection(row.dataset.sectionRow)});
 $('sectionList').addEventListener('dragstart',e=>{const row=e.target.closest('[data-section-row]');if(!row)return;draggingId=row.dataset.sectionRow;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggingId);row.style.opacity='.5'});
 $('sectionList').addEventListener('dragend',e=>{const row=e.target.closest('[data-section-row]');if(row)row.style.opacity='1';draggingId=null});
 $('sectionList').addEventListener('dragover',e=>{if(e.target.closest('[data-section-row]')){e.preventDefault();e.dataTransfer.dropEffect='move'}});
 $('sectionList').addEventListener('drop',e=>{e.preventDefault();const row=e.target.closest('[data-section-row]'),id=e.dataTransfer.getData('text/plain');if(!row||!id||id===row.dataset.sectionRow)return;transact(()=>{const from=state.sections.findIndex(x=>x.id===id),to=state.sections.findIndex(x=>x.id===row.dataset.sectionRow);if(from<0||to<0)return;const [item]=state.sections.splice(from,1);state.sections.splice(to,0,item)})});
 const directEditSnapshots=new WeakMap();
+let reflowingDetail=false;
 function syncInspectorField(attribute,value){
  const el=$('inspector')?.querySelector(`[${attribute}]`);
  if(el&&!el.isContentEditable&&document.activeElement!==el)el.value=value;
+}
+function updateInspectorEntryTitle(index,entry){
+ const title=$('inspector')?.querySelector(`[data-entry-summary="${index}"]`);
+ if(title)title.textContent=entry.role.trim()||entry.company.trim()||`Entry ${Number(index)+1}`;
 }
 function syncSheetFields(){
  document.querySelectorAll('[data-profile-field]').forEach(el=>{const value=state.profile[el.dataset.profileField];if(value!==undefined&&el!==document.activeElement)el.textContent=value});
@@ -1366,14 +1752,20 @@ function syncInspectorForInlineEdit(el,value){
  else if(el.dataset.sectionTitle)syncInspectorField('id="sectionTitle"',value);
  else if(el.dataset.entryField==='role'||el.dataset.entryField==='company'||el.dataset.entryField==='date'){
   const panel=$('inspector')?.querySelector(`[data-entry="${el.dataset.entryField}"][data-index="${el.dataset.entry}"]`);
-  if(panel&&document.activeElement!==panel)panel.value=value;
+    if(panel&&document.activeElement!==panel)panel.value=value;
+    if(el.dataset.entryField==='role'||el.dataset.entryField==='company'){
+     const entry=sectionById(el.dataset.sectionId)?.entries?.[Number(el.dataset.entry)];
+     if(entry)updateInspectorEntryTitle(el.dataset.entry,entry);
+    }
  }
  else if(el.dataset.entryField==='detail'){
-  const panel=$('inspector')?.querySelector(`[data-entry="details"][data-index="${el.dataset.entry}"]`),section=sectionById(el.dataset.sectionId);
-  if(panel&&section?.entries?.[Number(el.dataset.entry)]&&document.activeElement!==panel)panel.value=section.entries[Number(el.dataset.entry)].details;
+  const panel=$('inspector')?.querySelector(`[data-entry-details="${el.dataset.entry}"]`),section=sectionById(el.dataset.sectionId),entry=section?.entries?.[Number(el.dataset.entry)];
+  if(panel&&entry&&!panel.contains(document.activeElement))panel.innerHTML=renderDetailInputs(entry,Number(el.dataset.entry));
  }
  else if(el.dataset.textSource!==undefined){
-  const panel=$('inspector')?.querySelector('#sectionContent');if(panel&&document.activeElement!==panel)panel.value=String(sectionById(el.dataset.sectionId)?.content||'');
+  const section=sectionById(el.dataset.sectionId),list=$('inspector')?.querySelector(`[data-pointer-lines="${el.dataset.sectionId}"]`);
+  if(list&&section&&!list.contains(document.activeElement))list.innerHTML=renderPointerInputs(section);
+  else{const panel=$('inspector')?.querySelector('#sectionContent');if(panel&&document.activeElement!==panel)panel.value=String(section?.content||'')}
  }
 }
 function directEditValue(el){
@@ -1383,12 +1775,12 @@ function directEditValue(el){
  value=value.replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/\n{2,}$/g,'\n');
  return value;
 }
-function caretOffsetWithin(el){
+function caretOffsetWithin(el,includeLineBreaks=false){
  const selection=window.getSelection();if(!selection||!selection.rangeCount||!el.contains(selection.anchorNode))return directEditValue(el).length;
  if(selection.anchorNode.nodeType===Node.TEXT_NODE && selection.anchorNode.parentNode===el)return selection.anchorOffset;
  const range=selection.getRangeAt(0).cloneRange();range.selectNodeContents(el);range.setEnd(selection.anchorNode,selection.anchorOffset);
- const prefix=range.toString().replace(/\u00a0/g,' ').replace(/\n/g,'');
- return prefix.length;
+ const prefix=range.toString().replace(/\u00a0/g,' ');
+ return includeLineBreaks?prefix.length:prefix.replace(/\n/g,'').length;
 }
 function focusTextLine(sectionId,lineIndex,caretOffset=0){
  requestAnimationFrame(()=>{
@@ -1397,9 +1789,31 @@ function focusTextLine(sectionId,lineIndex,caretOffset=0){
   if(target.firstChild&&caretOffset>0&&target.firstChild.nodeType===Node.TEXT_NODE){range.setStart(target.firstChild,Math.min(caretOffset,target.firstChild.textContent.length));range.collapse(true)}else{range.collapse(true)}selection.removeAllRanges();selection.addRange(range);
  });
 }
+function reflowOverflowingDetail(el,force=false){
+ if(state.mode!=='flow')return;
+ requestAnimationFrame(()=>{
+  if(!el.isConnected||document.activeElement!==el)return;
+  const area=el.closest('.sheet')?.querySelector('.sections-area');
+  if(!area)return;
+  const limit=area.getBoundingClientRect().bottom-parseFloat(getComputedStyle(area).paddingBottom);
+  if(!force&&el.getBoundingClientRect().bottom<=limit+.5)return;
+  const sectionId=el.dataset.sectionId,entryIndex=el.dataset.entry,detailIndex=Number(el.dataset.detailIndex);
+  const caret=caretOffsetWithin(el,true),snapshot=directEditSnapshots.get(el);
+  reflowingDetail=true;
+  try{renderSheets()}finally{reflowingDetail=false}
+  const moved=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).find(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex&&Number(item.dataset.detailIndex)===detailIndex);
+  if(!moved)return;
+  if(snapshot)directEditSnapshots.set(moved,snapshot);
+  moved.focus();
+  const range=document.createRange(),selection=window.getSelection(),textNode=moved.firstChild;
+  if(textNode?.nodeType===Node.TEXT_NODE)range.setStart(textNode,Math.min(caret,textNode.textContent.length));
+  else range.selectNodeContents(moved);
+  range.collapse(true);selection?.removeAllRanges();selection?.addRange(range);
+ });
+}
 $('sheets').addEventListener('focusin',e=>{
  const el=e.target.closest('[contenteditable="true"]');if(!el)return;
- directEditSnapshots.set(el,deep(state));
+ if(!directEditSnapshots.has(el))directEditSnapshots.set(el,deep(state));
  if(!el.dataset.currentText)el.dataset.currentText=el.dataset.detailSource||el.dataset.textSource||directEditValue(el);
  if(el.dataset.entryField==='detail'&&!el.dataset.detailCount)el.dataset.detailCount='1';
 });
@@ -1422,7 +1836,7 @@ $('sheets').addEventListener('input',e=>{
    if(detailIndex>=0&&detailIndex<details.length)details.splice(detailIndex,representedCount,...replacements);
    else if(detailIndex>=0)details.splice(detailIndex,0,...replacements);
    entry.details=details.join('\n');el.dataset.detailCount=String(replacements.length||1);el.dataset.currentText=value;
-   if(replacements.length>1)requestAnimationFrame(()=>renderSheets());
+   reflowOverflowingDetail(el,replacements.length>1);
   }
   else if(el.dataset.skillIndex!==undefined){
    const skills=String(section?.content||'').split(/[,:\n]/).map(x=>x.trim()).filter(Boolean),index=Number(el.dataset.skillIndex);
@@ -1444,7 +1858,8 @@ $('sheets').addEventListener('input',e=>{
 });
 $('sheets').addEventListener('focusout',e=>{
  const el=e.target.closest('[contenteditable="true"]');if(!el)return;
- const before=directEditSnapshots.get(el);if(before&&JSON.stringify(before)!==JSON.stringify(state)){recordHistory(before);saveLocal();renderInspector();updateUndoButton();toast('Resume updated')}
+ if(reflowingDetail)return;
+ const before=directEditSnapshots.get(el);if(before&&JSON.stringify(before)!==JSON.stringify(state)){recordHistory(before);saveLocal();renderSheets();renderInspector();updateUndoButton();toast('Resume updated')}
  directEditSnapshots.delete(el);delete el.dataset.currentText;
 });
 $('sheets').addEventListener('keydown',e=>{
@@ -1465,14 +1880,9 @@ $('sheets').addEventListener('keydown',e=>{
   }
  }
  if((e.key==='Backspace'||e.key==='Delete')&&selection&&!selection.isCollapsed&&selection.rangeCount){
-  const range=selection.getRangeAt(0),selectedRoot=$('sheets').contains(range.commonAncestorContainer)&&range.commonAncestorContainer;
-  if(selectedRoot){
-   e.preventDefault();range.deleteContents();selection.removeAllRanges();
-   document.querySelectorAll('#sheets [contenteditable="true"]').forEach(editable=>editable.dispatchEvent(new Event('input',{bubbles:true})));
-   saveLocal();renderInspector();
-   const focusTarget=el.isConnected&&el.closest('[contenteditable="true"]')?el:document.querySelector('#sheets [contenteditable="true"]');
-   focusTarget?.focus();return;
-  }
+  const insideField=el.contains(selection.anchorNode)&&el.contains(selection.focusNode);
+  if(!insideField)e.preventDefault();
+  return;
  }
 
  if((e.key==='Backspace'||e.key==='Delete')&&el.dataset.textIndex!==undefined){
@@ -1499,20 +1909,77 @@ $('sheets').addEventListener('keydown',e=>{
  }
  if((e.key==='Backspace'||e.key==='Delete')&&el.dataset.entryField==='detail'){
   const value=directEditValue(el);
+  const selection=window.getSelection();
+  if(value.trim()&&selection?.isCollapsed){
+   const caret=caretOffsetWithin(el,true),backward=e.key==='Backspace',atBoundary=backward?caret===0:caret===value.length;
+   if(atBoundary){
+    e.preventDefault();
+    const sectionId=el.dataset.sectionId,entryIndex=el.dataset.entry;
+    const rows=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).filter(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex);
+    const position=rows.indexOf(el),neighbor=rows[position+(backward?-1:1)];
+    if(!neighbor)return;
+    const prior=backward?neighbor:el,next=backward?el:neighbor;
+    const priorIndex=Number(prior.dataset.detailIndex),nextIndex=Number(next.dataset.detailIndex);
+    const priorCount=Math.max(1,Number(prior.dataset.detailCount)||1),nextCount=Math.max(1,Number(next.dataset.detailCount)||1);
+    if(!Number.isInteger(priorIndex)||nextIndex!==priorIndex+priorCount)return;
+    const entry=sectionById(sectionId)?.entries?.[Number(entryIndex)],details=entry&&detailLines(entry.details);
+    if(!details||nextIndex+nextCount>details.length)return;
+    const priorText=directEditValue(prior),joined=priorText+directEditValue(next),count=priorCount+nextCount,joinedCount=Math.max(1,joined.split('\n').length);
+    details.splice(priorIndex,count,joined);entry.details=details.join('\n');
+    prior.textContent=joined;prior.dataset.detailIndex=String(priorIndex);prior.dataset.detailCount=String(joinedCount);prior.dataset.detailSource=joined;prior.dataset.currentText=joined;
+    prior.classList.toggle('blank-bullet',!joined.trim());
+    next.remove();
+    rows.filter(item=>item!==prior&&item!==next).forEach(item=>{
+     const itemIndex=Number(item.dataset.detailIndex);
+     if(Number.isFinite(itemIndex)&&itemIndex>=priorIndex+count)item.dataset.detailIndex=String(itemIndex-count+joinedCount);
+    });
+    syncInspectorForInlineEdit(prior,joined);saveLocal();
+    const editSnapshot=directEditSnapshots.get(el);
+    if(backward){
+     if(editSnapshot)directEditSnapshots.set(prior,editSnapshot);
+     directEditSnapshots.set(el,deep(state));
+     prior.focus();
+    }
+    const restoreCaret=()=>{
+     const focusTarget=prior.isConnected?prior:Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).find(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex&&Number(item.dataset.detailIndex)===priorIndex);
+     if(!focusTarget)return;
+     if(document.activeElement!==focusTarget)focusTarget.focus();
+     const textNode=focusTarget.firstChild,offset=backward?priorText.length:Math.min(caret,joined.length),range=document.createRange();
+     if(textNode?.nodeType===Node.TEXT_NODE)range.setStart(textNode,Math.min(offset,textNode.textContent.length));
+     else range.selectNodeContents(focusTarget);
+     range.collapse(true);selection.removeAllRanges();selection.addRange(range);
+    };
+    if(prior.isConnected)restoreCaret();else requestAnimationFrame(restoreCaret);
+    return;
+   }
+  }
   if(!value.trim()){
    e.preventDefault();
    const section=sectionById(el.dataset.sectionId),entry=section?.entries?.[Number(el.dataset.entry)],index=Number(el.dataset.detailIndex);
    if(entry&&Number.isInteger(index)&&index>=0){
     const details=detailLines(entry.details);
+    if(details.length<=1)return;
+    const snapshot=directEditSnapshots.get(el);
     details.splice(index,1);entry.details=details.join('\n');saveLocal();
-    const ul=el.closest('ul'),items=ul?Array.from(ul.querySelectorAll(':scope > li')):[],position=items.indexOf(el);
-    const focusIndex=Math.max(0,position-1);
-    el.remove();
-    items.filter(item=>item!==el).forEach(item=>{const itemIndex=Number(item.dataset.detailIndex);if(Number.isFinite(itemIndex)&&itemIndex>index)item.dataset.detailIndex=String(itemIndex-1)});
+    const sectionId=el.dataset.sectionId,entryIndex=el.dataset.entry;
+    const rows=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).filter(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex);
+    const position=rows.indexOf(el),backward=e.key==='Backspace';
+    const neighbor=rows[position+(backward?-1:1)]||rows[position+(backward?1:-1)];
+    const neighborIndex=neighbor?Number(neighbor.dataset.detailIndex):-1;
+    rows.filter(item=>item!==el).forEach(item=>{const itemIndex=Number(item.dataset.detailIndex);if(Number.isFinite(itemIndex)&&itemIndex>index)item.dataset.detailIndex=String(itemIndex-1)});
+    directEditSnapshots.delete(el);
+    if(snapshot&&JSON.stringify(snapshot)!==JSON.stringify(state)){recordHistory(snapshot);updateUndoButton()}
     syncInspectorForInlineEdit(el,'');
-    const remaining=ul?Array.from(ul.querySelectorAll(':scope > li')):[];
-    const focusTarget=remaining[focusIndex]||remaining[remaining.length-1]||el.closest('.entry');
-    if(focusTarget?.isContentEditable){focusTarget.focus();document.execCommand('selectAll',false,null)}
+    renderSheets();renderInspector();
+    const targetIndex=neighborIndex>index?neighborIndex-1:neighborIndex;
+    const focusTarget=Array.from(document.querySelectorAll('#sheets [data-entry-field="detail"]')).find(item=>item.dataset.sectionId===sectionId&&item.dataset.entry===entryIndex&&Number(item.dataset.detailIndex)===targetIndex);
+    if(focusTarget?.isContentEditable){
+     focusTarget.focus();
+     const range=document.createRange(),textNode=focusTarget.firstChild;
+     if(textNode?.nodeType===Node.TEXT_NODE)range.setStart(textNode,backward?textNode.textContent.length:0);
+     else range.selectNodeContents(focusTarget);
+     range.collapse(true);selection?.removeAllRanges();selection?.addRange(range);
+    }
    }
    return;
   }
@@ -1520,22 +1987,31 @@ $('sheets').addEventListener('keydown',e=>{
  if(e.key==='Enter'&&!e.shiftKey&&el.dataset.entryField==='detail'){
   e.preventDefault();
   const section=sectionById(el.dataset.sectionId),entry=section?.entries?.[Number(el.dataset.entry)];if(!entry)return;
-  const details=detailLines(entry.details),index=Number(el.dataset.detailIndex),before=directEditValue(el);
+  const details=detailLines(entry.details),index=Number(el.dataset.detailIndex),before=directEditValue(el),representedCount=Math.max(1,Number(el.dataset.detailCount)||1);
   if(!Number.isInteger(index)||index<0)return;
-  if(index<details.length)details[index]=before;
-  details.splice(index+1,0,'');
-  entry.details=details.join('\n');saveLocal();syncInspectorForInlineEdit(el,before);
+  const selection=window.getSelection(),selectionLength=selection?.rangeCount&&el.contains(selection.anchorNode)&&el.contains(selection.focusNode)?selection.toString().length:0;
+  const caret=Math.min(caretOffsetWithin(el,true),before.length),left=before.slice(0,caret),right=before.slice(caret+selectionLength);
+  details.splice(index,representedCount,left,right);
+  entry.details=details.join('\n');saveLocal();syncInspectorForInlineEdit(el,left);
   const ul=el.closest('ul');if(!ul)return;
+  el.textContent=left;el.dataset.detailSource=left;el.dataset.detailCount='1';el.dataset.currentText=left;
+  el.classList.toggle('blank-bullet',!left.trim());
   const next=document.createElement('li');
   next.contentEditable='true';next.spellcheck=true;next.title='Click to edit bullet';
-  next.dataset.sectionId=section.id;next.dataset.entry=String(el.dataset.entry);next.dataset.entryField='detail';next.dataset.detailIndex=String(index+1);  next.dataset.detailSource='';next.dataset.currentText='';next.textContent='';next.className='blank-bullet';
+  next.dataset.sectionId=section.id;next.dataset.entry=String(el.dataset.entry);next.dataset.entryField='detail';next.dataset.detailIndex=String(index+1);next.dataset.detailSource=right;next.dataset.detailCount='1';next.dataset.currentText=right;next.textContent=right;next.classList.toggle('blank-bullet',!right.trim());
   ul.insertBefore(next,el.nextElementSibling);
-  let incrementFollowing=false;
+  const indexDelta=2-representedCount;
   Array.from(ul.querySelectorAll(':scope > li')).forEach(item=>{
-   if(item===next){item.dataset.detailIndex=String(index+1);incrementFollowing=true;return}
-   if(incrementFollowing)item.dataset.detailIndex=String(Number(item.dataset.detailIndex)+1);
+   if(item===next)return;
+   const itemIndex=Number(item.dataset.detailIndex);
+   if(item!==el&&Number.isFinite(itemIndex)&&itemIndex>=index+representedCount)item.dataset.detailIndex=String(itemIndex+indexDelta);
   });
+  const editSnapshot=directEditSnapshots.get(el);
+  directEditSnapshots.set(el,deep(state));
+  if(editSnapshot)directEditSnapshots.set(next,editSnapshot);
   next.focus();
+  const range=document.createRange();range.selectNodeContents(next);range.collapse(true);
+  selection?.removeAllRanges();selection?.addRange(range);
   return;
  }
  if(e.key==='Enter'&&!e.shiftKey&&el.dataset.textSource!==undefined){
@@ -1567,7 +2043,7 @@ $('sheets').addEventListener('keydown',e=>{
 });
 $('sheets').addEventListener('paste',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;e.preventDefault();const text=(e.clipboardData||window.clipboardData).getData('text/plain').replace(/\r/g,'').replace(/\n/g,el.dataset.entryField==='detail'||el.dataset.textSource!==undefined?'\n':' ');document.execCommand('insertText',false,text)});
 $('sheets').addEventListener('cut',()=>{requestAnimationFrame(()=>{document.querySelectorAll('#sheets [contenteditable="true"]').forEach(editable=>editable.dispatchEvent(new Event('input',{bubbles:true})));saveLocal();renderInspector();updateUndoButton()})});
-$('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection)});
+ $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection,Boolean(e.target.closest('[contenteditable="true"]')))});
 $('sheets').addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch'){
   touchPoints.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -1600,7 +2076,23 @@ const finishTouchPointer=e=>{
 $('sheets').addEventListener('pointerup',finishTouchPointer);
 $('sheets').addEventListener('pointercancel',finishTouchPointer);
 function closeCustomSectionDialog(){const bg=$('modalBg');bg.classList.remove('show');bg.setAttribute('aria-hidden','true');customSectionTrigger?.focus();customSectionTrigger=null}
-document.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.add==='custom'){customSectionTrigger=b;$('modalBg').classList.add('show');$('modalBg').setAttribute('aria-hidden','false');$('customTitle').focus();return}transact(()=>addSection(b.dataset.add))}));
+function triggerQuickSectionAdd(type){
+  if(type==='custom'){customSectionTrigger=document.activeElement||null;$('modalBg').classList.add('show');$('modalBg').setAttribute('aria-hidden','false');$('customTitle').focus();return}
+  leftTab='sections';
+  setTab('sections');
+  transact(()=>addSection(type));
+  toast(type==='summary'?'Summary section added':type==='experience'?'Experience section added':'Section added');
+}
+document.addEventListener('click',event=>{
+ const trigger=event.target.closest('[data-add]');
+ if(trigger){
+  if(trigger.dataset.add==='custom'){customSectionTrigger=trigger;$('modalBg').classList.add('show');$('modalBg').setAttribute('aria-hidden','false');$('customTitle').focus();return}
+  triggerQuickSectionAdd(trigger.dataset.add);
+  return;
+ }
+ const quickTrigger=event.target.closest('[data-quick-add]');
+ if(quickTrigger){triggerQuickSectionAdd(quickTrigger.dataset.quickAdd);}
+});
 $('confirmCustom').addEventListener('click',()=>{transact(()=>addSection('custom',$('customTitle').value.trim()||'Additional information',$('customContent').value));closeCustomSectionDialog()});
 $('cancelCustom').addEventListener('click',closeCustomSectionDialog);
 $('modalBg').addEventListener('click',e=>{if(e.target===$('modalBg'))closeCustomSectionDialog()});
@@ -1613,12 +2105,53 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
   try{await signInWithGoogle()}
   catch(error){toast(authErrorMessage(error))}
  });
+  $('browserSaveToggle').addEventListener('change',event=>{
+   if(cloudUser){updateBrowserPersistenceUI();return}
+   const enabled=event.target.checked;
+   clearTimeout(saveTimer);
+   try{guestResumeStorage.setEnabled(enabled)}
+   catch(error){
+    console.error('Could not update the browser resume-saving preference.',error);
+    $('saveState').title=error.message||'Could not update the browser-saving preference.';
+   }
+   if(!enabled){
+    localPersistenceBlocked=false;
+    recoverySnapshot=null;
+    $('recoveryBanner').hidden=true;
+    setSaveState(currentSaveStateLabel());
+   }else if(!localPersistenceBlocked){
+    guestResumeDirty=true;
+    try{
+     guestResumeStorage.save(state);
+     guestResumeLoaded=true;
+     setSaveState('Saved locally');
+    }catch(error){
+     console.error('Could not save the current resume in this browser.',error);
+     setSaveState('Unable to save changes');
+     $('saveState').title=error.message||'Could not save the current resume in this browser.';
+    }
+   }
+   updateBrowserPersistenceUI();
+   if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');
+  });
  $('googleSignOutBtn').addEventListener('click',async()=>{
-  if(!await confirmSignOut())return;
+  $('accountMenu').open=false;
+  const button=$('googleSignOutBtn');
+  if(signOutPending)return;
+  signOutPending=true;
+  button.disabled=true;
+  button.textContent='Signing out…';
   try{await signOutUser();toast('Signed out. Your local browser copy is unchanged.')}
-  catch(error){toast(error.message||'Could not sign out.')}
+  catch(error){console.error('Could not sign out.',error);toast(error.message||'Could not sign out.')}
+  finally{
+   signOutPending=false;
+   button.disabled=false;
+   button.textContent='Sign out';
+  }
  });
- $('cloudResumesBtn').addEventListener('click',openCloudModal);
+ $('cloudResumesBtn').addEventListener('click',()=>{$('accountMenu').open=false;openCloudModal()});
+ document.addEventListener('click',event=>{if(!$('accountMenu').contains(event.target))$('accountMenu').open=false});
+ $('accountMenu').addEventListener('keydown',event=>{if(event.key==='Escape'&&$('accountMenu').open){$('accountMenu').open=false;$('accountMenu').querySelector('summary').focus()}});
  $('closeCloudModal').addEventListener('click',closeCloudModal);
  $('closeCloudModalAction').addEventListener('click',closeCloudModal);
  $('cloudModalBg').addEventListener('click',event=>{if(event.target===$('cloudModalBg'))closeCloudModal()});
@@ -1641,15 +2174,17 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
  });
  $('downloadRecoveryBackup').addEventListener('click',downloadRecoveryData);
  $('resolveRecovery').addEventListener('click',resolveLocalRecovery);
- $('pdfBtn').addEventListener('click',()=>exportPDF());$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(()=>runAtsChecks({promptUpgrade:false}),250)});
+ $('pdfBtn').addEventListener('click',()=>exportPDF());$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 $('dismissOnboarding').addEventListener('click',()=>{$('onboardingCard').hidden=true;onboardingDismissed=true;savePrefs()});
+$('undoBtn')?.addEventListener('click',undo);
+$('redoBtn')?.addEventListener('click',redo);
 let resizing=null;
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
 $('panelGrip').addEventListener('pointerdown',gripDown('r'));$('leftGrip').addEventListener('pointerdown',gripDown('l'));
 document.addEventListener('pointermove',e=>{if(!resizing)return;if(resizing==='r')panelWidth=Math.max(RW[0],Math.min(RW[1],window.innerWidth-e.clientX));else leftWidth=Math.max(LW[0],Math.min(LW[1],e.clientX));applyPanels()});
 document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs()}});
-$('collapseLeft').addEventListener('click',toggleLeft);$('expandLeft').addEventListener('click',toggleLeft);$('expandRight').addEventListener('click',togglePanel);
+$('toggleLeftPanel')?.addEventListener('click',toggleLeft);$('toggleRightPanel')?.addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
 document.addEventListener('keydown',e=>{
  const modifier=e.metaKey||e.ctrlKey,key=e.key.toLowerCase(),editable=e.target.closest?.('[contenteditable="true"]');
@@ -1660,9 +2195,18 @@ document.addEventListener('keydown',e=>{
  if(modifier&&(key==='y'||(key==='z'&&e.shiftKey))){e.preventDefault();redo();return}
  if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}
 });
-const savedProject=readSavedProject(localStorage,normalizeState);
+const savedProject=guestResumeStorage.load();
 if(savedProject.state)state=savedProject.state;
+guestResumeLoaded=Boolean(savedProject.state);
 showRecoveryNotice(savedProject);
-addEventListener('pagehide',()=>{if(localPersistenceBlocked)return;try{localStorage.setItem('resumeStudioV2',JSON.stringify(state))}catch(error){console.error('Could not save the resume while closing the page.',error)}});
-loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
+addEventListener('pagehide',()=>{
+ const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
+ if(persistenceMode==='cloud'){
+  if(cloudReady&&!cloudSaveBlocked){clearTimeout(cloudSaveTimer);void persistCloudResume()}
+  return;
+ }
+ if(persistenceMode!=='browser'||localPersistenceBlocked)return;
+ try{guestResumeStorage.save(state)}catch(error){console.error('Could not save the resume while closing the page.',error)}
+});
+loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}updateBrowserPersistenceUI();if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
 })();

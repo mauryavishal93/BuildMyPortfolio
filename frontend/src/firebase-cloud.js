@@ -7,6 +7,26 @@ const firebaseConfig = {
 
 export const cloudConfigured = Object.values(firebaseConfig).every(value => typeof value === 'string' && value.length > 0);
 
+export function googleSignInErrorMessage(error, hostname = globalThis.location?.hostname || 'this domain') {
+  switch (error?.code) {
+    case 'auth/configuration-not-found':
+    case 'auth/operation-not-allowed':
+      return 'Google sign-in is not enabled for this Firebase project. Enable Google under Firebase Authentication → Sign-in method.';
+    case 'auth/unauthorized-domain':
+      if (hostname === '127.0.0.1') {
+        return `This domain (${hostname}) is not authorized for Firebase sign-in. For local development, open this site using localhost, or add ${hostname} under Firebase Authentication → Settings → Authorized domains.`;
+      }
+      return `This domain (${hostname}) is not authorized for Firebase sign-in. Add it under Firebase Authentication → Settings → Authorized domains.`;
+    case 'auth/popup-blocked':
+    case 'auth/operation-not-supported-in-this-environment':
+      return 'Your browser blocked the Google sign-in popup. Allow popups for this site and try again.';
+    case 'auth/network-request-failed':
+      return 'Google sign-in could not reach Firebase. Check your internet connection and try again.';
+    default:
+      return error?.message || 'Could not sign in with Google.';
+  }
+}
+
 const loadFirebaseSdk = () => Promise.all([
       import('firebase/app'),
       import('firebase/auth'),
@@ -37,6 +57,10 @@ export function createFirebaseCloudClient({ config = firebaseConfig, loadSdk = l
     return firestoreSdk.collection(db, 'users', uid, 'resumes');
   }
 
+  function editorPreference(firestoreSdk, db, uid) {
+    return firestoreSdk.doc(db, 'users', uid, 'preferences', 'resumeEditor');
+  }
+
   function observeAuth(callback) {
     if (!isConfigured) {
       callback(null, new Error('Cloud saving is not configured yet.'));
@@ -58,7 +82,15 @@ export function createFirebaseCloudClient({ config = firebaseConfig, loadSdk = l
 
   async function signInWithGoogle() {
     const { auth, authSdk } = await getServices();
-    await authSdk.signInWithPopup(auth, new authSdk.GoogleAuthProvider());
+    const provider = new authSdk.GoogleAuthProvider();
+    try {
+      await authSdk.signInWithPopup(auth, provider);
+    } catch (error) {
+      if (!['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment'].includes(error?.code)) {
+        throw error;
+      }
+      await authSdk.signInWithRedirect(auth, provider);
+    }
   }
 
   async function signOutUser() {
@@ -90,6 +122,27 @@ export function createFirebaseCloudClient({ config = firebaseConfig, loadSdk = l
         revision: data.revision,
         updatedAt: data.updatedAt?.toMillis?.() ?? 0
       };
+    });
+  }
+
+  async function getLastWorkedResumeId(uid) {
+    const { db, firestoreSdk } = await getServices();
+    const snapshot = await firestoreSdk.getDoc(editorPreference(firestoreSdk, db, uid));
+    if (!snapshot.exists()) return null;
+    const id = snapshot.data().lastWorkedResumeId;
+    if (typeof id !== 'string') {
+      throw new Error('The saved last-opened resume preference is invalid.');
+    }
+    return id || null;
+  }
+
+  async function setLastWorkedResumeId(uid, resumeId) {
+    if (typeof resumeId !== 'string' || !resumeId || resumeId.length > 1500) {
+      throw new Error('A valid cloud resume ID is required.');
+    }
+    const { db, firestoreSdk } = await getServices();
+    await firestoreSdk.setDoc(editorPreference(firestoreSdk, db, uid), {
+      lastWorkedResumeId: resumeId
     });
   }
 
@@ -179,6 +232,8 @@ export function createFirebaseCloudClient({ config = firebaseConfig, loadSdk = l
     signOutUser,
     getFirebaseIdToken,
     listResumes,
+    getLastWorkedResumeId,
+    setLastWorkedResumeId,
     saveResume,
     deleteResume,
     getProTemplateDownloadStatus,
@@ -192,6 +247,8 @@ export const signInWithGoogle = defaultClient.signInWithGoogle;
 export const signOutUser = defaultClient.signOutUser;
 export const getFirebaseIdToken = defaultClient.getFirebaseIdToken;
 export const listResumes = defaultClient.listResumes;
+export const getLastWorkedResumeId = defaultClient.getLastWorkedResumeId;
+export const setLastWorkedResumeId = defaultClient.setLastWorkedResumeId;
 export const saveResume = defaultClient.saveResume;
 export const deleteResume = defaultClient.deleteResume;
 export const getProTemplateDownloadStatus = defaultClient.getProTemplateDownloadStatus;

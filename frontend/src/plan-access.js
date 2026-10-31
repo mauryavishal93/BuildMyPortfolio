@@ -6,6 +6,13 @@ export const TEMPLATE_IDS = Object.freeze({
   ])
 });
 
+const PRO_TEMPLATE_IDS = Object.freeze([
+  ...TEMPLATE_IDS.PRO,
+  'luxe',
+  'verve',
+  'arc'
+]);
+
 export const FEATURE_IDS = Object.freeze({
   ALL_TEMPLATES: 'all-templates',
   JOB_DESCRIPTION_ATS: 'job-description-ats'
@@ -27,7 +34,7 @@ export const PLAN_CONFIG = Object.freeze({
 
 export const PRICING_FEATURES = Object.freeze([
   Object.freeze({ label: 'Resume editor', free: 'Included', pro: 'Included' }),
-  Object.freeze({ label: 'Resume templates', free: '6 templates', pro: 'All 17 templates' }),
+  Object.freeze({ label: 'Resume templates', free: '6 templates', pro: 'All 20 templates' }),
   Object.freeze({ label: 'Standard PDF export', free: 'Included', pro: 'Included' }),
   Object.freeze({ label: 'Resume-only ATS checks', free: 'Included', pro: 'Included' }),
   Object.freeze({ label: 'Job-description ATS comparison', free: 'Not available', pro: 'Included' }),
@@ -41,7 +48,7 @@ export const PRICING_FEATURES = Object.freeze([
 ]);
 
 export function isProTemplate(templateId) {
-  return TEMPLATE_IDS.PRO.includes(templateId);
+  return PRO_TEMPLATE_IDS.includes(templateId);
 }
 
 export function canUseFeature(featureId, entitlement, now = Date.now()) {
@@ -57,4 +64,12 @@ export function canUseFeature(featureId, entitlement, now = Date.now()) {
   }
 
   return entitlement.validUntil > now;
+}
+
+export function shouldPromptForJobDescriptionAtsUpgrade(jobDescription, entitlement) {
+  return Boolean(
+    typeof jobDescription === 'string'
+    && jobDescription.trim()
+    && !canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS, entitlement)
+  );
 }

@@ -7,6 +7,7 @@ import {
   isProTemplate,
   PLAN_CONFIG,
   PRICING_FEATURES,
+  shouldPromptForJobDescriptionAtsUpgrade,
   TEMPLATE_IDS
 } from '../frontend/src/plan-access.js';
 
@@ -60,6 +61,77 @@ test('only recognized Pro features accept an active unexpired verified entitleme
   assert.equal(canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS, entitlement, 1_000), true);
 });
 
+test('job-description ATS attempts prompt Free users to upgrade but not Pro users', () => {
+  const activePro = {
+    planId: 'pro',
+    status: 'active',
+    source: 'server-verified',
+    validUntil: 2_000
+  };
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('', null), false);
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('  \n ', null), false);
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('Frontend developer role', null), true);
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('Another job description', {
+    ...activePro,
+    validUntil: Number.MAX_SAFE_INTEGER
+  }), false);
+});
+
+test('job descriptions are analyzed only after an explicit Run checks action', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /function openAts\(\)\s*\{[^}]*\}/);
+  assert.doesNotMatch(source.match(/function openAts\(\)\s*\{[^}]*\}/)?.[0] || '', /runAtsChecks/);
+  assert.match(source, /\$\('runAtsBtn'\)\.addEventListener\('click',\(\)=>runAtsChecks\(\)\)/);
+  assert.doesNotMatch(source, /\$\('jobDescription'\)\.addEventListener\('input'/);
+  assert.doesNotMatch(source, /atsModalBg'\)\.classList\.contains\('show'\)\)runAtsChecks/);
+  assert.match(source, /if\(lockedJobMatch&&promptUpgrade\)showUpgrade\('job-description-ats'/);
+});
+
+test('hidden sign-out controls stay hidden in both account-menu styles', () => {
+  for (const stylesheet of ['style.css', 'about.css']) {
+    const styles = readFileSync(new URL(`../frontend/src/${stylesheet}`, import.meta.url), 'utf8');
+    assert.match(styles, /\.account-menu-item\[hidden\]\{display:none!important\}/);
+  }
+});
+
+test('subscription management buttons are hidden unless the user is signed in', () => {
+  const source = readFileSync(new URL('../frontend/src/billing.js', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../frontend/src/pricing.css', import.meta.url), 'utf8');
+  assert.match(source, /cancelButton\.hidden\s*=\s*!user\s*\|\|/);
+  assert.match(source, /yearlyButton\.hidden\s*=\s*!user\s*\|\|/);
+  assert.match(styles, /\.billing-plan-actions \.btn\[hidden\]\{display:none!important\}/);
+});
+
+test('all site pages use a text-only two-tone wordmark and the matching favicon', () => {
+  const pages = [
+    'home.html', 'index.html', 'about.html', 'admin.html', 'billing.html',
+    'editor.html', 'pricing.html', 'privacy.html', 'refunds.html', 'terms.html'
+  ];
+  for (const page of pages) {
+    const html = readFileSync(new URL(`../frontend/${page}`, import.meta.url), 'utf8');
+    assert.match(html, /rel="icon"[^>]+personacraftpro-mark\.svg/, page);
+    assert.match(html, /<img class="(?:about-logo|logo)" src="\/images\/personacraftpro-mark\.svg"/, page);
+    assert.match(html, /PersonaCraft<span[^>]*>Pro<\/span>/, page);
+  }
+  const editor = readFileSync(new URL('../frontend/editor.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(editor, /id="proBrandBadge"/);
+  const styles = [
+    readFileSync(new URL('../frontend/src/about.css', import.meta.url), 'utf8'),
+    readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8')
+  ].join('\n');
+  assert.match(styles, /\.about-brand-name\{display:inline-flex;align-items:center;gap:4px/);
+  assert.match(styles, /\.brand-name\{display:inline-flex;align-items:center;gap:4px/);
+  assert.match(styles, /\.about-brand-name span\{display:inline-flex;align-items:center;padding:2px 6px;border-radius:6px;background:linear-gradient/);
+  assert.match(styles, /\.brand-name span\{display:inline-flex;align-items:center;padding:2px 6px;border-radius:6px;background:linear-gradient/);
+  assert.doesNotMatch(styles, /\.about-brand span:not\(\.about-logo\)\{display:none\}/);
+  assert.doesNotMatch(styles, /\.brand span\{display:none\}/);
+  const logo = readFileSync(new URL('../frontend/public/images/personacraftpro-mark.svg', import.meta.url), 'utf8');
+  assert.match(logo, /<svg/);
+  assert.match(logo, /rx="78"/);
+  assert.match(logo, /linearGradient/);
+  assert.match(logo, /FFE56A/);
+});
+
 test('monthly and yearly prices match the displayed INR subscriptions', () => {
   assert.equal(PLAN_CONFIG.pro.currency, 'INR');
   assert.deepEqual(PLAN_CONFIG.pro.monthly, { price: 99, interval: 'month' });
@@ -106,13 +178,68 @@ test('photo templates show an accessible avatar placeholder when no photo is upl
   assert.match(styles, /\.photo-placeholder::after/);
 });
 
-test('pricing exposes voucher entry and labels sample codes as non-redeemable examples', () => {
-  const html = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
-  const source = readFileSync(new URL('../frontend/src/pricing.js', import.meta.url), 'utf8');
+test('flow pagination continues entry bullets without repeating the role header', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /if\(!a\.continuation\)el\.innerHTML=/);
+  assert.match(source, /const first=cont&&a\.k==='li'\?\{k:'entry',e:a\.e,continuation:true\}:a;/);
+  assert.match(source, /if\(cont&&a\.k==='li'\)appendAtom\(placed\.shell,a,placed\.st,s\);/);
+  assert.match(source, /addEventListener\('focusout',e=>\{[\s\S]*?recordHistory\(before\);saveLocal\(\);renderSheets\(\);/);
+});
+
+test('experience bullets split at the caret and keep focus for consecutive Enter presses', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /const caret=Math\.min\(caretOffsetWithin\(el,true\),before\.length\),left=before\.slice\(0,caret\),right=before\.slice\(caret\+selectionLength\)/);
+  assert.match(source, /details\.splice\(index,representedCount,left,right\)/);
+  assert.match(source, /if\(!directEditSnapshots\.has\(el\)\)directEditSnapshots\.set\(el,deep\(state\)\)/);
+  assert.match(source, /if\(editSnapshot\)directEditSnapshots\.set\(next,editSnapshot\)/);
+  assert.match(source, /selection\?\.removeAllRanges\(\);selection\?\.addRange\(range\)/);
+});
+
+test('experience bullet Backspace and Delete merge adjacent points at line boundaries', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /const caret=caretOffsetWithin\(el,true\),backward=e\.key==='Backspace',atBoundary=backward\?caret===0:caret===value\.length/);
+  assert.match(source, /const rows=Array\.from\(document\.querySelectorAll\('#sheets \[data-entry-field="detail"\]'\)\)\.filter\(item=>item\.dataset\.sectionId===sectionId&&item\.dataset\.entry===entryIndex\)/);
+  assert.match(source, /details\.splice\(priorIndex,count,joined\)/);
+  assert.match(source, /itemIndex-count\+joinedCount/);
+  assert.match(source, /if\(backward\)\{[\s\S]*?prior\.focus\(\)/);
+});
+
+test('experience deletion never selects an entire neighboring line or document', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /const insideField=el\.contains\(selection\.anchorNode\)&&el\.contains\(selection\.focusNode\);[\s\S]*?if\(!insideField\)e\.preventDefault\(\);[\s\S]*?return;/);
+  assert.match(source, /range\.collapse\(true\);selection\?\.removeAllRanges\(\);selection\?\.addRange\(range\)/);
+  assert.doesNotMatch(source, /document\.execCommand\('selectAll'/);
+});
+
+test('experience content reflows to the next page while the user is typing', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /function reflowOverflowingDetail\(el,force=false\)/);
+  assert.match(source, /if\(!force&&el\.getBoundingClientRect\(\)\.bottom<=limit\+\.5\)return/);
+  assert.match(source, /try\{renderSheets\(\)\}finally\{reflowingDetail=false\}/);
+  assert.match(source, /const moved=Array\.from\(document\.querySelectorAll\('#sheets \[data-entry-field="detail"\]'\)\)/);
+  assert.match(source, /reflowOverflowingDetail\(el,replacements\.length>1\)/);
+});
+
+test('billing and Plans pages expose voucher entry and label sample codes as examples', () => {
+  const html = readFileSync(new URL('../frontend/billing.html', import.meta.url), 'utf8');
+  const pricingHtml = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../frontend/src/billing.js', import.meta.url), 'utf8');
+  const pricingSource = readFileSync(new URL('../frontend/src/pricing.js', import.meta.url), 'utf8');
   assert.match(html, /id="voucherForm"/);
+  assert.match(html, /id="voucherSection"[^>]*aria-labelledby="voucherTitle">/);
   assert.match(html, /Example formats only — these are not valid codes/);
-  assert.match(source, /redeemBillingVoucher\(user, code\)/);
-  assert.match(source, /voucherEnabled/);
+  assert.match(source, /redeemBillingVoucher\(currentUser, code\)/);
+  assert.match(source, /const voucherUnavailable = billingConfig\?\.entitlementEnabled === false/);
+  assert.match(source, /const disabled = signInRequired \|\| voucherUnavailable/);
+  assert.match(source, /Voucher availability could not be checked\. Enter a code and the server will verify it/);
+  assert.match(source, /a valid voucher will start after your current access ends/i);
+  assert.match(source, /result\.queued/);
+  assert.match(source, /billingConfig\?\.entitlementEnabled === false/);
+  assert.match(pricingHtml, /id="pricingVoucherForm"/);
+  assert.match(pricingHtml, /id="pricingVoucherSection"[^>]*aria-labelledby="pricingVoucherTitle">/);
+  assert.match(pricingHtml, /id="pricingVoucherCode"/);
+  assert.match(pricingSource, /redeemBillingVoucher\(currentUser, code\)/);
+  assert.match(pricingSource, /result\.queued/);
 });
 
 test('Firestore rules restrict the lifetime Pro-template trial to two owner-only increments', () => {
@@ -123,4 +250,12 @@ test('Firestore rules restrict the lifetime Pro-template trial to two owner-only
   assert.match(rules, /request\.resource\.data\.count == resource\.data\.count \+ 1/);
   assert.match(rules, /request\.resource\.data\.count <= 2/);
   assert.match(rules, /allow delete: if false/);
+});
+
+test('Firestore rules scope the last-worked resume preference to its signed-in account', () => {
+  const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /match \/users\/\{userId\}\/preferences\/resumeEditor/);
+  assert.match(rules, /allow get: if request\.auth != null && request\.auth\.uid == userId/);
+  assert.match(rules, /request\.resource\.data\.keys\(\)\.hasOnly\(\['lastWorkedResumeId'\]\)/);
+  assert.match(rules, /request\.resource\.data\.lastWorkedResumeId is string/);
 });

@@ -3,24 +3,208 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Admin | PersonaCraftPro</title>
+  <link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
   <link rel="stylesheet" href="/src/about.css"><link rel="stylesheet" href="/src/admin.css">
 </head>
 <body class="about-page admin-page">
-  <header class="about-header"><a class="about-brand" href="/editor.html"><span class="about-logo">P</span><span>PersonaCraftPro</span></a><nav class="about-nav"><a href="/pricing.html" class="nav-link">Plans</a><button class="theme-switch" data-theme-toggle type="button"><span class="theme-switch-track"><span class="theme-switch-thumb"></span></span></button></nav></header>
+  <header class="about-header"><a class="about-brand" href="/home.html" aria-label="PersonaCraftPro home"><img class="about-logo" src="/images/personacraftpro-mark.svg" alt="" aria-hidden="true"><span class="about-brand-name">PersonaCraft<span>Pro</span></span></a><nav class="about-nav"><button class="theme-switch" data-theme-toggle type="button"><span class="theme-switch-track"><span class="theme-switch-thumb"></span></span></button><a href="/pricing.html" class="nav-link">Plans</a><a href="/editor.html" class="nav-link">Open editor</a></nav></header>
   <main class="admin-shell">
-    <section class="admin-heading"><div><p class="eyebrow">Administration</p><h1>Customer control center</h1><p>Manage access, vouchers, and website revenue.</p></div><button id="refresh" class="admin-button secondary">Refresh</button></section>
-    <section id="access" class="admin-access"><p>Sign in with an administrator account.</p><button id="sign-in" class="admin-button">Sign in with Google</button></section>
+    <section class="admin-hero">
+      <div class="admin-hero-copy">
+        <p class="eyebrow">Administration</p>
+        <h1>Customer control center</h1>
+        <p>Manage access, vouchers, and revenue in one streamlined workspace.</p>
+      </div>
+      <div class="admin-hero-actions">
+        <div class="admin-utility">
+          <span id="admin-user-badge" class="admin-user-badge">Admin view</span>
+          <span id="admin-last-updated" class="admin-last-updated">Not refreshed yet</span>
+        </div>
+        <span class="dashboard-status"><span class="status-dot"></span>Live sync</span>
+        <button id="refresh" class="admin-button secondary">Refresh</button>
+      </div>
+    </section>
+
+    <section id="access" class="admin-access">
+      <div class="admin-access-copy">
+        <p class="eyebrow small">Protected area</p>
+        <h2>Administrator login</h2>
+      </div>
+      <p>Sign in with an administrator account to unlock revenue, billing, and user controls.</p>
+      <button id="sign-in" class="admin-button">Sign in with Google</button>
+    </section>
+
     <section id="admin-content" hidden>
-      <div class="admin-stats"><article><span>Total sign-ins</span><strong id="stat-users">0</strong></article><article><span>Pro users</span><strong id="stat-pro">0</strong></article><article><span>Regular users</span><strong id="stat-regular">0</strong></article><article><span>Earnings</span><strong id="stat-earnings">₹0</strong></article></div>
+      <div class="admin-summary-bar" aria-label="User summary filters">
+        <button type="button" class="summary-chip active" data-summary-filter="all">
+          <span class="summary-label">All users</span>
+          <strong id="chip-all">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="active">
+          <span class="summary-label">Active</span>
+          <strong id="chip-active">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="inactive">
+          <span class="summary-label">Inactive</span>
+          <strong id="chip-inactive">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="pro">
+          <span class="summary-label">Pro</span>
+          <strong id="chip-pro">0</strong>
+        </button>
+        <button type="button" class="summary-chip" data-summary-filter="free">
+          <span class="summary-label">Free</span>
+          <strong id="chip-free">0</strong>
+        </button>
+      </div>
+
+      <div class="admin-stats">
+        <article class="stat-card">
+          <div class="stat-header"><span>Total sign-ins</span><span class="stat-trend up">+24%</span></div>
+          <strong id="stat-users">0</strong>
+        </article>
+        <article class="stat-card">
+          <div class="stat-header"><span>Pro users</span><span class="stat-trend up">+18%</span></div>
+          <strong id="stat-pro">0</strong>
+        </article>
+        <article class="stat-card">
+          <div class="stat-header"><span>Regular users</span><span class="stat-trend neutral">Stable</span></div>
+          <strong id="stat-regular">0</strong>
+        </article>
+        <article class="stat-card accent">
+          <div class="stat-header"><span>Earnings</span><span class="stat-trend up">This month</span></div>
+          <strong id="stat-earnings">₹0</strong>
+        </article>
+      </div>
+
+      <section class="admin-card pricing-config-card" aria-labelledby="pricing-config-title">
+        <div class="admin-card-title">
+          <div>
+            <p class="eyebrow">Pricing</p>
+            <h2 id="pricing-config-title">Subscription pricing</h2>
+          </div>
+          <span id="pricing-config-status" class="user-count-label">Ready</span>
+        </div>
+        <div class="pricing-config-grid">
+          <label>
+            <span>Monthly actual price (₹)</span>
+            <input id="monthly-actual-price" type="number" min="0" step="1" placeholder="99">
+          </label>
+          <label>
+            <span>Monthly current price (₹)</span>
+            <input id="monthly-current-price" type="number" min="0" step="1" placeholder="79">
+          </label>
+          <label>
+            <span>Yearly actual price (₹)</span>
+            <input id="yearly-actual-price" type="number" min="0" step="1" placeholder="399">
+          </label>
+          <label>
+            <span>Yearly current price (₹)</span>
+            <input id="yearly-current-price" type="number" min="0" step="1" placeholder="319">
+          </label>
+        </div>
+        <div class="pricing-summary" id="pricing-summary">Discounts will be calculated automatically.</div>
+        <button id="save-pricing-config" class="admin-button" type="button">Save pricing</button>
+      </section>
+
+      <div class="admin-filter-bar" aria-label="User filters">
+        <div class="filter-group search-group">
+          <label for="user-search">Search</label>
+          <input id="user-search" class="user-search" placeholder="Search email or UID">
+        </div>
+        <div class="filter-group">
+          <label for="status-filter">Status</label>
+          <select id="status-filter">
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="pro">Pro</option>
+            <option value="free">Free</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="plan-filter">Plan</label>
+          <select id="plan-filter">
+            <option value="all">All plans</option>
+            <option value="pro">Pro</option>
+            <option value="free">Free</option>
+            <option value="voucher">Voucher</option>
+            <option value="admin">Admin granted</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="sort-by">Sort</label>
+          <select id="sort-by">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="name">Name A–Z</option>
+            <option value="paid">Highest paid</option>
+            <option value="pro-first">Pro first</option>
+          </select>
+        </div>
+        <button type="button" id="clear-filters" class="mini-button secondary-filter">Clear</button>
+      </div>
+
       <div class="admin-grid">
-        <section class="admin-card user-card"><div class="admin-card-title"><div><p class="eyebrow">Users</p><h2>Accounts</h2></div><input id="user-search" class="user-search" placeholder="Search email or UID"></div><div class="table-wrap"><table><thead><tr><th>User</th><th>Plan / activation</th><th>Paid</th><th>Valid until</th><th>Actions</th></tr></thead><tbody id="user-list"></tbody></table></div></section>
-        <section class="admin-card voucher-card"><details class="voucher-manager" open><summary><span><p class="eyebrow">Access</p><h2>Voucher management</h2></span><span class="collapse-label">Collapse</span></summary><div class="voucher-form"><label>Plan<select id="voucher-plan"><option value="monthly">Monthly Pro</option><option value="yearly">Yearly Pro</option></select></label><label>Assign to user UID <span>(optional)</span><input id="voucher-uid" placeholder="Firebase UID"></label><button id="generate-voucher" class="admin-button">Generate voucher</button></div><div id="generated-code" class="generated-code" hidden></div><div class="voucher-tabs" role="tablist"><button class="voucher-tab active" type="button" data-voucher-tab="active">Active <span id="active-voucher-count">0</span></button><button class="voucher-tab" type="button" data-voucher-tab="completed">Completed <span id="completed-voucher-count">0</span></button><button class="voucher-tab" type="button" data-voucher-tab="unclaimed">Unclaimed <span id="unclaimed-voucher-count">0</span></button></div><div id="voucher-list" class="voucher-list"></div></details></section>
+        <section class="admin-card user-card">
+          <div class="admin-card-title">
+            <div>
+              <p class="eyebrow">Users</p>
+              <h2>Accounts</h2>
+            </div>
+            <div class="user-toolbar">
+              <span id="user-count-label" class="user-count-label">0 accounts</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Plan / activation</th>
+                  <th>Paid</th>
+                  <th>Valid until</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="user-list">
+                <tr>
+                  <td colspan="5" class="empty-table-state">Loading users…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="admin-card voucher-card">
+          <details class="voucher-manager" open>
+            <summary>
+              <span>
+                <p class="eyebrow">Access</p>
+                <h2>Voucher management</h2>
+              </span>
+              <span class="collapse-label">Collapse</span>
+            </summary>
+            <div class="voucher-form">
+              <label>Plan<select id="voucher-plan"><option value="monthly">Monthly Pro</option><option value="yearly">Yearly Pro</option></select></label>
+              <label>Assign to user UID <span>(optional)</span><input id="voucher-uid" placeholder="Firebase UID"></label>
+              <button id="generate-voucher" class="admin-button">Generate voucher</button>
+            </div>
+            <div id="generated-code" class="generated-code" hidden></div>
+            <div class="voucher-tabs" role="tablist">
+              <button class="voucher-tab active" type="button" data-voucher-tab="active">Active <span id="active-voucher-count">0</span></button>
+              <button class="voucher-tab" type="button" data-voucher-tab="completed">Completed <span id="completed-voucher-count">0</span></button>
+              <button class="voucher-tab" type="button" data-voucher-tab="unclaimed">Unclaimed <span id="unclaimed-voucher-count">0</span></button>
+            </div>
+            <div id="voucher-list" class="voucher-list"></div>
+          </details>
+        </section>
       </div>
     </section>
   </main>
   <dialog id="pro-cancel-dialog" class="user-detail-dialog"><form id="pro-cancel-form"><div class="detail-header"><div><p class="eyebrow">Cancel Pro</p><h2 id="cancel-title">Cancel Pro access</h2></div><button id="close-cancel" class="mini-button" type="button">Close</button></div><div class="grant-body"><label>Reason for cancellation<textarea id="cancel-reason" name="reason" rows="4" maxlength="500" required placeholder="Enter the reason for cancelling this account"></textarea></label><p>This reason will be saved in the account’s billing history.</p><button class="admin-button danger-button" type="submit">Cancel Pro access</button></div></form></dialog>
   <dialog id="pro-grant-dialog" class="user-detail-dialog"><form id="pro-grant-form"><div class="detail-header"><div><p class="eyebrow">Activate Pro</p><h2 id="grant-title">Monthly Pro</h2></div><button id="close-grant" class="mini-button" type="button">Cancel</button></div><div id="grant-body" class="grant-body"><label>Amount paid (₹)<input id="grant-amount" name="amount" type="number" min="0" step="0.01" placeholder="0 for free"></label><label>Transaction ID<input id="grant-transaction" name="transactionId" placeholder="Leave blank for free activation"></label><p>Leave both payment fields blank or enter ₹0 for a free activation. Paid activations require a transaction ID.</p><button class="admin-button" type="submit">Activate Pro</button></div></form></dialog>
   <dialog id="user-detail" class="user-detail-dialog"><div class="detail-header"><div><p class="eyebrow">Account details</p><h2 id="detail-name">User</h2></div><button id="close-detail" class="mini-button" type="button">Close</button></div><div id="detail-body"></div></dialog>
-  <script type="module" src="/src/theme.js"></script><script type="module" src="/src/admin.js"></script>
+  <script type="module" src="/src/theme.js"></script><script type="module" src="/src/auth-nav.js"></script><script type="module" src="/src/admin.js"></script>
 </body>
 </html>

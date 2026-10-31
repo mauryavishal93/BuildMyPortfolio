@@ -3,15 +3,16 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="About PersonaCraftPro, a free resume builder with optional Google sign-in and cloud resume saving.">
+    <meta name="description" content="About PersonaCraftPro, a free resume builder with guest browser-saving controls, Google cloud sync, templates, and PDF export.">
     <title>About | PersonaCraftPro</title>
+    <link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
     <link rel="stylesheet" href="/src/about.css">
   </head>
   <body class="about-page">
     <header class="about-header">
-      <a class="about-brand" href="/editor.html" aria-label="PersonaCraftPro home">
-        <span class="about-logo" aria-hidden="true">P</span>
-        <span>PersonaCraftPro</span>
+      <a class="about-brand" href="/home.html" aria-label="PersonaCraftPro home">
+        <img class="about-logo" src="/images/personacraftpro-mark.svg" alt="" aria-hidden="true">
+        <span class="about-brand-name">PersonaCraft<span>Pro</span></span>
       </a>
       <nav class="about-nav" aria-label="Main navigation">
         <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme">
@@ -32,36 +33,33 @@
           <span class="auth-status" data-auth-status role="status" aria-live="polite"></span>
         </div>
         <a class="btn outline" href="/pricing.html">Plans</a>
-        <a class="btn outline about-cover-letter" href="/editor.html?tool=cover-letter">Cover letter</a>
-        <a class="btn outline about-current" href="/about.html" aria-current="page">About</a>
         <a class="btn soft about-editor" href="/editor.html">Open editor</a>
       </nav>
     </header>
     <main class="about-main">
       <section class="hero-section">
         <div class="hero-copy">
-          <p class="about-eyebrow">FREE RESUME BUILDER</p>
-          <h1>Build a professional resume that works as hard as you do.</h1>
-          <p class="about-lead">Create, tailor, and export a resume in one focused workspace. PersonaCraftPro brings templates, ATS guidance, and polished PDF export into a simple workflow designed for modern job seekers.</p>
+          <p class="about-eyebrow">ABOUT PERSONACRAFTPRO</p>
+          <h1>A resume builder designed for real hiring decisions.</h1>
+          <p class="about-lead">PersonaCraftPro helps candidates build cleaner resumes, tailor them to each role, and export polished PDFs without losing their structure or content.</p>
           <div class="hero-actions">
             <a class="btn primary" href="/editor.html">Open editor</a>
-            <a class="btn outline" href="/editor.html?tool=cover-letter">Generate cover letter</a>
           </div>
           <div class="hero-metrics" aria-label="Platform overview">
-            <div><strong>17</strong><span>Templates</span></div>
-            <div><strong>ATS</strong><span>Scoring</span></div>
+            <div><strong>20</strong><span>Templates</span></div>
+            <div><strong>ATS</strong><span>Checks</span></div>
             <div><strong>PDF</strong><span>Export</span></div>
           </div>
         </div>
         <div class="hero-panel" aria-label="resume workflow panel">
           <div class="panel-card">
             <span class="panel-chip">Workflow</span>
-            <h3>Resume Studio</h3>
+            <h3>How the editor works</h3>
             <ul>
-              <li>Guided resume editing</li>
-              <li>Cloud and local saves</li>
-              <li>ATS-ready content review</li>
-              <li>Export-ready final PDF</li>
+              <li>Draft a resume from a clean template</li>
+              <li>Compare experience to a target role</li>
+              <li>Control guest browser saving or sync to your Google account</li>
+              <li>Export a final PDF when you're ready</li>
             </ul>
           </div>
         </div>
@@ -89,8 +87,8 @@ flowchart TD
 
       <section class="feature-showcase">
         <div class="section-heading section-heading-center">
-          <p class="about-eyebrow">WHY IT STANDS OUT</p>
-          <h2>Everything needed to build, refine, and submit a stronger resume.</h2>
+          <p class="about-eyebrow">WHY PEOPLE USE IT</p>
+          <h2>Built for job seekers who need clarity, speed, and credibility.</h2>
         </div>
         <div class="feature-grid">
           <article class="feature-card">
@@ -120,17 +118,17 @@ flowchart TD
         <section class="about-section">
           <h2>Resume tools</h2>
           <ul class="about-feature-list">
-            <li>Choose from 17 templates and customize sections, layout, and styling.</li>
+            <li>Choose from 20 templates and customize sections, layout, and styling.</li>
             <li>Check general ATS readiness or compare skills and experience with a job description.</li>
             <li>Draft an editable cover letter using your resume and a target role.</li>
             <li>Preview A4 pages and export a text-selectable PDF.</li>
-            <li>Sign in with Google to save multiple named resumes to your private cloud library and continue editing them across devices.</li>
+            <li>Sign in with Google to sync resumes to your private cloud library and continue editing them across devices.</li>
           </ul>
-          <p>Cloud saving is optional. You can also download or load a JSON backup whenever you need to move a project.</p>
+          <p>You can also download or load a JSON backup whenever you need to move a project.</p>
         </section>
         <section class="about-section">
-          <h2>Your choice: browser or cloud</h2>
-          <p>Without signing in, your draft is autosaved in this browser and is not uploaded or synced. If you choose to save a resume while signed in, that resume is stored in Firebase under your account so you can open and edit it on other devices. Your browser copy remains separate, and you can delete cloud resumes from the cloud-resume library.</p>
+          <h2>Choose how guest drafts are saved</h2>
+          <p>When you are not signed in, the editor's <strong>Save in this browser</strong> toggle is on by default and controls whether your resume is autosaved in this browser. Turn it off to keep edits only in memory; refreshing or closing the page then discards them. Your preference is remembered. When you sign in, resume edits save to your private Google account cloud library regardless of that toggle. The editor reopens the cloud resume you last worked on; if it no longer exists, the most recently updated resume opens instead. If your account has no saved resumes, your guest draft can be added to the account. You can manage cloud resumes in the editor.</p>
           <p><a href="/privacy.html">Privacy policy</a></p>
         </section>
         <section class="about-section about-feedback" hidden>
@@ -141,14 +139,14 @@ flowchart TD
             <div class="feedback-field"><label for="feedbackName">Name <span>(optional)</span></label><input id="feedbackName" name="name" autocomplete="name" maxlength="80"></div>
             <div class="feedback-field"><label for="feedbackEmail">Your email <span>(optional)</span></label><input id="feedbackEmail" name="email" type="email" autocomplete="email" maxlength="160"></div>
             <div class="feedback-field feedback-message"><label for="feedbackMessage">Feedback</label><textarea id="feedbackMessage" name="message" rows="5" maxlength="4000" required placeholder="Write your feedback"></textarea></div>
-            <div class="feedback-actions"><button class="feedback-button" type="submit">Send feedback</button><p class="feedback-note">Your email app will open with the message addressed to mauryavishal93@gmail.com. Review and send it there.</p></div>
+            <div class="feedback-actions"><button class="feedback-button" type="submit">Send feedback</button><p class="feedback-note">Your email app will open with the message addressed to buildymyportfolio@gmail.com. Review and send it there.</p></div>
           </form>
         </section>
         <section class="about-section about-contact">
           <p class="about-eyebrow">DEVELOPER</p>
-          <h2>Vishal Maurya</h2>
+          <h2>MVTechnology-labs</h2>
           <dl class="contact-list">
-            <div><dt>Email</dt><dd><a href="mailto:mauryavishal93@gmail.com">mauryavishal93@gmail.com</a></dd></div>
+            <div><dt>Email</dt><dd><a href="mailto:buildymyportfolio@gmail.com">buildymyportfolio@gmail.com</a></dd></div>
             <div><dt>LinkedIn</dt><dd><a href="https://linkedin.com/in/vimaurya/" target="_blank" rel="noopener noreferrer">linkedin.com/in/vimaurya/</a></dd></div>
             <div><dt>Company website</dt><dd><a href="https://mvtechnology-games.onrender.com/" target="_blank" rel="noopener noreferrer">https://mvtechnology-games.onrender.com/</a></dd></div>
           </dl>

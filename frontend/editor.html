@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PersonaCraftPro</title>
+<link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
 <script>
 if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
  location.replace(`https://personacraftpro.onrender.com${location.pathname}${location.search}${location.hash}`);
@@ -13,14 +14,17 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
 </head>
 <body>
 <header class="topbar">
- <div class="brand"><span class="logo">P</span><span>PersonaCraftPro</span><span id="proBrandBadge" class="pro-brand-badge" hidden>Pro</span></div>
+ <a class="brand" href="/home.html" aria-label="PersonaCraftPro home"><img class="logo" src="/images/personacraftpro-mark.svg" alt="" aria-hidden="true"><span class="brand-name">PersonaCraft<span>Pro</span></span></a>
  <input id="docName" class="docname" aria-label="Project name" value="Untitled resume">
- <div class="spacer"></div><span class="save-state"><span class="dot"></span><span id="saveState">Saved in this browser</span></span>
- <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme">
-  <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
-  <span class="theme-switch-label">Dark</span>
- </button>
- <div class="cloud-actions">
+ <div class="spacer"></div>
+ <div class="browser-persistence" id="browserPersistence" hidden>
+  <label class="browser-save-toggle" id="browserSaveControl" for="browserSaveToggle">
+   <input id="browserSaveToggle" type="checkbox" role="switch" aria-label="Save in this browser">
+   <span>Save in this browser</span>
+  </label>
+  <span class="save-state" aria-live="polite"><span class="dot"></span><span id="saveState">Saved locally</span></span>
+ </div>
+ <div class="cloud-actions" id="cloudActions">
   <button class="btn google-signin" id="googleSignInBtn" type="button">
    <svg class="google-signin-logo" viewBox="0 0 24 24" aria-hidden="true">
     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.05 5.05 0 0 1-2.2 3.31v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.09z"/>
@@ -30,12 +34,26 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
    </svg>
    <span id="googleSignInLabel">Sign in with Google</span>
   </button>
-  <button class="btn outline" id="cloudResumesBtn" type="button" hidden>My cloud resumes</button>
-  <button class="btn outline" id="googleSignOutBtn" type="button" hidden>Sign out</button>
  </div>
  <button class="btn outline" id="coverLetterBtn">Cover letter</button>
- <a class="btn outline" id="aboutLink" href="/about.html">About</a>
+ <a class="btn outline" id="plansLink" href="/pricing.html">Plans</a>
  <button class="btn primary" id="pdfBtn">Export PDF</button>
+ <details class="account-menu" id="accountMenu">
+  <summary class="account-menu-trigger" aria-label="Open account menu">
+   <span class="account-avatar" id="accountAvatar" aria-hidden="true">U</span>
+  </summary>
+  <div class="account-menu-panel">
+   <div class="account-menu-profile">
+    <span class="account-avatar account-avatar-large" id="accountAvatarLarge" aria-hidden="true">U</span>
+    <span class="account-menu-identity"><strong id="accountUserName">User</strong><span id="accountUserEmail"></span></span>
+   </div>
+  <a class="account-menu-item" href="/billing.html">Billing</a>
+  <button class="account-menu-item" id="cloudResumesBtn" type="button" hidden>My cloud resumes</button>
+   <a class="account-menu-item" id="aboutLink" href="/about.html">About</a>
+   <div class="account-menu-theme"><span>Appearance</span><button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme"><span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span><span class="theme-switch-label">Dark</span></button></div>
+  <button class="account-menu-item account-menu-signout" id="googleSignOutBtn" type="button" hidden>Sign out</button>
+  </div>
+ </details>
  <input id="jsonInput" class="hidden" type="file" accept=".json,application/json">
 </header>
 <div class="modal-bg" id="cloudModalBg" aria-hidden="true">
@@ -43,6 +61,7 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
     <div class="cloud-modal-head">
       <div>
         <h2 id="cloudTitle">My cloud resumes</h2>
+       <button class="theme-switch" id="standaloneThemeToggle" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme"><span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span><span class="theme-switch-label">Dark</span></button>
         <p class="ats-subtitle" id="cloudAccount" aria-live="polite">Sign in to access your resumes across devices.</p>
       </div>
       <button class="size-btn" id="closeCloudModal" type="button" aria-label="Close cloud resumes">✕</button>
@@ -57,9 +76,10 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
   </section>
 </div>
 <div class="layout" id="layout">
- <aside class="left" id="leftPanel"><div class="panel-grip left-grip" id="leftGrip" title="Drag to resize panel"></div>
-  <button class="size-btn strip-btn" id="expandLeft" title="Expand sidebar" aria-label="Expand sidebar">⇥</button>
-  <div class="left-scroll"><div class="left-head"><div class="tabs" role="tablist" aria-label="Sidebar"><button class="tab active" id="tabTemplates" role="tab" aria-selected="true" aria-controls="paneTemplates" data-tab="templates">Templates</button><button class="tab" id="tabSections" role="tab" aria-selected="false" aria-controls="paneSections" data-tab="sections">Sections</button></div><button class="size-btn" id="collapseLeft" title="Collapse / expand" aria-label="Collapse sidebar">⇤</button></div>
+ <aside class="left" id="leftPanel">
+  <div class="panel-grip left-grip" id="leftGrip" title="Drag to resize panel"></div>
+  <button class="panel-toggle left-toggle" id="toggleLeftPanel" type="button" aria-label="Hide left panel" title="Hide left panel"><span></span><span></span></button>
+  <div class="left-scroll"><div class="left-head"><div class="tabs" role="tablist" aria-label="Sidebar"><button class="tab active" id="tabTemplates" role="tab" aria-selected="true" aria-controls="paneTemplates" data-tab="templates">Templates</button><button class="tab" id="tabSections" role="tab" aria-selected="false" aria-controls="paneSections" data-tab="sections">Sections</button></div></div>
   <div class="tabpanel" id="paneTemplates" role="tabpanel" aria-labelledby="tabTemplates"><div class="eyebrow">Choose a template</div><div id="templates" class="templates"></div><a class="plans-inline-link" href="/pricing.html">Compare Free and Pro plans</a></div>
   <div class="tabpanel" id="paneSections" role="tabpanel" aria-labelledby="tabSections" hidden>
    <div class="eyebrow">Resume sections · drag to reorder</div><div id="sectionList" class="section-list"></div>
@@ -85,29 +105,67 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
   </section>
   <section class="onboarding-card" id="onboardingCard" aria-labelledby="onboardingTitle" hidden>
    <div class="onboarding-copy">
-    <p class="eyebrow">GET STARTED</p>
-    <h1 id="onboardingTitle">Create a resume in three steps</h1>
+    <p class="eyebrow">QUICK START</p>
+    <h1 id="onboardingTitle">Build your first resume in under 10 minutes</h1>
     <ol>
-     <li><strong>Choose a template</strong> from the Templates panel.</li>
-     <li><strong>Edit your details</strong> by selecting a section on the page.</li>
-     <li><strong>Export your PDF</strong> when your resume is ready.</li>
+     <li><strong>Pick a template</strong> that matches your role.</li>
+     <li><strong>Add your key details</strong> and a few strong bullets.</li>
+     <li><strong>Export a PDF</strong> when it feels complete.</li>
     </ol>
-    <p>Your work saves in this browser automatically. Sign-in and cloud saving are optional.</p>
+    <div class="onboarding-quick-actions" aria-label="Quick resume actions">
+     <button class="btn soft small" type="button" data-quick-add="summary">Add Summary</button>
+     <button class="btn soft small" type="button" data-quick-add="experience">Add Experience</button>
+     <button class="btn soft small" type="button" data-quick-add="skills">Add Skills</button>
+    </div>
+    <p>You do not need to fill every field on day one. Start with your essentials, then refine as you go.</p>
    </div>
-   <button class="btn outline small" id="dismissOnboarding" type="button">Got it</button>
+   <button class="btn outline small" id="dismissOnboarding" type="button">Start editing</button>
   </section>
-  <div class="toolbar">
-   <label for="pageLayout">Layout</label><select id="pageLayout"><option value="single">Single column</option><option value="two">Two columns</option></select>
-   <label for="editMode">Editor</label><select id="editMode"><option value="flow">Structured</option><option value="free">Free position</option></select>
-  <button class="btn outline small" id="loadBtn">Load JSON</button>
-  <button class="btn outline small" id="saveBtn">Download JSON</button>
-  <button class="btn outline small" id="atsBtn">ATS Check</button>
-   <div class="spacer"></div><button class="btn soft small" id="zoomOut" type="button" aria-label="Zoom out">−</button><span id="zoomLabel" style="font-size:11px;color:var(--muted)" aria-live="polite">100%</span><button class="btn soft small" id="zoomIn" type="button" aria-label="Zoom in">＋</button>
+  <div class="toolbar" aria-label="Resume editing tools">
+   <button class="btn soft small toolbar-btn icon-btn" id="undoBtn" type="button" aria-label="Undo last change">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M20 20v-2a7 7 0 0 0-7-7H4"/></svg>
+    <span>Undo</span>
+   </button>
+   <button class="btn soft small toolbar-btn icon-btn" id="redoBtn" type="button" aria-label="Redo last change">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M4 20v-2a7 7 0 0 1 7-7h9"/></svg>
+    <span>Redo</span>
+   </button>
+   <div class="toolbar-control">
+    <select id="pageLayout" aria-label="Layout">
+     <option value="" disabled selected>Layout</option>
+     <option value="single">Single column</option>
+     <option value="two">Two columns</option>
+    </select>
+   </div>
+   <div class="toolbar-control">
+    <select id="editMode" aria-label="Editor mode">
+     <option value="" disabled selected>Editor</option>
+     <option value="flow">Structured</option>
+     <option value="free">Free position</option>
+    </select>
+   </div>
+   <button class="btn outline small toolbar-btn icon-btn" id="loadBtn" type="button" aria-label="Load JSON project">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10"/><path d="M8 19l4 4 4-4"/><path d="M4 15v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    <span>Load JSON</span>
+   </button>
+   <button class="btn outline small toolbar-btn icon-btn" id="saveBtn" type="button" aria-label="Download JSON project">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"/><path d="M8 18l4 4 4-4"/><path d="M4 14v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    <span>Download JSON</span>
+   </button>
+   <button class="btn outline small toolbar-btn icon-btn" id="atsBtn" type="button" aria-label="Run ATS check">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v6"/><path d="M12 18v2"/><path d="M4.93 4.93l4.24 4.24"/><path d="M14.83 14.83l4.24 4.24"/><path d="M20 12h-2"/><path d="M4 12h2"/><path d="M14.83 9.17l4.24-4.24"/><path d="M4.93 19.07l4.24-4.24"/></svg>
+    <span>ATS Check</span>
+   </button>
+   <div class="toolbar-zoom" aria-label="Zoom controls">
+    <button class="btn soft small" id="zoomOut" type="button" aria-label="Zoom out">−</button>
+    <span id="zoomLabel" aria-live="polite">100%</span>
+    <button class="btn soft small" id="zoomIn" type="button" aria-label="Zoom in">＋</button>
+   </div>
   </div>
   <div class="hint" id="hint">A4 preview · Select a section to edit it</div>
   <div class="sheets" id="sheets"></div>
  </main>
- <aside class="right" id="rightPanel"><div class="panel-grip" id="panelGrip" title="Drag to resize panel"></div><div id="inspector"></div><button class="size-btn strip-btn" id="expandRight" title="Expand properties" aria-label="Expand properties">⇤</button></aside>
+ <aside class="right" id="rightPanel"><button class="panel-toggle right-toggle" id="toggleRightPanel" type="button" aria-label="Hide right panel" title="Hide right panel"><span></span><span></span></button><div class="panel-grip" id="panelGrip" title="Drag to resize panel"></div><div id="inspector"></div></aside>
 </div>
 <div class="toast" id="toast" role="status"></div>
 <div class="modal-bg" id="modalBg" aria-hidden="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="customSectionTitle"><h2 id="customSectionTitle">Add custom section</h2><div class="field"><label for="customTitle">Section title</label><input id="customTitle" value="Additional information"></div><div class="field"><label for="customContent">Content</label><textarea id="customContent" placeholder="Write the section content"></textarea></div><div class="modal-actions"><button class="btn soft" id="cancelCustom" type="button">Cancel</button><button class="btn primary" id="confirmCustom" type="button">Add section</button></div></section></div>
@@ -154,15 +212,14 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
   <section class="modal ats-modal" role="dialog" aria-modal="true" aria-labelledby="atsTitle">
     <div class="ats-modal-head">
       <div>
-        <h2 id="atsTitle">ATS Resume Check</h2>
-        <p class="ats-subtitle">Local analysis · No AI API key · Resume data stays in this browser</p>
+        <h2 id="atsTitle">ATS resume guide</h2>
       </div>
       <button class="size-btn" id="closeAts" aria-label="Close ATS checker">✕</button>
     </div>
     <div class="field">
       <label for="jobDescription">Job description</label>
       <textarea id="jobDescription" placeholder="Paste a job description to compare relevant skills and requirements…"></textarea>
-      <div class="small-note">Keyword matching is a transparent local comparison, not a prediction of an employer's ATS decision.</div>
+      <div class="small-note">This is a helpful diagnostic for keyword coverage and structure. It does not guarantee ATS acceptance or interview outcomes.</div>
     </div>
     <div class="modal-actions ats-actions">
       <button class="btn soft" id="atsFriendlyBtn">Apply ATS-friendly layout</button>

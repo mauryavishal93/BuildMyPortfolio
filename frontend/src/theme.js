@@ -24,14 +24,13 @@ function applyTheme(theme) {
 let currentTheme = readTheme();
 applyTheme(currentTheme);
 
-document.querySelectorAll('[data-theme-toggle]').forEach(button => {
-  button.addEventListener('click', () => {
-    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    applyTheme(currentTheme);
-    try {
-      localStorage.setItem(THEME_KEY, currentTheme);
-    } catch (error) {
-      console.error('Unable to save the theme preference.', error);
-    }
-  });
+document.addEventListener('click', event => {
+  if (!event.target.closest('[data-theme-toggle]')) return;
+  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  applyTheme(currentTheme);
+  try {
+    localStorage.setItem(THEME_KEY, currentTheme);
+  } catch (error) {
+    console.error('Unable to save the theme preference.', error);
+  }
 });

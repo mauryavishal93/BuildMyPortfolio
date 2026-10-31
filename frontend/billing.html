@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Manage your PersonaCraftPro account, Pro plan, vouchers, and billing activity.">
+    <title>Billing | PersonaCraftPro</title>
+    <link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
+    <link rel="stylesheet" href="/src/about.css">
+    <link rel="stylesheet" href="/src/pricing.css">
+  </head>
+  <body class="about-page pricing-page billing-page">
+    <header class="about-header">
+      <a class="about-brand" href="/home.html" aria-label="PersonaCraftPro home">
+        <img class="about-logo" src="/images/personacraftpro-mark.svg" alt="" aria-hidden="true">
+        <span class="about-brand-name">PersonaCraft<span>Pro</span></span>
+      </a>
+      <nav class="about-nav" aria-label="Main navigation">
+        <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme">
+          <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
+          <span class="theme-switch-label">Dark</span>
+        </button>
+        <div class="auth-actions">
+          <button class="btn google-signin" type="button" data-auth-sign-in>
+            <svg class="google-signin-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.05 5.05 0 0 1-2.2 3.31v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.25 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.15v2.84A11 11 0 0 0 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.43.34-2.1V7.06H2.15A11 11 0 0 0 1 12c0 1.78.43 3.46 1.15 4.94l3.69-2.84z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1a11 11 0 0 0-9.85 6.06L5.84 9.9c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            <span data-auth-sign-in-label>Sign in with Google</span>
+          </button>
+          <button class="btn outline" type="button" data-auth-sign-out hidden>Sign out</button>
+          <span class="auth-status" data-auth-status role="status" aria-live="polite"></span>
+        </div>
+        <a class="btn outline" href="/pricing.html">Plans</a>
+        <a class="btn soft about-editor" href="/editor.html">Open editor</a>
+      </nav>
+    </header>
+    <main class="about-main pricing-main">
+      <section class="pricing-hero">
+        <p class="about-eyebrow">YOUR ACCOUNT</p>
+        <h1>Billing</h1>
+        <p class="about-lead">Manage your current plan, redeem a voucher, and review billing activity.</p>
+      </section>
+      <section class="billing-account" aria-label="Billing account status">
+        <p id="billingAccountStatus" role="status" aria-live="polite">Checking sign-in and billing status…</p>
+      </section>
+      <section class="billing-plan-summary" aria-labelledby="billingPlanTitle">
+        <div>
+          <p class="about-eyebrow">CURRENT PLAN</p>
+          <h2 id="billingPlanTitle">Checking plan status…</h2>
+          <p id="billingPlanDetail">Sign in to view your active plan and manage renewals.</p>
+        </div>
+        <div class="billing-plan-actions">
+          <button class="btn outline" id="switchBillingYearly" type="button" hidden>Switch to yearly</button>
+          <button class="btn outline" id="cancelBilling" type="button" hidden>Cancel subscription</button>
+          <a class="btn primary" href="/pricing.html">View plans</a>
+        </div>
+      </section>
+      <p class="checkout-status" id="billingServiceStatus" role="status" aria-live="polite"></p>
+      <section class="voucher-card" id="voucherSection" aria-labelledby="voucherTitle">
+        <div>
+          <p class="about-eyebrow">HAVE A VOUCHER?</p>
+          <h2 id="voucherTitle">Redeem a Pro voucher</h2>
+          <p>Enter a voucher code provided to you. Pro access is linked to your signed-in Google account.</p>
+          <p>Public vouchers can be redeemed by any signed-in user until their redemption limit. Account-specific vouchers can only be used by the assigned account.</p>
+        </div>
+        <form class="voucher-form" id="voucherForm">
+          <label class="voucher-label" for="voucherCode">Voucher code</label>
+          <input id="voucherCode" name="code" autocomplete="off" placeholder="Enter voucher code" maxlength="40" required>
+          <button class="btn primary" id="redeemVoucher" type="submit" disabled>Redeem voucher</button>
+        </form>
+        <p class="voucher-examples">Example formats only — these are not valid codes: <code>EXAMPLE-30DAYS</code> · <code>EXAMPLE-1YEAR</code></p>
+        <p class="voucher-status" id="voucherStatus" role="status" aria-live="polite"></p>
+      </section>
+      <section class="billing-history" aria-labelledby="billingHistoryTitle">
+        <div class="section-heading">
+          <p class="about-eyebrow">YOUR ACCOUNT</p>
+          <h2 id="billingHistoryTitle">Billing activity</h2>
+          <p>Recent purchases, voucher redemptions, renewals, plan changes, and cancellations.</p>
+        </div>
+        <div id="billingHistory" class="billing-history-list" role="status" aria-live="polite">Sign in to view billing activity.</div>
+      </section>
+      <nav class="billing-links" aria-label="More billing information">
+        <a class="billing-link-card" href="/pricing.html">
+          <span class="billing-link-icon" aria-hidden="true">₹</span>
+          <span class="billing-link-copy"><strong>Explore plans</strong><small>Compare Pro options and pricing</small></span>
+          <span class="billing-link-arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="billing-link-card billing-link-refunds" href="/refunds.html">
+          <span class="billing-link-icon" aria-hidden="true">↺</span>
+          <span class="billing-link-copy"><strong>Refund information</strong><small>Review cancellations and refund terms</small></span>
+          <span class="billing-link-arrow" aria-hidden="true">→</span>
+        </a>
+      </nav>
+    </main>
+    <dialog id="cancelSubscriptionDialog" class="billing-confirmation-dialog" aria-labelledby="cancelSubscriptionTitle">
+      <form id="cancelSubscriptionForm" method="dialog">
+        <div class="billing-dialog-header">
+          <div>
+            <p class="about-eyebrow">CONFIRM</p>
+            <h2 id="cancelSubscriptionTitle">Cancel your Pro subscription?</h2>
+          </div>
+          <button class="mini-link-button" type="button" data-close-cancel-dialog>Close</button>
+        </div>
+        <p class="billing-dialog-copy">Your Pro access stays active until the end of the current paid period. Future renewals will be stopped after you confirm.</p>
+        <label class="billing-dialog-label" for="cancelReason">Optional reason</label>
+        <textarea id="cancelReason" name="reason" rows="4" maxlength="500" placeholder="Tell us why you are cancelling (optional)"></textarea>
+        <div class="billing-dialog-actions">
+          <button class="btn outline" type="button" data-close-cancel-dialog>Keep subscription</button>
+          <button class="btn danger" type="submit">Confirm cancellation</button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="/src/theme.js"></script>
+    <script type="module" src="/src/auth-nav.js"></script>
+    <script type="module" src="/src/billing.js"></script>
+  </body>
+</html>

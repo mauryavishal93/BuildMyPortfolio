@@ -1,6 +1,7 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { voucherDocumentId } from '../backend/billing.js';
 import { app } from '../backend/server.js';
 
 const environment = {
@@ -9,6 +10,7 @@ const environment = {
   BILLING_REFUNDS_PUBLISHED: 'true',
   BILLING_TEST_MODE_VERIFIED: 'true',
   BILLING_LIVE_LAUNCH_APPROVED: 'true',
+  ADMIN_EMAILS: 'admin@example.com',
   FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({
     type: 'service_account',
     project_id: 'test-project',
@@ -22,7 +24,7 @@ const environment = {
   RAZORPAY_PLAN_YEARLY_ID: 'plan_yearly_test',
   PRO_VOUCHERS_JSON: JSON.stringify([
     { code: 'WELCOME30', durationDays: 30, maxRedemptions: 20 },
-    { code: 'LIMITED7', durationDays: 7, maxRedemptions: 1 }
+    { code: 'LIMITED7', durationDays: 7, maxRedemptions: 2 }
   ])
 };
 const previousEnvironment = Object.fromEntries(
@@ -60,6 +62,7 @@ function createFakeDatabase() {
       delete: ref => records.delete(ref.key)
     })
   };
+  db.records = records;
   return { db, records };
 }
 
@@ -78,6 +81,8 @@ before(async () => {
         if (token === 'valid-test-token') return { uid: 'user-1' };
         if (token === 'other-test-token') return { uid: 'user-2' };
         if (token === 'third-test-token') return { uid: 'user-3' };
+        if (token === 'fourth-test-token') return { uid: 'user-4' };
+        if (token === 'admin-test-token') return { uid: 'admin-1', email: 'admin@example.com' };
         throw new Error('Invalid token');
       }
     },
@@ -137,6 +142,23 @@ async function request(path, { method = 'GET', token, body, headers = {} } = {})
   });
 }
 
+test('health check returns an empty success response', async () => {
+  const response = await request('/api/health');
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(await response.text(), '');
+});
+
+test('removed app-selection and marriage URLs return visitors to the resume-builder home', async () => {
+  for (const path of ['/app-select.html', '/marriage-home.html']) {
+    const response = await fetch(`${origin}${path}`, { redirect: 'manual' });
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), '/home.html');
+  }
+});
+
 function signedWebhook(event) {
   const rawBody = Buffer.from(JSON.stringify(event));
   const signature = createHmac('sha256', environment.RAZORPAY_WEBHOOK_SECRET)
@@ -166,6 +188,11 @@ test('billing routes reject unauthenticated and unapproved checkout requests', a
   assert.equal(configBody.entitlementEnabled, true);
   assert.equal(configBody.voucherEnabled, true);
   assert.doesNotMatch(JSON.stringify(configBody), /WELCOME30|LIMITED7/);
+  const configuredVoucherCodes = process.env.PRO_VOUCHERS_JSON;
+  process.env.PRO_VOUCHERS_JSON = '[]';
+  const adminVoucherConfig = await request('/api/billing/config');
+  assert.equal((await adminVoucherConfig.json()).voucherEnabled, true);
+  process.env.PRO_VOUCHERS_JSON = configuredVoucherCodes;
   fakeDatabase.records.set('users/user-1/billing/entitlement', {
     planId: 'pro',
     billingPlan: 'yearly',
@@ -185,7 +212,33 @@ test('billing routes reject unauthenticated and unapproved checkout requests', a
   process.env.BILLING_TEST_MODE_VERIFIED = environment.BILLING_TEST_MODE_VERIFIED;
 });
 
-test('voucher redemption grants configured Pro access once, rejects active plans, and enforces global limits', async () => {
+test('admin pricing stores distinct actual and current values', async () => {
+  const save = await request('/api/admin/pricing', {
+    method: 'PUT',
+    token: 'admin-test-token',
+    body: {
+      pricing: {
+        monthly: { actualPrice: 199, currentPrice: 149 },
+        yearly: { actualPrice: 499, currentPrice: 399 }
+      }
+    }
+  });
+  assert.equal(save.status, 200);
+  const saved = await save.json();
+  assert.equal(saved.pricing.monthly.actualPrice, 199);
+  assert.equal(saved.pricing.monthly.currentPrice, 149);
+  assert.equal(saved.pricing.yearly.actualPrice, 499);
+  assert.equal(saved.pricing.yearly.currentPrice, 399);
+
+  const load = await request('/api/admin/pricing', { token: 'admin-test-token' });
+  const loaded = await load.json();
+  assert.equal(loaded.pricing.monthly.actualPrice, 199);
+  assert.equal(loaded.pricing.monthly.currentPrice, 149);
+  assert.equal(loaded.pricing.yearly.actualPrice, 499);
+  assert.equal(loaded.pricing.yearly.currentPrice, 399);
+});
+
+test('public vouchers are available to every signed-in account and queue during active Pro access', async () => {
   const unauthenticated = await request('/api/billing/vouchers/redeem', {
     method: 'POST',
     body: { code: 'WELCOME30' }
@@ -211,6 +264,14 @@ test('voucher redemption grants configured Pro access once, rejects active plans
   assert.equal(entitlement.source, 'server-verified');
   assert.ok(entitlement.validUntil > Date.now());
 
+  const secondAccount = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'other-test-token',
+    body: { code: 'WELCOME30' }
+  });
+  assert.equal(secondAccount.status, 200);
+  assert.equal((await secondAccount.json()).entitlement.billingPlan, 'voucher');
+
   const duplicate = await request('/api/billing/vouchers/redeem', {
     method: 'POST',
     token: 'valid-test-token',
@@ -223,7 +284,11 @@ test('voucher redemption grants configured Pro access once, rejects active plans
     token: 'valid-test-token',
     body: { code: 'LIMITED7' }
   });
-  assert.equal(activeAccount.status, 409);
+  assert.equal(activeAccount.status, 200);
+  const queued = await activeAccount.json();
+  assert.equal(queued.queued, true);
+  assert.equal(queued.entitlement.pendingVoucherCount, 1);
+  assert.equal(queued.entitlement.pendingVoucherStartAt, entitlement.validUntil);
 
   const firstLimited = await request('/api/billing/vouchers/redeem', {
     method: 'POST',
@@ -231,6 +296,14 @@ test('voucher redemption grants configured Pro access once, rejects active plans
     body: { code: 'LIMITED7' }
   });
   assert.equal(firstLimited.status, 200);
+
+  const anotherPublicAccount = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'fourth-test-token',
+    body: { code: 'WELCOME30' }
+  });
+  assert.equal(anotherPublicAccount.status, 200);
+
   const capped = await request('/api/billing/vouchers/redeem', {
     method: 'POST',
     token: 'third-test-token',
@@ -238,7 +311,43 @@ test('voucher redemption grants configured Pro access once, rejects active plans
   });
   assert.equal(capped.status, 409);
 
-  for (const uid of ['user-1', 'user-2']) {
+  const assignedCode = 'TARGET-USER-4';
+  const assignedId = voucherDocumentId(assignedCode);
+  fakeDatabase.records.set(`adminVouchers/${assignedId}`, {
+    code: assignedCode,
+    durationDays: 30,
+    maxRedemptions: 1,
+    assignedUid: 'user-4',
+    redeemedCount: 0,
+    createdAt: Date.now()
+  });
+  const wrongAccount = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'other-test-token',
+    body: { code: assignedCode }
+  });
+  assert.equal(wrongAccount.status, 403);
+  const assignedAccount = await request('/api/billing/vouchers/redeem', {
+    method: 'POST',
+    token: 'fourth-test-token',
+    body: { code: assignedCode }
+  });
+  assert.equal(assignedAccount.status, 200);
+  assert.equal((await assignedAccount.json()).queued, true);
+
+  const activeEntitlementKey = 'users/user-1/billing/entitlement';
+  fakeDatabase.records.set(activeEntitlementKey, {
+    ...fakeDatabase.records.get(activeEntitlementKey),
+    validUntil: Date.now() - 1
+  });
+  const activated = await request('/api/billing/entitlement', { token: 'valid-test-token' });
+  assert.equal(activated.status, 200);
+  const activatedEntitlement = (await activated.json()).entitlement;
+  assert.equal(activatedEntitlement.billingPlan, 'voucher');
+  assert.equal(activatedEntitlement.pendingVoucherCount, 0);
+  assert.ok(activatedEntitlement.validUntil > Date.now());
+
+  for (const uid of ['user-1', 'user-2', 'user-3', 'user-4']) {
     fakeDatabase.records.delete(`users/${uid}/billing/entitlement`);
   }
 });
@@ -276,6 +385,10 @@ test('subscription checkout, payment verification, and signed webhook lifecycle 
   assert.equal(verified.status, 200);
   assert.equal((await verified.json()).entitlement.planId, 'pro');
   assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').status, 'active');
+  fakeDatabase.records.set('users/user-1/billing/entitlement', {
+    ...fakeDatabase.records.get('users/user-1/billing/entitlement'),
+    pendingVouchers: [{ voucherId: 'queued-webhook-test', durationDays: 7, startsAt: Date.now() + 3_600_000 }]
+  });
 
   const activatedEvent = {
     id: 'evt_activation_1',
@@ -285,14 +398,57 @@ test('subscription checkout, payment verification, and signed webhook lifecycle 
   assert.equal((await signedWebhook(activatedEvent)).status, 200);
   assert.equal((await signedWebhook(activatedEvent)).status, 200);
   assert.equal(fakeDatabase.records.get('billingWebhookEvents/evt_activation_1').subscriptionId, 'sub_test1');
+  const updatedEntitlement = fakeDatabase.records.get('users/user-1/billing/entitlement');
+  assert.equal(updatedEntitlement.pendingVouchers.length, 1);
+  assert.equal(updatedEntitlement.pendingVouchers[0].startsAt, endOfPeriod * 1000);
 
-  const cancelled = await request('/api/billing/cancel', {
-    method: 'POST',
-    token: 'valid-test-token',
-    body: { subscriptionId: 'sub_test1' }
+  fakeDatabase.records.set('users/user-1/billing/entitlement', {
+    planId: 'pro',
+    billingPlan: 'monthly',
+    status: 'active',
+    validUntil: Date.now() + 60_000,
+    subscriptionId: null,
+    cancelAtCycleEnd: false
   });
+  const entitlementResponse = await request('/api/billing/entitlement', { token: 'valid-test-token' });
+  assert.equal((await entitlementResponse.json()).entitlement.subscriptionId, 'sub_test1');
+
+  const checkoutEnabled = process.env.BILLING_ENABLED;
+  process.env.BILLING_ENABLED = 'false';
+  let cancelled;
+  try {
+    cancelled = await request('/api/billing/cancel', {
+      method: 'POST',
+      token: 'valid-test-token',
+      body: { reason: 'Changing to a different plan' }
+    });
+  } finally {
+    process.env.BILLING_ENABLED = checkoutEnabled;
+  }
   assert.equal(cancelled.status, 200);
   assert.equal(fakeDatabase.records.get('users/user-1/billing/entitlement').cancelAtCycleEnd, true);
+  const userActivityResponse = await request('/api/billing/activity', { token: 'valid-test-token' });
+  const userActivity = (await userActivityResponse.json()).activity;
+  const userCancellation = userActivity.find(item => item.title === 'Subscription cancelled by user');
+  assert.equal(userCancellation.actorType, 'user');
+  assert.equal(userCancellation.actorUid, 'user-1');
+  assert.ok(Number.isFinite(userCancellation.occurredAt));
+
+  fakeDatabase.records.set('users/user-2/billing/entitlement', {
+    planId: 'pro', billingPlan: 'monthly', status: 'active', validUntil: Date.now() + 60_000,
+    subscriptionId: 'sub_admin_cancel'
+  });
+  const adminCancelled = await request('/api/admin/users/user-2/cancel-pro', {
+    method: 'POST', token: 'admin-test-token', body: { reason: 'User requested cancellation' }
+  });
+  assert.equal(adminCancelled.status, 200);
+  const adminActivityResponse = await request('/api/billing/activity', { token: 'other-test-token' });
+  const adminActivity = (await adminActivityResponse.json()).activity;
+  const adminCancellation = adminActivity.find(item => item.title === 'Pro access cancelled by admin');
+  assert.equal(adminCancellation.actorType, 'admin');
+  assert.equal(adminCancellation.actorUid, 'admin-1');
+  assert.equal(adminCancellation.detail, 'User requested cancellation');
+  assert.ok(Number.isFinite(adminCancellation.occurredAt));
 
   const expiredEvent = {
     id: 'evt_expired_1',

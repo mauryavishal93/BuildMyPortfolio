@@ -54,6 +54,15 @@ function requireEntitlementConfig(_request, response, next) {
   next();
 }
 
+function requireSubscriptionManagementConfig(_request, response, next) {
+  const { keyId, keySecret } = razorpayConfiguration();
+  if (!firebaseAdminConfigured() || !keyId || !keySecret) {
+    response.status(503).json({ error: 'Subscription management is unavailable on this server.' });
+    return;
+  }
+  next();
+}
+
 async function getFirebaseAdmin() {
   if (app.locals.firebaseAdmin) return app.locals.firebaseAdmin;
   if (firebaseAdmin) return firebaseAdmin;
@@ -169,19 +178,63 @@ function userCheckoutDocument(db, uid) {
   return db.doc(`users/${uid}/billing/checkout`);
 }
 
+function activatePendingVouchers(entitlement, now = Date.now()) {
+  const pendingVouchers = Array.isArray(entitlement?.pendingVouchers)
+    ? entitlement.pendingVouchers
+    : [];
+  const currentValidUntil = Number(entitlement?.validUntil) || 0;
+  if (!pendingVouchers.length || currentValidUntil > now) return null;
+
+  const durationMs = pendingVouchers.reduce((total, voucher) => {
+    if (!Number.isInteger(voucher?.durationDays) || voucher.durationDays < 1 || voucher.durationDays > 3650) {
+      throw new Error('Stored pending voucher duration is invalid.');
+    }
+    return total + voucher.durationDays * 24 * 60 * 60 * 1000;
+  }, 0);
+  return {
+    ...entitlement,
+    planId: 'pro',
+    billingPlan: 'voucher',
+    status: 'active',
+    source: 'server-verified',
+    validUntil: now + durationMs,
+    subscriptionId: null,
+    cancelAtCycleEnd: false,
+    voucherId: pendingVouchers.at(-1).voucherId,
+    pendingVouchers: [],
+    updatedAt: now
+  };
+}
+
+function schedulePendingVouchers(pendingVouchers, startsAt) {
+  let nextStartAt = startsAt;
+  return pendingVouchers.map(voucher => {
+    const scheduledVoucher = { ...voucher, startsAt: nextStartAt };
+    nextStartAt += voucher.durationDays * 24 * 60 * 60 * 1000;
+    return scheduledVoucher;
+  });
+}
+
 function publicEntitlement(data) {
   const validUntil = Number(data?.validUntil) || 0;
+  const pendingVouchers = Array.isArray(data?.pendingVouchers) ? data.pendingVouchers : [];
+  const hasLiveSubscription = Boolean(data?.subscriptionId) || data?.status === 'active';
+  const status = hasLiveSubscription || validUntil > Date.now() ? 'active' : 'inactive';
   return {
     planId: data?.planId || 'free',
     billingPlan: data?.billingPlan || null,
-    status: validUntil > Date.now() ? 'active' : 'inactive',
+    status,
     source: 'server-verified',
     validUntil,
     subscriptionId: data?.subscriptionId || null,
     cancelAtCycleEnd: data?.cancelAtCycleEnd === true,
     scheduledPlan: Object.hasOwn(BILLING_PLANS, data?.scheduledPlan) ? data.scheduledPlan : null,
     scheduledAt: Number(data?.scheduledAt) || null,
-    planChangeStatus: data?.planChangeStatus || null
+    planChangeStatus: data?.planChangeStatus || null,
+    pendingVoucherCount: pendingVouchers.length,
+    pendingVoucherStartAt: pendingVouchers.length
+      ? Number(pendingVouchers[0].startsAt) || validUntil || null
+      : null
   };
 }
 
@@ -201,6 +254,8 @@ async function recordBillingActivity(db, uid, activity) {
       planKey: activity.planKey || null,
       amount: activity.amount || null,
       providerSubscriptionId: activity.providerSubscriptionId || null,
+      actorType: ['user', 'admin'].includes(activity.actorType) ? activity.actorType : null,
+      actorUid: activity.actorUid || null,
       occurredAt
     });
   } catch (error) {
@@ -209,20 +264,120 @@ async function recordBillingActivity(db, uid, activity) {
   return occurredAt;
 }
 
+function normalizePlanPrice(rawValue, fallback) {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric) || numeric < 0) return fallback;
+  return Math.round(numeric * 100) / 100;
+}
+
+function calculateDiscount(actualPrice, currentPrice) {
+  if (!Number.isFinite(actualPrice) || actualPrice <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round(((actualPrice - currentPrice) / actualPrice) * 100)));
+}
+
+function normalizePricingConfig(rawConfig = {}) {
+  const monthlyActual = normalizePlanPrice(rawConfig?.monthly?.actualPrice, BILLING_PLANS.monthly.amount / 100);
+  const monthlyCurrent = normalizePlanPrice(rawConfig?.monthly?.currentPrice, monthlyActual);
+  const yearlyActual = normalizePlanPrice(rawConfig?.yearly?.actualPrice, BILLING_PLANS.yearly.amount / 100);
+  const yearlyCurrent = normalizePlanPrice(rawConfig?.yearly?.currentPrice, yearlyActual);
+  return {
+    currency: 'INR',
+    monthly: {
+      actualPrice: monthlyActual,
+      currentPrice: monthlyCurrent,
+      discountPercent: calculateDiscount(monthlyActual, monthlyCurrent)
+    },
+    yearly: {
+      actualPrice: yearlyActual,
+      currentPrice: yearlyCurrent,
+      discountPercent: calculateDiscount(yearlyActual, yearlyCurrent)
+    },
+    updatedAt: Date.now()
+  };
+}
+
+async function loadPricingConfigFromStore() {
+  try {
+    const { db } = await getFirebaseAdmin();
+    const snapshot = await db.doc('appConfig/pricing').get();
+    return normalizePricingConfig(snapshot.exists ? snapshot.data() : {});
+  } catch {
+    return normalizePricingConfig({});
+  }
+}
+
 app.get('/api/health', (_request, response) => {
-  response.json({ status: 'ok' });
+  response
+    .status(200)
+    .set('Cache-Control', 'no-store')
+    .end();
 });
+
+app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '256kb' }));
+app.use(express.json({ limit: '32kb' }));
 
 app.use('/api/billing', (_request, response, next) => {
   response.set('Cache-Control', 'no-store');
   next();
 });
 
+app.get('/api/pricing/config', async (_request, response) => {
+  try {
+    response.json({ pricing: await loadPricingConfigFromStore() });
+  } catch (error) {
+    console.error('Could not load public pricing config.', error);
+    response.status(500).json({ error: 'Pricing configuration is temporarily unavailable.' });
+  }
+});
+
+app.get('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (_request, response) => {
+  try {
+    response.json({ pricing: await loadPricingConfigFromStore() });
+  } catch (error) {
+    console.error('Could not load admin pricing config.', error);
+    response.status(500).json({ error: 'Unable to load pricing configuration.' });
+  }
+});
+
+app.put('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (request, response) => {
+  const rawPricing = request.body?.pricing || request.body || {};
+  const monthlyActual = normalizePlanPrice(rawPricing?.monthly?.actualPrice, BILLING_PLANS.monthly.amount / 100);
+  const monthlyCurrent = normalizePlanPrice(rawPricing?.monthly?.currentPrice, monthlyActual);
+  const yearlyActual = normalizePlanPrice(rawPricing?.yearly?.actualPrice, BILLING_PLANS.yearly.amount / 100);
+  const yearlyCurrent = normalizePlanPrice(rawPricing?.yearly?.currentPrice, yearlyActual);
+
+  if (!Number.isFinite(monthlyActual) || !Number.isFinite(monthlyCurrent)
+    || !Number.isFinite(yearlyActual) || !Number.isFinite(yearlyCurrent)
+    || monthlyActual < 0 || monthlyCurrent < 0 || yearlyActual < 0 || yearlyCurrent < 0) {
+    response.status(400).json({ error: 'Price values must be non-negative numbers.' });
+    return;
+  }
+
+  try {
+    const { db } = await getFirebaseAdmin();
+    const pricing = normalizePricingConfig({
+      monthly: {
+        actualPrice: monthlyActual,
+        currentPrice: monthlyCurrent
+      },
+      yearly: {
+        actualPrice: yearlyActual,
+        currentPrice: yearlyCurrent
+      }
+    });
+    await db.doc('appConfig/pricing').set(pricing, { merge: true });
+    response.json({ pricing });
+  } catch (error) {
+    console.error('Could not save pricing configuration.', error);
+    response.status(500).json({ error: 'Unable to save pricing configuration.' });
+  }
+});
+
 app.get('/api/billing/config', (_request, response) => {
   response.json({
     checkoutEnabled: billingConfigured(),
     entitlementEnabled: firebaseAdminConfigured(),
-    voucherEnabled: firebaseAdminConfigured() && Boolean(configuredVouchers()),
+    voucherEnabled: firebaseAdminConfigured(),
     keyId: billingConfigured() ? process.env.RAZORPAY_KEY_ID : null,
     plans: Object.fromEntries(Object.entries(BILLING_PLANS).map(([key, plan]) => [
       key,
@@ -231,10 +386,7 @@ app.get('/api/billing/config', (_request, response) => {
   });
 });
 
-app.post(
-  '/api/billing/webhook',
-  express.raw({ type: 'application/json', limit: '256kb' }),
-  async (request, response) => {
+app.post('/api/billing/webhook', async (request, response) => {
     if (!billingConfigured()
       || !validWebhookSignature(request.body, request.get('x-razorpay-signature'), process.env.RAZORPAY_WEBHOOK_SECRET)) {
       response.status(400).json({ error: 'Invalid webhook signature.' });
@@ -341,13 +493,22 @@ app.post(
           } : {}),
           updatedAt: Date.now()
         }, { merge: true });
-        transaction.set(entitlementRef, entitlement || {
-          planId: 'free',
-          billingPlan: mapping.planKey,
-          status: 'inactive',
-          source: 'server-verified',
-          validUntil: 0
-        });
+        const nextEntitlement = {
+          ...(entitlement || {
+            planId: 'free',
+            billingPlan: mapping.planKey,
+            status: 'inactive',
+            source: 'server-verified',
+            validUntil: 0
+          }),
+          pendingVouchers: schedulePendingVouchers(
+            Array.isArray(currentEntitlement.data()?.pendingVouchers)
+              ? currentEntitlement.data().pendingVouchers
+              : [],
+            Number(entitlement?.validUntil) || 0
+          )
+        };
+        transaction.set(entitlementRef, activatePendingVouchers(nextEntitlement) || nextEntitlement);
         if (currentCheckout.data()?.subscriptionId === subscriptionId) {
           if (['subscription.completed', 'subscription.expired'].includes(event.event) && !isPaidThrough) {
             transaction.delete(checkoutRef);
@@ -371,8 +532,6 @@ app.post(
     }
   }
 );
-
-app.use(express.json({ limit: '32kb' }));
 
 app.get('/api/billing/activity', requireEntitlementConfig, requireFirebaseUser, async (request, response) => {
   try {
@@ -400,8 +559,26 @@ app.get('/api/billing/activity', requireEntitlementConfig, requireFirebaseUser, 
 app.get('/api/billing/entitlement', requireEntitlementConfig, requireFirebaseUser, async (request, response) => {
   try {
     const { db } = await getFirebaseAdmin();
-    const snapshot = await userEntitlementDocument(db, request.user.uid).get();
-    response.json({ entitlement: publicEntitlement(snapshot.data()) });
+    const entitlementRef = userEntitlementDocument(db, request.user.uid);
+    const snapshot = await entitlementRef.get();
+    let data = snapshot.data() || {};
+    if (Array.isArray(data.pendingVouchers) && Number(data.validUntil) <= Date.now()) {
+      await db.runTransaction(async transaction => {
+        const currentSnapshot = await transaction.get(entitlementRef);
+        const current = currentSnapshot.data() || {};
+        data = activatePendingVouchers(current) || current;
+        if (data !== current) transaction.set(entitlementRef, data);
+      });
+    }
+    const entitlement = publicEntitlement(data);
+    if (!entitlement.subscriptionId && entitlement.billingPlan !== 'voucher') {
+      const checkoutSnapshot = await userCheckoutDocument(db, request.user.uid).get();
+      const checkoutSubscriptionId = typeof checkoutSnapshot.data()?.subscriptionId === 'string'
+        ? checkoutSnapshot.data().subscriptionId.trim()
+        : '';
+      if (checkoutSubscriptionId) entitlement.subscriptionId = checkoutSubscriptionId;
+    }
+    response.json({ entitlement });
   } catch (error) {
     console.error('Could not load billing entitlement.', error);
     response.status(500).json({ error: 'Could not load your plan status.' });
@@ -447,7 +624,7 @@ app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFireba
     const userVoucherRef = db.doc(`users/${request.user.uid}/vouchers/${voucherId}`);
     const entitlementRef = userEntitlementDocument(db, request.user.uid);
     const now = Date.now();
-    let validUntil;
+    let queued = false;
     await db.runTransaction(async transaction => {
       const [voucherSnapshot, adminVoucherSnapshot, userVoucherSnapshot, entitlementSnapshot] = await Promise.all([
         transaction.get(voucherRef),
@@ -460,19 +637,27 @@ app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFireba
         error.status = 409;
         throw error;
       }
-      const currentEntitlement = entitlementSnapshot.data();
-      if (Number(currentEntitlement?.validUntil) > now) {
-        const error = new Error('Your current Pro access is still active. Redeem a voucher after it expires.');
-        error.status = 409;
-        throw error;
-      }
+      const currentEntitlement = entitlementSnapshot.data() || {};
+      const currentValidUntil = Number(currentEntitlement.validUntil) || 0;
+      const hasActiveAccess = currentValidUntil > now;
+      queued = hasActiveAccess;
       const redeemedCount = Number(voucherSnapshot.data()?.redeemedCount) || 0;
       if (redeemedCount >= voucher.maxRedemptions) {
         const error = new Error('That voucher has reached its redemption limit.');
         error.status = 409;
         throw error;
       }
-      validUntil = now + voucher.durationDays * 24 * 60 * 60 * 1000;
+      const pendingVouchers = Array.isArray(currentEntitlement.pendingVouchers)
+        ? currentEntitlement.pendingVouchers
+        : [];
+      const newVoucher = { voucherId, durationDays: voucher.durationDays };
+      const nextPendingVouchers = hasActiveAccess
+        ? schedulePendingVouchers([...pendingVouchers, newVoucher], currentValidUntil)
+        : [];
+      const activationQueue = hasActiveAccess ? nextPendingVouchers : [...pendingVouchers, newVoucher];
+      const validUntil = hasActiveAccess
+        ? currentValidUntil
+        : now + activationQueue.reduce((total, item) => total + item.durationDays * 24 * 60 * 60 * 1000, 0);
       transaction.set(voucherRef, {
         redeemedCount: redeemedCount + 1,
         updatedAt: now
@@ -486,28 +671,30 @@ app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFireba
         }, { merge: true });
       }
       transaction.create(userVoucherRef, { redeemedAt: now });
-      transaction.set(entitlementRef, {
-        planId: 'pro',
-        billingPlan: 'voucher',
-        status: 'active',
-        source: 'server-verified',
-        validUntil,
-        subscriptionId: null,
-        cancelAtCycleEnd: false,
-        voucherId,
-        updatedAt: now
-      });
+      if (hasActiveAccess) {
+        transaction.set(entitlementRef, {
+          pendingVouchers: nextPendingVouchers,
+          updatedAt: now
+        }, { merge: true });
+      } else {
+        transaction.set(entitlementRef, {
+          planId: 'pro',
+          billingPlan: 'voucher',
+          status: 'active',
+          source: 'server-verified',
+          validUntil,
+          subscriptionId: null,
+          cancelAtCycleEnd: false,
+          voucherId,
+          pendingVouchers: [],
+          updatedAt: now
+        });
+      }
     });
+    const updatedEntitlement = (await entitlementRef.get()).data();
     response.json({
-      entitlement: publicEntitlement({
-        planId: 'pro',
-        billingPlan: 'voucher',
-        status: 'active',
-        source: 'server-verified',
-        validUntil,
-        subscriptionId: null,
-        cancelAtCycleEnd: false
-      })
+      entitlement: publicEntitlement(updatedEntitlement),
+      queued
     });
     await recordBillingActivity(db, request.user.uid, {
       type: 'voucher', status: 'success', title: 'Pro voucher redeemed',
@@ -670,7 +857,8 @@ app.post('/api/admin/users/:uid/cancel-pro', requireFirebaseUser, requireAdmin, 
       type: 'pro_cancelled', status: 'cancelled', title: 'Pro access cancelled by admin',
       detail: reason, reason, planKey: entitlement.billingPlan || 'pro',
       previousPlan: entitlement.billingPlan || 'pro', previousSource: entitlement.source || null,
-      previousValidUntil: entitlement.validUntil || null, cancelledBy: request.user.uid,
+      previousValidUntil: entitlement.validUntil || null, actorType: 'admin', actorUid: request.user.uid,
+      cancelledBy: request.user.uid, cancelledByEmail: request.user.email || null,
       createdAt: cancelledAt, occurredAt: cancelledAt
     });
     response.json({ uid, isPro: false, reason, cancelledAt });
@@ -1090,15 +1278,22 @@ app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, 
   }
 });
 
-app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async (request, response) => {
-  const subscriptionId = request.body?.subscriptionId;
-  if (typeof subscriptionId !== 'string' || !/^sub_[A-Za-z0-9]+$/.test(subscriptionId)) {
-    response.status(400).json({ error: 'A valid subscription ID is required.' });
-    return;
-  }
+app.post('/api/billing/cancel', requireSubscriptionManagementConfig, requireFirebaseUser, async (request, response) => {
+  const reason = typeof request.body?.reason === 'string' ? request.body.reason.trim() : '';
+  let subscriptionId = typeof request.body?.subscriptionId === 'string' ? request.body.subscriptionId.trim() : '';
 
   try {
     const { db } = await getFirebaseAdmin();
+    if (!subscriptionId) {
+      const checkoutSnapshot = await userCheckoutDocument(db, request.user.uid).get();
+      subscriptionId = typeof checkoutSnapshot.data()?.subscriptionId === 'string'
+        ? checkoutSnapshot.data().subscriptionId.trim()
+        : '';
+    }
+    if (!subscriptionId || !/^sub_[A-Za-z0-9]+$/.test(subscriptionId)) {
+      response.status(400).json({ error: 'A valid subscription ID is required.' });
+      return;
+    }
     const ref = subscriptionDocument(db, subscriptionId);
     const snapshot = await ref.get();
     if (!snapshot.exists || snapshot.data().uid !== request.user.uid) {
@@ -1150,10 +1345,15 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
         updatedAt: Date.now()
       }, { merge: true });
     });
+    const cancellationDetail = reason
+      ? `Future renewals have been stopped. ${reason}`
+      : 'Future renewals have been stopped. Access remains available through the paid period.';
     await recordBillingActivity(db, request.user.uid, {
-      type: 'subscription', status: 'success', title: 'Subscription cancellation scheduled',
-      detail: 'Future renewals have been stopped. Access remains available through the paid period.',
-      planKey: snapshot.data().planKey, providerSubscriptionId: subscriptionId
+      type: 'subscription', status: 'cancelled', title: 'Subscription cancelled by user',
+      detail: cancellationDetail,
+      reason,
+      planKey: snapshot.data().planKey, providerSubscriptionId: subscriptionId,
+      actorType: 'user', actorUid: request.user.uid
     });
     response.json({ cancelled: true, status: result.status || 'cancelled' });
   } catch (error) {
@@ -1163,7 +1363,15 @@ app.post('/api/billing/cancel', requireBillingConfig, requireFirebaseUser, async
 });
 
 app.get('/', (_request, response) => {
-  response.sendFile(path.join(distDir, 'editor.html'));
+  response.redirect(302, '/home.html');
+});
+
+app.get('/home.html', (_request, response) => {
+  response.sendFile(path.join(distDir, 'home.html'));
+});
+
+app.get(['/app-select.html', '/marriage-home.html'], (_request, response) => {
+  response.redirect(302, '/home.html');
 });
 
 app.use(express.static(distDir));

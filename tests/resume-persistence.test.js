@@ -6,7 +6,8 @@ import {
   GUEST_RESUME_KEYS,
   GUEST_RESUME_PREFERENCE_KEY,
   resolveAuthTransition,
-  resumeStorageMode
+  resumeStorageMode,
+  shouldShowBrowserSaveToggle
 } from '../frontend/src/resume-persistence.js';
 
 const normalize = value => {
@@ -97,11 +98,12 @@ test('storage quota and preference write failures are surfaced', () => {
   assert.equal(persistence.enabled, false);
 });
 
-test('authenticated session opens the latest account resume before considering a guest draft', () => {
+test('authenticated session reopens the last-worked resume before considering a guest draft', () => {
   assert.deepEqual(chooseAuthenticatedResume({
     hasGuestDraft: true,
-    resumes: [{ id: 'latest-cloud-resume' }, { id: 'older-cloud-resume' }]
-  }), { type: 'open-latest-cloud-resume' });
+    resumes: [{ id: 'latest-cloud-resume' }, { id: 'last-worked-resume' }],
+    lastWorkedResumeId: 'last-worked-resume'
+  }), { type: 'open-cloud-resume', resumeId: 'last-worked-resume' });
   assert.deepEqual(chooseAuthenticatedResume({
     hasGuestDraft: true,
     resumes: []
@@ -119,6 +121,12 @@ test('authenticated persistence stays in cloud with browser saving either on or 
   assert.equal(resumeStorageMode(user, false), 'cloud');
   assert.equal(resumeStorageMode(null, true), 'browser');
   assert.equal(resumeStorageMode(null, false), 'memory');
+});
+
+test('browser save toggle is shown only after auth resolves to a guest session', () => {
+  assert.equal(shouldShowBrowserSaveToggle(null, false), false);
+  assert.equal(shouldShowBrowserSaveToggle({ uid: 'account-1' }, true), false);
+  assert.equal(shouldShowBrowserSaveToggle(null, true), true);
 });
 
 test('login, logout, and account switching are distinct session transitions', () => {

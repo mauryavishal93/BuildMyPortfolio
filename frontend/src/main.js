@@ -4,22 +4,24 @@ import { buildCoverLetterPdf } from './cover-letter-pdf.js';
 import { confirmSignOut } from './signout-modal.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
-import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG } from './plan-access.js';
+import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
 import {
  chooseAuthenticatedResume,
  createGuestResumeStorage,
  resolveAuthTransition,
- resumeStorageMode
+ resumeStorageMode,
+ shouldShowBrowserSaveToggle
 } from './resume-persistence.js';
 import { buildResumePdf, drawPdfText } from './resume-pdf.js';
 import {
- cloudConfigured, consumeProTemplateDownload, deleteResume, getProTemplateDownloadStatus, listResumes, observeAuth, saveResume,
+ cloudConfigured, consumeProTemplateDownload, deleteResume, getLastWorkedResumeId, getProTemplateDownloadStatus, googleSignInErrorMessage, listResumes, observeAuth, saveResume, setLastWorkedResumeId,
  signInWithGoogle, signOutUser
 } from './firebase-cloud.js';
 import { zoomFromPinch } from './zoom.js';
 
 (()=>{'use strict';
 const $=id=>document.getElementById(id),deep=x=>JSON.parse(JSON.stringify(x)),uid=()=>Math.random().toString(36).slice(2,10);
+const baseDocumentTitle=document.title;
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
 const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
@@ -85,7 +87,8 @@ let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=nu
 let localPersistenceBlocked=false,recoverySnapshot=null;
 const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
 const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
-let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
+let lastWorkedResumeWrite=Promise.resolve();
+let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
@@ -122,14 +125,7 @@ function insertPointerLine(sectionId,afterLine){
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
 function updateProLabel(){const isPro=canUseFeature(FEATURE_IDS.ALL_TEMPLATES,verifiedEntitlement);const badge=$('proBrandBadge');if(badge)badge.hidden=!isPro;document.title=isPro?`${baseDocumentTitle} | Pro`:baseDocumentTitle}
 function authErrorMessage(error){
- const code=error?.code;
- if(code==='auth/configuration-not-found'||code==='auth/operation-not-allowed'){
-  return 'Google sign-in is not enabled for this Firebase project. In Firebase Console, open Authentication → Sign-in method, enable Google, and save.';
- }
- if(code==='auth/unauthorized-domain'){
-  return `This website domain is not authorized for Firebase sign-in. Add "${location.hostname}" under Authentication → Settings → Authorized domains.`;
- }
- return error?.message||'Could not sign in with Google.';
+ return googleSignInErrorMessage(error);
 }
 function setSaveState(message){
   const node=$('saveState');
@@ -147,7 +143,7 @@ function currentSaveStateLabel(){
 }
 function updateBrowserPersistenceUI(){
  const toggle=$('browserSaveControl'),input=$('browserSaveToggle');
- if(toggle)toggle.hidden=!!cloudUser;
+ if(toggle)toggle.hidden=!shouldShowBrowserSaveToggle(cloudUser,authStateResolved);
  if(input)input.checked=guestResumeStorage.enabled;
  if(!cloudUser&&!saveTimer&&!localPersistenceBlocked)setSaveState(currentSaveStateLabel());
 }
@@ -155,6 +151,21 @@ function scheduleCloudSave(){
  if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
  clearTimeout(cloudSaveTimer);
  cloudSaveTimer=setTimeout(persistCloudResume,700);
+}
+async function rememberLastWorkedResume(uid,resumeId,generation=cloudSessionGeneration){
+ if(!resumeId||cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+ const write=lastWorkedResumeWrite.catch(()=>{}).then(async()=>{
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  await setLastWorkedResumeId(uid,resumeId);
+ });
+ lastWorkedResumeWrite=write;
+ try{
+  await write;
+ }catch(error){
+  if(cloudUser?.uid!==uid||cloudSessionGeneration!==generation)return;
+  console.error('Could not remember the last-opened cloud resume.',error);
+  toast('Your resume is saved, but we could not remember it as your last-opened resume.');
+ }
 }
 async function persistCloudResume(){
  if(!cloudUser||!cloudReady||cloudSaveBlocked)return;
@@ -167,6 +178,7 @@ async function persistCloudResume(){
   if(cloudSessionGeneration===generation&&cloudUser?.uid===uid){
    activeCloudResumeId=result.id;
    activeCloudRevision=result.revision;
+   void rememberLastWorkedResume(uid,result.id,generation);
    if(JSON.stringify(snapshot)===JSON.stringify(state)){cloudDraftDirty=false;setSaveState('All changes saved')}
    else cloudSavePending=true;
   }
@@ -266,6 +278,7 @@ async function saveCurrentAsCloudCopy(){
   selectedId=null;
   history=[];redoHistory=[];
   render();
+  void rememberLastWorkedResume(uid,result.id,cloudSessionGeneration);
   setSaveState('All changes saved');
   await refreshCloudResumes();
   toast('Cloud resume saved. Future edits will sync automatically.');
@@ -285,6 +298,7 @@ function openCloudResume(id){
   history=[];redoHistory=[];
   selectedId=null;
   render();
+  void rememberLastWorkedResume(cloudUser.uid,item.id,cloudSessionGeneration);
   setSaveState('All changes saved');
   closeCloudModal();
   toast('Cloud resume opened. Future edits will sync automatically.');
@@ -317,6 +331,7 @@ async function removeCloudResume(id){
  }catch(error){toast(error.message||'Could not delete this cloud resume.')}
 }
 async function updateCloudAccount(user,error){
+ authStateResolved=true;
  if(error){
   proTemplateDownloadsRemaining=null;
   verifiedEntitlement=null;
@@ -423,15 +438,26 @@ async function updateCloudAccount(user,error){
    const resumes=await listResumes(user.uid);
    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
    cloudResumes=resumes;
+   let lastWorkedResumeId=null;
+   try{
+    lastWorkedResumeId=await getLastWorkedResumeId(user.uid);
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+   }catch(error){
+    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
+    console.error('Could not load the last-opened cloud resume preference.',error);
+    toast('Could not load your last-opened resume. Opening your most recently updated resume instead.');
+   }
    const decision=chooseAuthenticatedResume({
     hasGuestDraft:hasGuestDraft||cloudDraftDirty,
-    resumes
+    resumes,
+    lastWorkedResumeId
    });
-   if(decision.type==='open-latest-cloud-resume'){
-    const latest=resumes[0];
-    state=normalizeState(latest.state);
-    activeCloudResumeId=latest.id;
-    activeCloudRevision=latest.revision;
+   if(decision.type==='open-cloud-resume'){
+    const selectedResume=resumes.find(resume=>resume.id===decision.resumeId);
+    state=normalizeState(selectedResume.state);
+    activeCloudResumeId=selectedResume.id;
+    activeCloudRevision=selectedResume.revision;
+    void rememberLastWorkedResume(user.uid,selectedResume.id,cloudSessionGeneration);
     cloudDraftDirty=false;
     history=[];redoHistory=[];selectedId=null;
     render();
@@ -483,7 +509,6 @@ async function updateCloudAccount(user,error){
   if(authGeneration===generation&&cloudUser?.uid===user.uid){
    updateProLabel();
    renderTemplates();
-   if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
   }
  }
 }
@@ -505,7 +530,6 @@ window.addEventListener('focus',async()=>{
   }
   updateProLabel();
   renderTemplates();
-  if($('atsModalBg').classList.contains('show'))runAtsChecks({promptUpgrade:false});
  }catch(error){
   console.error('Could not refresh the signed-in account billing status.',error);
  }
@@ -1490,11 +1514,9 @@ function openAts(){
  $('atsModalBg').classList.add('show');
  $('atsModalBg').setAttribute('aria-hidden','false');
  $('jobDescription').focus();
- runAtsChecks({promptUpgrade:false});
 }
 function closeAts(){
  ++atsCheckGeneration;
- window.clearTimeout(window.atsDebounce);
  $('runAtsBtn').disabled=false;
  $('runAtsBtn').textContent='Run checks';
  $('atsModalBg').classList.remove('show');
@@ -1661,9 +1683,8 @@ function runAtsChecks({promptUpgrade=true}={}){
  const generation=++atsCheckGeneration;
  const runButton=$('runAtsBtn');
  const jobText=$('jobDescription').value.trim();
- const hasAdvancedAccess=canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS,verifiedEntitlement);
- const lockedJobMatch=Boolean(jobText&&!hasAdvancedAccess);
- if(lockedJobMatch&&promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Compare resume skills with a target role, review matched and missing terms, and see role-specific diagnostics.');
+ const lockedJobMatch=shouldPromptForJobDescriptionAtsUpgrade(jobText,verifiedEntitlement);
+ if(lockedJobMatch&&promptUpgrade)showUpgrade('job-description-ats','Job-description ATS matching','Free includes resume-only ATS checks. Comparing your resume with a job description, including another role, requires Pro.');
  const stages=[
   {label:'Reading resume sections',detail:'Collecting the details available in your resume.'},
   {label:'Checking structure and completeness',detail:'Reviewing contact details, sections, and formatting.'},
@@ -2142,7 +2163,7 @@ $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener(
  });
  $('downloadRecoveryBackup').addEventListener('click',downloadRecoveryData);
  $('resolveRecovery').addEventListener('click',resolveLocalRecovery);
- $('pdfBtn').addEventListener('click',()=>exportPDF());$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);$('jobDescription').addEventListener('input',()=>{window.clearTimeout(window.atsDebounce);window.atsDebounce=setTimeout(()=>runAtsChecks({promptUpgrade:false}),250)});
+ $('pdfBtn').addEventListener('click',()=>exportPDF());$('closePdfPreview').addEventListener('click',closePdfPreview);$('cancelPdfPreview').addEventListener('click',closePdfPreview);$('downloadPdfPreview').addEventListener('click',downloadPreviewPdf);$('pdfPreviewModalBg').addEventListener('click',e=>{if(e.target===$('pdfPreviewModalBg'))closePdfPreview()});$('atsBtn').addEventListener('click',openAts);$('atsFriendlyBtn').addEventListener('click',applyAtsFriendlyLayout);$('runAtsBtn').addEventListener('click',()=>runAtsChecks());$('closeAts').addEventListener('click',closeAts);
 $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.value.trim()||'Untitled resume'));
 $('dismissOnboarding').addEventListener('click',()=>{$('onboardingCard').hidden=true;onboardingDismissed=true;savePrefs()});
 $('undoBtn')?.addEventListener('click',undo);

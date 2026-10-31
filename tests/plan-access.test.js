@@ -7,6 +7,7 @@ import {
   isProTemplate,
   PLAN_CONFIG,
   PRICING_FEATURES,
+  shouldPromptForJobDescriptionAtsUpgrade,
   TEMPLATE_IDS
 } from '../frontend/src/plan-access.js';
 
@@ -58,6 +59,32 @@ test('only recognized Pro features accept an active unexpired verified entitleme
 
   assert.equal(canUseFeature(FEATURE_IDS.ALL_TEMPLATES, entitlement, 1_000), true);
   assert.equal(canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS, entitlement, 1_000), true);
+});
+
+test('job-description ATS attempts prompt Free users to upgrade but not Pro users', () => {
+  const activePro = {
+    planId: 'pro',
+    status: 'active',
+    source: 'server-verified',
+    validUntil: 2_000
+  };
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('', null), false);
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('  \n ', null), false);
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('Frontend developer role', null), true);
+  assert.equal(shouldPromptForJobDescriptionAtsUpgrade('Another job description', {
+    ...activePro,
+    validUntil: Number.MAX_SAFE_INTEGER
+  }), false);
+});
+
+test('job descriptions are analyzed only after an explicit Run checks action', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(source, /function openAts\(\)\s*\{[^}]*\}/);
+  assert.doesNotMatch(source.match(/function openAts\(\)\s*\{[^}]*\}/)?.[0] || '', /runAtsChecks/);
+  assert.match(source, /\$\('runAtsBtn'\)\.addEventListener\('click',\(\)=>runAtsChecks\(\)\)/);
+  assert.doesNotMatch(source, /\$\('jobDescription'\)\.addEventListener\('input'/);
+  assert.doesNotMatch(source, /atsModalBg'\)\.classList\.contains\('show'\)\)runAtsChecks/);
+  assert.match(source, /if\(lockedJobMatch&&promptUpgrade\)showUpgrade\('job-description-ats'/);
 });
 
 test('monthly and yearly prices match the displayed INR subscriptions', () => {
@@ -178,4 +205,12 @@ test('Firestore rules restrict the lifetime Pro-template trial to two owner-only
   assert.match(rules, /request\.resource\.data\.count == resource\.data\.count \+ 1/);
   assert.match(rules, /request\.resource\.data\.count <= 2/);
   assert.match(rules, /allow delete: if false/);
+});
+
+test('Firestore rules scope the last-worked resume preference to its signed-in account', () => {
+  const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /match \/users\/\{userId\}\/preferences\/resumeEditor/);
+  assert.match(rules, /allow get: if request\.auth != null && request\.auth\.uid == userId/);
+  assert.match(rules, /request\.resource\.data\.keys\(\)\.hasOnly\(\['lastWorkedResumeId'\]\)/);
+  assert.match(rules, /request\.resource\.data\.lastWorkedResumeId is string/);
 });

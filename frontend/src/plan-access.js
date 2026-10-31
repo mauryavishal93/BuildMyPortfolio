@@ -65,3 +65,11 @@ export function canUseFeature(featureId, entitlement, now = Date.now()) {
 
   return entitlement.validUntil > now;
 }
+
+export function shouldPromptForJobDescriptionAtsUpgrade(jobDescription, entitlement) {
+  return Boolean(
+    typeof jobDescription === 'string'
+    && jobDescription.trim()
+    && !canUseFeature(FEATURE_IDS.JOB_DESCRIPTION_ATS, entitlement)
+  );
+}

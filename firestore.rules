@@ -27,6 +27,19 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp;
     }
 
+    match /users/{userId}/preferences/resumeEditor {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list: if false;
+
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['lastWorkedResumeId'])
+        && request.resource.data.lastWorkedResumeId is string
+        && request.resource.data.lastWorkedResumeId.size() <= 1500;
+
+      allow delete: if false;
+    }
+
     match /users/{userId}/trial/proTemplateDownloads {
       allow get: if request.auth != null && request.auth.uid == userId;
       allow list: if false;

@@ -1,4 +1,4 @@
-import { cloudConfigured, observeAuth, signInWithGoogle, signOutUser } from './firebase-cloud.js';
+import { cloudConfigured, googleSignInErrorMessage, observeAuth, signInWithGoogle, signOutUser } from './firebase-cloud.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { canUseFeature, FEATURE_IDS } from './plan-access.js';
 import { confirmSignOut } from './signout-modal.js';
@@ -223,7 +223,7 @@ signInButton?.addEventListener('click', async () => {
   } catch (error) {
     console.error('Google sign-in failed.', error);
     if (status) {
-      status.textContent = error.message || 'Could not sign in with Google.';
+      status.textContent = googleSignInErrorMessage(error);
       status.classList.add('auth-error');
     }
   }

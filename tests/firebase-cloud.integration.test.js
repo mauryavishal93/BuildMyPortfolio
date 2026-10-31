@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFirebaseCloudClient } from '../frontend/src/firebase-cloud.js';
+import { createFirebaseCloudClient, googleSignInErrorMessage } from '../frontend/src/firebase-cloud.js';
+import { chooseAuthenticatedResume } from '../frontend/src/resume-persistence.js';
 
-function createFakeFirebase() {
+function createFakeFirebase({ popupError = null } = {}) {
   const records = new Map();
   let generatedId = 0;
   const auth = {
@@ -13,6 +14,7 @@ function createFakeFirebase() {
   };
   let authObserver;
   let signedInWith;
+  let redirectedWith;
   let signedOut = false;
   const appSdk = {
     getApps: () => [],
@@ -23,7 +25,11 @@ function createFakeFirebase() {
   const authSdk = {
     getAuth: () => auth,
     GoogleAuthProvider,
-    signInWithPopup: async (_auth, provider) => { signedInWith = provider; },
+    signInWithPopup: async (_auth, provider) => {
+      if (popupError) throw popupError;
+      signedInWith = provider;
+    },
+    signInWithRedirect: async (_auth, provider) => { redirectedWith = provider; },
     signOut: async () => { signedOut = true; },
     onAuthStateChanged: (_auth, next) => {
       authObserver = next;
@@ -43,6 +49,9 @@ function createFakeFirebase() {
       exists: () => records.has(ref.key),
       data: () => records.get(ref.key)
     }),
+    setDoc: async (ref, value, options = {}) => {
+      records.set(ref.key, options.merge ? { ...records.get(ref.key), ...value } : value);
+    },
     orderBy: (field, direction) => ({ field, direction }),
     query: collection => collection,
     getDocs: async collection => ({
@@ -75,6 +84,7 @@ function createFakeFirebase() {
     records,
     GoogleAuthProvider,
     get signedInWith() { return signedInWith; },
+    get redirectedWith() { return redirectedWith; },
     get signedOut() { return signedOut; },
     emitAuth(user) { authObserver?.(user); }
   };
@@ -97,6 +107,21 @@ test('Google auth, token ownership, and auth observer lifecycle use the signed-i
   stopObserving();
 });
 
+test('Google sign-in falls back to redirect when the browser blocks a popup', async () => {
+  const firebase = createFakeFirebase({ popupError: { code: 'auth/popup-blocked' } });
+
+  await firebase.client.signInWithGoogle();
+
+  assert.ok(firebase.redirectedWith instanceof firebase.GoogleAuthProvider);
+  assert.equal(firebase.signedInWith, undefined);
+});
+
+test('Google sign-in reports actionable Firebase configuration and domain errors', () => {
+  assert.match(googleSignInErrorMessage({ code: 'auth/operation-not-allowed' }), /Enable Google/);
+  assert.match(googleSignInErrorMessage({ code: 'auth/unauthorized-domain' }, 'example.com'), /example\.com/);
+  assert.match(googleSignInErrorMessage({ code: 'auth/unauthorized-domain' }, '127.0.0.1'), /using localhost/);
+});
+
 test('cloud resume create, list, revision update, conflict detection, and delete are scoped per user', async () => {
   const firebase = createFakeFirebase();
   const firstState = { profile: { name: 'Alex' } };
@@ -108,6 +133,12 @@ test('cloud resume create, list, revision update, conflict detection, and delete
   assert.equal(listed.length, 1);
   assert.equal(listed[0].name, 'First resume');
   assert.deepEqual(listed[0].state, firstState);
+
+  await firebase.client.setLastWorkedResumeId('user-1', created.id);
+  assert.equal(await firebase.client.getLastWorkedResumeId('user-1'), created.id);
+  assert.equal(await firebase.client.getLastWorkedResumeId('user-2'), null);
+  await firebase.client.setLastWorkedResumeId('user-2', 'other-account-resume');
+  assert.equal(await firebase.client.getLastWorkedResumeId('user-1'), created.id);
 
   const updated = await firebase.client.saveResume(
     'user-1', created.id, 'Updated resume', { profile: { name: 'Alex M.' } }, 1
@@ -121,6 +152,24 @@ test('cloud resume create, list, revision update, conflict detection, and delete
 
   await firebase.client.deleteResume('user-1', created.id);
   assert.equal((await firebase.client.listResumes('user-1')).length, 0);
+});
+
+test('last-worked resume selection prefers the saved account selection and falls back to newest', () => {
+  const resumes = [
+    { id: 'newest-resume' },
+    { id: 'previously-opened-resume' }
+  ];
+
+  assert.deepEqual(chooseAuthenticatedResume({
+    hasGuestDraft: true,
+    resumes,
+    lastWorkedResumeId: 'previously-opened-resume'
+  }), { type: 'open-cloud-resume', resumeId: 'previously-opened-resume' });
+  assert.deepEqual(chooseAuthenticatedResume({
+    hasGuestDraft: false,
+    resumes,
+    lastWorkedResumeId: 'deleted-resume'
+  }), { type: 'open-cloud-resume', resumeId: 'newest-resume' });
 });
 
 test('Pro-template PDF trial allowance allows two lifetime claims and rejects later claims', async () => {

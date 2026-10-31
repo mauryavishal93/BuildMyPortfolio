@@ -68,8 +68,11 @@ export function createGuestResumeStorage(storage, normalize) {
   };
 }
 
-export function chooseAuthenticatedResume({ hasGuestDraft, resumes }) {
-  if (resumes.length) return { type: 'open-latest-cloud-resume' };
+export function chooseAuthenticatedResume({ hasGuestDraft, resumes, lastWorkedResumeId }) {
+  if (resumes.length) {
+    const lastWorkedResume = resumes.find(resume => resume.id === lastWorkedResumeId);
+    return { type: 'open-cloud-resume', resumeId: lastWorkedResume?.id ?? resumes[0].id };
+  }
   if (hasGuestDraft) return { type: 'migrate-guest-copy' };
   return { type: 'create-cloud-resume' };
 }
@@ -84,4 +87,8 @@ export function resolveAuthTransition(previousUid, nextUid) {
 export function resumeStorageMode(user, browserSavingEnabled) {
   if (user) return 'cloud';
   return browserSavingEnabled ? 'browser' : 'memory';
+}
+
+export function shouldShowBrowserSaveToggle(user, authStateResolved) {
+  return authStateResolved && !user;
 }

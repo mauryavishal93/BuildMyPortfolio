@@ -65,11 +65,9 @@ test('resume editing tools collapse vertically on mobile only', () => {
   assert.match(source, /mobileToolbarQuery\.addEventListener\('change'/);
 });
 
-test('mobile typography popup is compact and positions using its rendered size', () => {
+test('typography popup is hidden only on mobile and positions using its rendered size', () => {
   const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
-  assert.match(styles, /#sectionTypographyCallout\{display:grid;width:min\(144px,calc\(100vw - 16px\)\);min-height:0;padding:6px 8px/);
-  assert.match(styles, /#sectionTypographyCallout::before\{display:none\}/);
-  assert.match(styles, /\.section-typography-label\{display:none\}/);
+  assert.match(styles, /@media\(max-width:800px\)\{[\s\S]*?#sectionTypographyCallout\{display:none!important\}/);
   assert.match(source, /callout\.hidden=false;\s*const calloutRect=callout\.getBoundingClientRect\(\),width=calloutRect\.width,height=calloutRect\.height/);
   assert.match(source, /const placeAtBottom=targetMiddle<\(mobileVisibleTop\+mobileVisibleBottom\)\/2/);
   assert.match(source, /x=Math\.max\(padding,Math\.min\(x,window\.innerWidth-width-padding\)\)/);

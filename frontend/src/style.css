@@ -612,12 +612,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
  .toolbar-content>.toolbar-zoom{grid-column:1/-1;width:100%;max-width:none}
  .templates{grid-template-columns:repeat(2,minmax(0,1fr))}
  .sheets{width:100%;min-height:0;align-items:flex-start;overflow-x:auto;overflow-y:hidden;padding:0 2px 12px}
- #sectionTypographyCallout{display:grid;width:min(144px,calc(100vw - 16px));min-height:0;padding:6px 8px;border-radius:8px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:3px;box-shadow:0 5px 16px rgba(27,36,52,.16)}
- #sectionTypographyCallout::before{display:none}
- .section-typography-label{display:none}
- .section-typography-title{grid-column:1/-1;font-size:10px}
- .section-typography-value{gap:2px;font-size:8px;line-height:1.15}
- .section-typography-value b{font-size:9px}
+ #sectionTypographyCallout{display:none!important}
 }
 @media(max-width:520px){
  .topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand brand docname docname" "cloud cloud cloud account" "import import cover plans" "pdf pdf pdf pdf";gap:6px;padding:8px}

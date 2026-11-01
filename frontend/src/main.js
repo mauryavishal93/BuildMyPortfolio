@@ -3,7 +3,7 @@ import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
-import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
+import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade, TEMPLATE_IDS } from './plan-access.js';
 import { formatCurrencyPrice, preferredPricingCurrency } from './pricing-currency.js';
 import { extractResumeFile } from './resume-import.js';
 import { parseResumeText } from './resume-import-structure.js';
@@ -31,6 +31,7 @@ const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min
 const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
 const templateDefs=resumeTemplateDefs;
+const requestedHomepageTemplateId=new URLSearchParams(location.search).get('template');
 const makeSections=()=>{
   return [
     {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
@@ -449,7 +450,7 @@ async function updateCloudAccount(user,error){
     activeCloudResumeId=selectedResume.id;
     activeCloudRevision=selectedResume.revision;
     void rememberLastWorkedResume(user.uid,selectedResume.id,cloudSessionGeneration);
-    cloudDraftDirty=false;
+    cloudDraftDirty=applyHomepageTemplate();
     history=[];redoHistory=[];selectedId=null;
     render();
    }else{
@@ -469,7 +470,7 @@ async function updateCloudAccount(user,error){
     openCloudModal();
    }
    setSaveState(cloudDraftDirty||cloudSavePending?'Saving…':'All changes saved');
-   if(cloudSavePending)scheduleCloudSave();
+   if(cloudSavePending||cloudDraftDirty)scheduleCloudSave();
   }catch(error){
    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
    cloudReady=false;
@@ -533,6 +534,23 @@ function transact(fn){const previous=deep(state);fn();if(JSON.stringify(previous
 function undo(){if(!history.length)return;redoHistory.push(deep(state));state=history.pop();if(!state.sections.some(s=>s.id===selectedId))selectedId=null;render();saveLocal();updateUndoButton();toast('Undo complete')}
 function redo(){if(!redoHistory.length)return;history.push(deep(state));state=redoHistory.pop();if(!state.sections.some(s=>s.id===selectedId))selectedId=null;render();saveLocal();updateUndoButton();toast('Redo complete')}
 function activeTemplate(){return templateDefs.find(t=>t.id===state.template)||templateDefs[0]}
+function applyHomepageTemplate(){
+ const template=templateDefs.find(item=>item.id===requestedHomepageTemplateId&&TEMPLATE_IDS.FREE.includes(item.id));
+ if(!template)return false;
+ const changed=state.template!==template.id||state.layout!==template.layout||state.design.accent!==template.accent;
+ state.template=template.id;
+ state.layout=template.layout;
+ state.design.accent=template.accent;
+ if(changed)selectedId=null;
+ return changed;
+}
+function clearHomepageTemplateParam(){
+ if(!requestedHomepageTemplateId)return;
+ const params=new URLSearchParams(location.search);
+ params.delete('template');
+ const query=params.toString();
+ window.history.replaceState(null,'',`${location.pathname}${query?`?${query}`:''}${location.hash}`);
+}
 function sectionById(id){return state.sections.find(s=>s.id===id)}
 function websiteHref(value){
  const raw=String(value||'').trim();if(!raw)return '';
@@ -2559,6 +2577,10 @@ const savedProject=guestResumeStorage.load();
 if(savedProject.state)state=savedProject.state;
 guestResumeLoaded=Boolean(savedProject.state);
 showRecoveryNotice(savedProject);
+if(requestedHomepageTemplateId){
+ if(applyHomepageTemplate())saveLocal();
+ clearHomepageTemplateParam();
+}
 addEventListener('pagehide',()=>{
  const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
  if(persistenceMode==='cloud'){

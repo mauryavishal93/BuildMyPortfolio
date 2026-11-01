@@ -61,6 +61,12 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
  <input id="jsonInput" class="hidden" type="file" accept=".json,application/json">
  <input id="resumeImportInput" class="hidden" type="file" accept=".pdf,.docx,.txt,.json,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/json,image/*">
 </header>
+<nav class="mobile-editor-nav" aria-label="Mobile editor views">
+ <button class="mobile-editor-tab" type="button" data-mobile-panel="resume" aria-pressed="true">Resume</button>
+ <button class="mobile-editor-tab" type="button" data-mobile-panel="templates" aria-pressed="false">Templates</button>
+ <button class="mobile-editor-tab" type="button" data-mobile-panel="sections" aria-pressed="false">Sections</button>
+ <button class="mobile-editor-tab" type="button" data-mobile-panel="design" aria-pressed="false">Design</button>
+</nav>
 <div class="modal-bg" id="cloudModalBg" aria-hidden="true">
   <section class="modal cloud-modal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle">
     <div class="cloud-modal-head">
@@ -80,7 +86,7 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
     </div>
   </section>
 </div>
-<div class="layout" id="layout">
+<div class="layout" id="layout" data-mobile-panel="resume">
  <aside class="left" id="leftPanel">
   <div class="panel-grip left-grip" id="leftGrip" title="Drag to resize panel"></div>
   <button class="panel-toggle left-toggle" id="toggleLeftPanel" type="button" aria-label="Hide left panel" title="Hide left panel"><span></span><span></span></button>
@@ -126,7 +132,12 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
    </div>
    <button class="btn outline small" id="dismissOnboarding" type="button">Start editing</button>
   </section>
-  <div class="toolbar" aria-label="Resume editing tools">
+  <div class="toolbar" aria-label="Resume editing tools" data-collapsed="true">
+   <button class="toolbar-toggle" id="toggleResumeTools" type="button" aria-expanded="false" aria-controls="resumeToolbarControls">
+    <span>Resume editing tools</span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+   </button>
+   <div class="toolbar-content" id="resumeToolbarControls">
    <button class="btn soft small toolbar-btn icon-btn" id="undoBtn" type="button" aria-label="Undo last change">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M20 20v-2a7 7 0 0 0-7-7H4"/></svg>
     <span>Undo</span>
@@ -165,6 +176,7 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
     <button class="btn soft small" id="zoomOut" type="button" aria-label="Zoom out">−</button>
     <span id="zoomLabel" aria-live="polite">100%</span>
     <button class="btn soft small" id="zoomIn" type="button" aria-label="Zoom in">＋</button>
+   </div>
    </div>
   </div>
   <div class="hint" id="hint">A4 preview · Select a section to edit it</div>

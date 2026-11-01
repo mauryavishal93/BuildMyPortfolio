@@ -182,6 +182,8 @@
 .section-empty{padding:18px;border:1px dashed var(--line);border-radius:12px;background:#f8fafc;color:var(--muted);display:grid;gap:10px}
 .section-empty-actions{display:flex;flex-wrap:wrap;gap:8px}
 .toolbar{width:100%;max-width:100%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;column-gap:7px;row-gap:8px;flex-wrap:wrap;padding:8px 10px;background:rgba(255,255,255,.82);border:1px solid #d9e2e6;border-radius:10px;box-shadow:0 5px 16px rgba(27,36,52,.06);min-width:0;box-sizing:border-box;overflow:hidden}
+.toolbar-toggle{display:none}
+.toolbar-content{display:contents}
 .toolbar-control{display:flex;align-items:center;gap:6px;padding:0 2px;min-width:0;flex:0 0 auto}
 .toolbar label{font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap}
 .toolbar select{border:1px solid var(--line);background:#fff;border-radius:7px;padding:7px 18px 7px 8px;font-size:12px;min-width:0;width:96px;max-width:96px;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 11px) calc(50% - 2px),calc(100% - 7px) calc(50% - 2px);background-size:4px 4px,4px 4px;background-repeat:no-repeat;flex-shrink:0}
@@ -581,3 +583,57 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 @media(max-width:800px){.topbar .brand>.brand-name{display:inline-flex}}
 @media(max-width:520px){.topbar .brand{gap:7px}.topbar .brand .logo{width:28px;height:28px}.topbar .brand-name{font-size:14px}}
 @media(max-width:360px){.topbar .brand{gap:3px}.topbar .brand .logo{width:24px;height:24px}.topbar .brand-name{font-size:12.5px}}
+.mobile-editor-nav{display:none}
+@media(max-width:800px){
+ .mobile-editor-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:7px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
+ .mobile-editor-tab{min-width:0;min-height:38px;padding:6px 3px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted);font-size:11px;font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .mobile-editor-tab[aria-pressed=true]{border-color:var(--purple);background:var(--brand-soft);color:var(--purple)}
+ .layout{display:grid!important;grid-template-columns:minmax(0,1fr);grid-template-areas:"mobile-panel" "mobile-canvas";align-items:stretch;min-height:0}
+ #leftPanel,#rightPanel{grid-area:mobile-panel}
+ .center{grid-area:mobile-canvas;width:100%;min-width:0;padding:12px 8px 24px;overflow:visible}
+ #layout[data-mobile-panel=resume] #leftPanel,#layout[data-mobile-panel=resume] #rightPanel,
+ #layout[data-mobile-panel=templates] #rightPanel,#layout[data-mobile-panel=sections] #rightPanel,
+ #layout[data-mobile-panel=design] #leftPanel{display:none}
+ .left,.right{position:relative;top:auto;width:100%!important;height:min(38vh,320px);min-height:190px;max-height:320px;padding:12px 10px;overflow:hidden;align-self:stretch;border:0;border-bottom:1px solid var(--line)}
+ .left-scroll,#inspector{width:100%;height:100%;min-height:0}
+ .panel-grip,.panel-toggle{display:none!important}
+ .toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:0;padding:5px 8px}
+ .toolbar-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:34px;padding:4px 3px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:12px;font-weight:750;text-align:left;cursor:pointer}
+ .toolbar-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:5px}
+ .toolbar-toggle svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s ease}
+ .toolbar[data-collapsed=false] .toolbar-toggle svg{transform:rotate(180deg)}
+ .toolbar-content{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:100%;padding:5px 0 3px}
+ .toolbar[data-collapsed=true] .toolbar-content{display:none}
+ .toolbar #undoBtn,.toolbar #loadBtn,.toolbar #saveBtn{grid-area:auto}
+ .toolbar-content>.toolbar-btn,.toolbar-content>.toolbar-control{width:100%;max-width:none;min-width:0}
+ .toolbar-content>.toolbar-btn{justify-content:center;padding-right:5px;padding-left:5px}
+ .toolbar-content>.toolbar-control{flex-basis:auto;padding:0}
+ .toolbar-content>.toolbar-control select{width:100%;max-width:none}
+ .toolbar-content>.toolbar-zoom{grid-column:1/-1;width:100%;max-width:none}
+ .templates{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .sheets{width:100%;min-height:0;align-items:flex-start;overflow-x:auto;overflow-y:hidden;padding:0 2px 12px}
+ #sectionTypographyCallout{display:grid;width:min(144px,calc(100vw - 16px));min-height:0;padding:6px 8px;border-radius:8px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:3px;box-shadow:0 5px 16px rgba(27,36,52,.16)}
+ #sectionTypographyCallout::before{display:none}
+ .section-typography-label{display:none}
+ .section-typography-title{grid-column:1/-1;font-size:10px}
+ .section-typography-value{gap:2px;font-size:8px;line-height:1.15}
+ .section-typography-value b{font-size:9px}
+}
+@media(max-width:520px){
+ .topbar{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"brand brand docname docname" "cloud cloud cloud account" "import import cover plans" "pdf pdf pdf pdf";gap:6px;padding:8px}
+ .topbar .brand{grid-area:brand;justify-content:flex-start;margin:0 0 0 4px}
+ .topbar .docname{grid-area:docname;width:100%;min-width:0}
+ .topbar .spacer,.topbar .save-state{display:none}
+ .topbar .cloud-actions{grid-area:cloud;justify-content:flex-start;min-width:0}
+ .topbar .cloud-actions .btn{width:auto;max-width:100%;padding:7px 8px;font-size:10px}
+ .topbar #accountMenu{grid-area:account;justify-self:end}
+ .topbar #importResumeBtn{grid-area:import}
+ .topbar #coverLetterBtn{grid-area:cover}
+ .topbar #plansLink{grid-area:plans}
+ .topbar #pdfBtn{grid-area:pdf}
+ .topbar>.btn,.topbar>#plansLink{width:100%;min-width:0;padding:7px 4px;font-size:10px}
+ .templates{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .left,.right{height:min(40vh,320px);min-height:180px;padding:10px 8px}
+ .center{padding:10px 6px 20px}
+}
+#importResumeBtn svg{width:16px;height:16px;flex:0 0 16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}

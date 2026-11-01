@@ -31,3 +31,46 @@ test('editor toolbar controls have compact icons and responsive grid positions',
 test('editor hint text is centered in the canvas', () => {
   assert.match(styles, /\.hint\{text-align:center;[^}]*margin:0 auto 12px/);
 });
+
+test('mobile editor provides view tabs and shows one full-width panel above the canvas', () => {
+  const html = readFileSync(new URL('../frontend/editor.html', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(html, /class="mobile-editor-nav"[^>]*aria-label="Mobile editor views"/);
+  for (const panel of ['resume', 'templates', 'sections', 'design']) {
+    assert.match(html, new RegExp(`class="mobile-editor-tab"[^>]*data-mobile-panel="${panel}"`));
+  }
+  assert.match(source, /function setMobilePanel\(panel\)/);
+  assert.match(source, /document\.querySelectorAll\('\.mobile-editor-tab'\)\.forEach/);
+  assert.match(source, /if\(next!=='resume'\)\{leftCollapsed=false;collapsed=false;applyPanels\(\)\}/);
+  assert.match(source, /function fitMobileZoom\(\)/);
+  assert.match(source, /fitMobileZoom\(\);updateBrowserPersistenceUI\(\)/);
+  assert.match(styles, /grid-template-areas:"mobile-panel" "mobile-canvas"/);
+  assert.match(styles, /#layout\[data-mobile-panel=resume\] #leftPanel,#layout\[data-mobile-panel=resume\] #rightPanel/);
+  assert.match(styles, /#layout\[data-mobile-panel=design\] #leftPanel\{display:none\}/);
+  assert.match(styles, /#importResumeBtn svg\{width:16px;height:16px;flex:0 0 16px/);
+});
+
+test('resume editing tools collapse vertically on mobile only', () => {
+  const html = readFileSync(new URL('../frontend/editor.html', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(html, /class="toolbar"[^>]*data-collapsed="true"/);
+  assert.match(html, /id="toggleResumeTools"[^>]*aria-expanded="false" aria-controls="resumeToolbarControls"/);
+  assert.match(html, /class="toolbar-content" id="resumeToolbarControls"/);
+  assert.match(styles, /\.toolbar-toggle\{display:none\}/);
+  assert.match(styles, /@media\(max-width:800px\)\{[\s\S]*?\.toolbar-toggle\{display:flex/);
+  assert.match(styles, /\.toolbar\[data-collapsed=true\] \.toolbar-content\{display:none\}/);
+  assert.match(styles, /\.toolbar #undoBtn,\.toolbar #loadBtn,\.toolbar #saveBtn\{grid-area:auto\}/);
+  assert.match(source, /setResumeToolbarCollapsed\(mobileToolbarQuery\.matches\)/);
+  assert.match(source, /resumeToolbarToggle\.addEventListener\('click'/);
+  assert.match(source, /mobileToolbarQuery\.addEventListener\('change'/);
+});
+
+test('mobile typography popup is compact and positions using its rendered size', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  assert.match(styles, /#sectionTypographyCallout\{display:grid;width:min\(144px,calc\(100vw - 16px\)\);min-height:0;padding:6px 8px/);
+  assert.match(styles, /#sectionTypographyCallout::before\{display:none\}/);
+  assert.match(styles, /\.section-typography-label\{display:none\}/);
+  assert.match(source, /callout\.hidden=false;\s*const calloutRect=callout\.getBoundingClientRect\(\),width=calloutRect\.width,height=calloutRect\.height/);
+  assert.match(source, /const placeAtBottom=targetMiddle<\(mobileVisibleTop\+mobileVisibleBottom\)\/2/);
+  assert.match(source, /x=Math\.max\(padding,Math\.min\(x,window\.innerWidth-width-padding\)\)/);
+});

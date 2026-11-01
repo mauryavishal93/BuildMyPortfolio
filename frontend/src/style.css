@@ -24,6 +24,16 @@
 .resume-section.selected{outline:2px solid #8b85ff;outline-offset:3px}
 .exporting .resume-section.selected{outline:0}
 .section-heading{font-size:var(--resume-heading);line-height:1.25;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--resume-accent);border-bottom:1px solid #dbe1e9;padding-bottom:4px;margin:0 0 7px}
+#sheets .resume-section>.section-heading{font-size:var(--section-heading-size,var(--resume-heading))!important}
+#sheets .resume-section .section-body,#sheets .resume-section .section-body *{font-size:var(--section-body-size,var(--resume-size))!important}
+#sectionTypographyCallout{position:fixed;z-index:30;width:168px;min-height:94px;padding:10px 12px;border:1px solid #dfe3f3;border-radius:11px;background:#fff;color:#202a3a;box-shadow:0 10px 28px rgba(27,36,52,.2);pointer-events:none;display:flex;flex-direction:column;gap:4px}
+#sectionTypographyCallout[hidden]{display:none}
+#sectionTypographyCallout::before{content:"";position:absolute;top:calc(50% - 6px);left:-7px;width:12px;height:12px;transform:rotate(45deg);border-left:1px solid #dfe3f3;border-bottom:1px solid #dfe3f3;background:#fff}
+#sectionTypographyCallout.is-left::before{left:auto;right:-7px;border:0;border-top:1px solid #dfe3f3;border-right:1px solid #dfe3f3}
+.section-typography-label{color:#7771d7;font-size:9px;font-weight:800;letter-spacing:.1em;line-height:1.2}
+.section-typography-title{overflow:hidden;color:#273348;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.section-typography-value{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#687386;font-size:10px;line-height:1.3}
+.section-typography-value b{color:#344054;font-size:11px;font-weight:800;white-space:nowrap}
 .cont-tag{font-weight:600;font-size:.72em;letter-spacing:0;text-transform:none;opacity:.7}
 .section-body{min-width:0}
 .entry{margin-bottom:9px}

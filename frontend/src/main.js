@@ -5,6 +5,7 @@ import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
 import { formatCurrencyPrice, preferredPricingCurrency } from './pricing-currency.js';
+import { applySectionTypography, normalizeSectionTypography } from './section-typography.js';
 import { templateDefs as resumeTemplateDefs } from '../../Templates/index.js';
 import {
  chooseAuthenticatedResume,
@@ -37,7 +38,7 @@ const makeSections=()=>{
     {id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
   ];
 };
-const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
+const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections().map(section=>({...section,headingSize:15,bodySize:12})),positions:{}});
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
 function normalizeState(d){
@@ -55,7 +56,7 @@ function normalizeState(d){
  out.sections=d.sections.filter(s=>s&&typeof s==='object').map(s=>{
   const type=KNOWN_TYPES.includes(s.type)?s.type:'custom';let id=str(s.id)||uid();while(seen.has(id))id=uid();seen.add(id);
   const normalizedListStyle=['none','bullet','number','arrow','check','dash','diamond'].includes(s.listStyle)?s.listStyle:(type==='summary'?'none':'bullet');
-  const n={id,type,title:str(s.title).trim()?str(s.title):'Untitled section',visible:s.visible!==false,listStyle:(type==='summary'&&ver<4&&normalizedListStyle==='bullet')?'none':normalizedListStyle};
+  const n={id,type,title:str(s.title).trim()?str(s.title):'Untitled section',visible:s.visible!==false,listStyle:(type==='summary'&&ver<4&&normalizedListStyle==='bullet')?'none':normalizedListStyle,...normalizeSectionTypography(s,out.design)};
   if(['experience','education','projects'].includes(type)||Array.isArray(s.entries))n.entries=(Array.isArray(s.entries)?s.entries:[]).filter(e=>e&&typeof e==='object').map(e=>({role:str(e.role),company:str(e.company),date:str(e.date),details:str(e.details)}));
   else n.content=str(s.content);
   return n});
@@ -63,7 +64,7 @@ function normalizeState(d){
  if(pos&&typeof pos==='object')for(const [k,p] of Object.entries(pos)){if(!seen.has(k)||!p||typeof p!=='object')continue;const x=Number(p.x),y=Number(p.y),w=Number(p.w);if(![x,y,w].every(Number.isFinite))continue;if(ver<3&&x===0&&w===610)continue;out.positions[k]={x:clamp(x,0,PAGE_W,0),y:clamp(y,0,PAGE_H,0),w:clamp(w,120,PAGE_W,610)}}
  return out;
 }
-let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
+let state=fresh(),selectedId=null,selectedSectionAnchor=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
 const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
 const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
@@ -651,6 +652,7 @@ function sectionAtoms(s){
 }
 function makeShell(s,cont){
  const sec=document.createElement('section');sec.className='resume-section pointer-'+(s.listStyle||'bullet')+(selectedId===s.id?' selected':'');sec.dataset.resumeSection=s.id;
+ applySectionTypography(sec,s);
  sec.innerHTML=`${cont?'':`<h2 class="section-heading" contenteditable="true" spellcheck="true" data-section-title="${$esc(s.id)}" title="Click to edit this section title">${$esc(s.title)}</h2>`}<div class="section-body"></div>`;return sec;
 }
 /* Appends one atom and returns the element it created (so a failed fit can be undone). */
@@ -755,6 +757,41 @@ function renderSheets(){
  });
  $('hint').textContent=state.mode==='free'?'Free position: drag sections · Click text directly to edit':'Click any name, heading, bullet, skill, or paragraph on the page to edit · Use the right panel for design and photo details';
  $('zoomLabel').textContent=Math.round(zoom*100)+'%';
+ updateSectionTypographyCallout();
+}
+function updateSectionTypographyCallout(){
+ let callout=$('sectionTypographyCallout');
+ if(!callout){
+  callout=document.createElement('aside');
+  callout.id='sectionTypographyCallout';
+  callout.className='section-typography-callout';
+  callout.setAttribute('role','note');
+  callout.setAttribute('aria-label','Selected section text sizes');
+  callout.hidden=true;
+  callout.innerHTML='<span class="section-typography-label">TEXT SIZE</span><strong class="section-typography-title"></strong><span class="section-typography-value"><span>Heading</span><b class="section-heading-value"></b></span><span class="section-typography-value"><span>Body</span><b class="section-body-value"></b></span>';
+  document.body.appendChild(callout);
+ }
+ const section=sectionById(selectedId);
+ const target=selectedSectionAnchor?.isConnected?selectedSectionAnchor:Array.from(document.querySelectorAll('#sheets [data-resume-section].selected')).find(element=>element.dataset.resumeSection===selectedId);
+ if(!section||!target){callout.hidden=true;return}
+ callout.querySelector('.section-typography-title').textContent=section.title;
+ callout.querySelector('.section-heading-value').textContent=`${section.headingSize} px`;
+ callout.querySelector('.section-body-value').textContent=`${section.bodySize} px`;
+
+ const targetRect=target.getBoundingClientRect(),sheetRect=target.closest('.sheet').getBoundingClientRect();
+ const width=168,height=94,gap=10,padding=8;
+ const right=sheetRect.right+gap,left=sheetRect.left-width-gap;
+ let placeLeft=false,x=right;
+ if(right+width>window.innerWidth-padding){
+  if(left>=padding){x=left;placeLeft=true}
+  else x=Math.max(padding,Math.min(right,window.innerWidth-width-padding));
+ }
+ const visibleTop=Math.max(0,target.closest('.center').getBoundingClientRect().top),visibleBottom=Math.min(window.innerHeight,target.closest('.center').getBoundingClientRect().bottom);
+ const sectionCenter=Math.max(visibleTop+height/2,Math.min(targetRect.bottom,visibleBottom-height/2,(targetRect.top+targetRect.bottom)/2));
+ callout.classList.toggle('is-left',placeLeft);
+ callout.style.left=`${x}px`;
+ callout.style.top=`${Math.max(padding,Math.min(sectionCenter-height/2,window.innerHeight-height-padding))}px`;
+ callout.hidden=false;
 }
 function closeTemplatePreview(){
  templatePreviewGeneration++;
@@ -906,7 +943,7 @@ function renderInspector(){
  <div class="field"><label><input type="checkbox" data-design="pageNumbers" ${d.pageNumbers?'checked':''}>Show page numbers (reserves a small footer)</label></div>
  <div class="small-note">Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.</div>`:''}`;
  if(rightTab==='section'&&s){
-   h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
+   h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field-row"><div class="field"><label for="sectionHeadingSize">Heading size (px)</label><input id="sectionHeadingSize" type="number" min="10" max="36" step="1" value="${s.headingSize}"></div><div class="field"><label for="sectionBodySize">Body size (px)</label><input id="sectionBodySize" type="number" min="8" max="24" step="1" value="${s.bodySize}"></div></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
    if(s.entries){
     h+=s.entries.map((e,i)=>`<details class="inspector-entry"${i===0?' open':''}><summary><span>Entry ${i+1}</span><span class="inspector-entry-title" data-entry-summary="${i}">${$esc(e.role||e.company||'Add entry details')}</span></summary><div class="inspector-entry-content"><div class="field"><label>Role / qualification</label><input data-entry="role" data-index="${i}" value="${$esc(e.role)}"></div><div class="field"><label>Company / institution</label><input data-entry="company" data-index="${i}" value="${$esc(e.company)}"></div><div class="field"><label>Date</label><input data-entry="date" data-index="${i}" value="${$esc(e.date)}"></div><div class="field"><label>Details</label><div class="detail-bullet-list" data-entry-details="${i}">${renderDetailInputs(e,i)}</div><button class="btn outline small" type="button" data-add-detail-line="${i}">＋ Add bullet</button></div><button class="btn danger small" data-remove-entry="${i}">Remove entry</button></div></details>`).join('');
      h+='<button class="btn outline small" id="addEntry">＋ Add entry</button>';
@@ -922,11 +959,13 @@ function renderInspector(){
   if(el.type==='checkbox')v=el.checked;
   else if(el.type==='number'){v=Number(el.value);if(el.value===''||!Number.isFinite(v)){renderInspector();return}v=clamp(v,Number(el.min),Number(el.max),state.design[k])}
   else v=el.value;
-  transact(()=>{state.design[k]=v});
+  transact(()=>{state.design[k]=v;if(k==='fontSize')state.sections.forEach(section=>section.bodySize=v);if(k==='headingSize')state.sections.forEach(section=>section.headingSize=v)});
  }));
  const photo=$('photoInput');photo?.addEventListener('change',()=>{const f=photo.files&&photo.files[0];if(!f)return;if(!f.type.startsWith('image/')||f.size>8*1024*1024){toast('Choose an image under 8 MB');return}const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const scale=Math.min(1,500/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,im.width*scale);c.height=Math.max(1,im.height*scale);c.getContext('2d').drawImage(im,0,0,c.width,c.height);transact(()=>state.profile.photo=c.toDataURL('image/jpeg',.84))};im.onerror=()=>toast('That image could not be read');im.src=String(r.result)};r.readAsDataURL(f)});
  $('removePhoto')?.addEventListener('click',()=>transact(()=>state.profile.photo=''));
  $('sectionTitle')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.title=e.target.value||'Untitled section';saveLocal();syncSheetFields();});
+ $('sectionHeadingSize')?.addEventListener('change',e=>{const value=Number(e.target.value);if(e.target.value===''||!Number.isFinite(value)){renderInspector();return}const id=selectedId;transact(()=>{const section=sectionById(id);if(section)section.headingSize=clamp(value,10,36,section.headingSize)})});
+ $('sectionBodySize')?.addEventListener('change',e=>{const value=Number(e.target.value);if(e.target.value===''||!Number.isFinite(value)){renderInspector();return}const id=selectedId;transact(()=>{const section=sectionById(id);if(section)section.bodySize=clamp(value,8,24,section.bodySize)})});
  $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();renderInspector();});
  $('sectionContent')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.content=e.target.value;saveLocal();syncSheetFields();});
  $('inspector').querySelectorAll('[data-entry]').forEach(el=>el.addEventListener('input',()=>{const x=sectionById(selectedId),i=+el.dataset.index;if(!x?.entries?.[i])return;x.entries[i][el.dataset.entry]=el.value;if(el.dataset.entry==='role'||el.dataset.entry==='company')updateInspectorEntryTitle(i,x.entries[i]);saveLocal();syncSheetFields();}));
@@ -986,9 +1025,9 @@ function savePrefs(){try{localStorage.setItem('resumeStudioUI',JSON.stringify({l
 function loadPrefs(){try{const u=JSON.parse(localStorage.getItem('resumeStudioUI')||'null');if(u){leftWidth=clamp(u.leftWidth,LW[0],LW[1],260);panelWidth=clamp(u.panelWidth,RW[0],RW[1],300);leftCollapsed=!!u.leftCollapsed;collapsed=!!u.collapsed;leftTab=u.leftTab==='sections'?'sections':'templates';rightTab=u.rightTab==='section'?'section':'design';onboardingDismissed=u.onboardingDismissed===true}}catch(e){}}
 function render(){renderTemplates();renderSectionList();renderSheets();renderInspector();$('docName').value=state.docName;$('pageLayout').value=state.layout;$('editMode').value=state.mode;updateUndoButton()}
 /* Selecting only toggles highlight classes: no re-layout, so the page never jumps while you click around. */
-function selectSection(id,expandEntries=false){selectedId=id;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
+function selectSection(id,expandEntries=false,anchor=null){selectedId=id;selectedSectionAnchor=anchor;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector();updateSectionTypographyCallout()}
 function addSection(type,title,content){
- const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};
+ const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet',headingSize:state.design.headingSize,bodySize:state.design.fontSize};
  if(['experience','education','projects'].includes(type)){
   const defaultRole = type==='education'?'Degree / qualification':type==='projects'?'Project name':'Role / milestone';
   s.entries=[{role:defaultRole,company:'Organization',date:'Year',details:'Add one detail per line.'}];
@@ -2104,7 +2143,7 @@ $('sheets').addEventListener('keydown',e=>{
 });
 $('sheets').addEventListener('paste',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;e.preventDefault();const text=(e.clipboardData||window.clipboardData).getData('text/plain').replace(/\r/g,'').replace(/\n/g,el.dataset.entryField==='detail'||el.dataset.textSource!==undefined?'\n':' ');document.execCommand('insertText',false,text)});
 $('sheets').addEventListener('cut',()=>{requestAnimationFrame(()=>{document.querySelectorAll('#sheets [contenteditable="true"]').forEach(editable=>editable.dispatchEvent(new Event('input',{bubbles:true})));saveLocal();renderInspector();updateUndoButton()})});
- $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection,Boolean(e.target.closest('[contenteditable="true"]')))});
+ $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection,Boolean(e.target.closest('[contenteditable="true"]')),el)});
 $('sheets').addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch'){
   touchPoints.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -2115,7 +2154,7 @@ $('sheets').addEventListener('pointerdown',e=>{
  if(state.mode!=='free'||e.button!==0)return;const hit=e.target.closest('[data-resume-section]');if(!hit)return;
  const id=hit.dataset.resumeSection;selectSection(id);const el=$('sheets').querySelector(`[data-resume-section="${id}"]`);if(!el)return;
  const beforeDrag=deep(state),startX=e.clientX,startY=e.clientY,start=deep(state.positions[id]||{x:0,y:0,w:PAGE_W}),sheet=el.closest('.sheet'),scale=sheet.getBoundingClientRect().width/PAGE_W||1;
- const move=ev=>{if(pinchUsed)return;const pos={x:clamp(start.x+(ev.clientX-startX)/scale,0,Math.max(0,PAGE_W-start.w),0),y:clamp(start.y+(ev.clientY-startY)/scale,0,PAGE_H-30,0),w:start.w};state.positions[id]=pos;el.style.left=pos.x+'px';el.style.top=pos.y+'px'};
+ const move=ev=>{if(pinchUsed)return;const pos={x:clamp(start.x+(ev.clientX-startX)/scale,0,Math.max(0,PAGE_W-start.w),0),y:clamp(start.y+(ev.clientY-startY)/scale,0,PAGE_H-30,0),w:start.w};state.positions[id]=pos;el.style.left=pos.x+'px';el.style.top=pos.y+'px';updateSectionTypographyCallout()};
  const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);if(JSON.stringify(beforeDrag)!==JSON.stringify(state)){recordHistory(beforeDrag);saveLocal()}};
  document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});
 });
@@ -2241,6 +2280,8 @@ $('dismissOnboarding').addEventListener('click',()=>{$('onboardingCard').hidden=
 $('undoBtn')?.addEventListener('click',undo);
 $('redoBtn')?.addEventListener('click',redo);
 let resizing=null;
+window.addEventListener('resize',updateSectionTypographyCallout);
+document.addEventListener('scroll',updateSectionTypographyCallout,true);
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
 $('panelGrip').addEventListener('pointerdown',gripDown('r'));$('leftGrip').addEventListener('pointerdown',gripDown('l'));
 document.addEventListener('pointermove',e=>{if(!resizing)return;if(resizing==='r')panelWidth=Math.max(RW[0],Math.min(RW[1],window.innerWidth-e.clientX));else leftWidth=Math.max(LW[0],Math.min(LW[1],e.clientX));applyPanels()});

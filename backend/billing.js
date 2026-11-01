@@ -21,6 +21,42 @@ export const BILLING_PLANS = Object.freeze({
   })
 });
 
+export const BILLING_CURRENCY_PLANS = Object.freeze({
+  INR: BILLING_PLANS,
+  USD: Object.freeze({
+    monthly: Object.freeze({
+      ...BILLING_PLANS.monthly,
+      id: 'monthly-usd',
+      amount: 367,
+      currency: 'USD'
+    }),
+    yearly: Object.freeze({
+      ...BILLING_PLANS.yearly,
+      id: 'yearly-usd',
+      amount: 4937,
+      currency: 'USD'
+    })
+  })
+});
+
+export function billingPlan(planKey, currency = 'INR') {
+  if (!Object.hasOwn(BILLING_CURRENCY_PLANS, currency) || !Object.hasOwn(BILLING_PLANS, planKey)) return null;
+  return BILLING_CURRENCY_PLANS[currency][planKey];
+}
+
+export function billingPlanEnvKey(planKey, currency = 'INR') {
+  if (!Object.hasOwn(BILLING_PLANS, planKey) || !Object.hasOwn(BILLING_CURRENCY_PLANS, currency)) return null;
+  return `RAZORPAY_PLAN_${planKey.toUpperCase()}${currency === 'INR' ? '' : `_${currency}`}_ID`;
+}
+
+export function billingCurrencyConfigured(currency, env = process.env) {
+  return Object.hasOwn(BILLING_CURRENCY_PLANS, currency)
+    && Object.keys(BILLING_PLANS).every(planKey => {
+      const envKey = billingPlanEnvKey(planKey, currency);
+      return typeof env[envKey] === 'string' && env[envKey].length > 0;
+    });
+}
+
 export function validRazorpaySignature(message, signature, secret) {
   if (typeof message !== 'string' || typeof signature !== 'string' || !secret) return false;
   const expected = createHmac('sha256', secret).update(message).digest();
@@ -93,7 +129,17 @@ export function voucherDocumentId(code) {
 }
 
 export function planKeyForRazorpayPlanId(planId, env = process.env) {
-  return Object.keys(BILLING_PLANS).find(key => env[`RAZORPAY_PLAN_${key.toUpperCase()}_ID`] === planId) || null;
+  for (const currency of Object.keys(BILLING_CURRENCY_PLANS)) {
+    const planKey = Object.keys(BILLING_PLANS).find(key => env[billingPlanEnvKey(key, currency)] === planId);
+    if (planKey) return planKey;
+  }
+  return null;
+}
+
+export function currencyForRazorpayPlanId(planId, env = process.env) {
+  return Object.keys(BILLING_CURRENCY_PLANS).find(currency => (
+    Object.keys(BILLING_PLANS).some(key => env[billingPlanEnvKey(key, currency)] === planId)
+  )) || null;
 }
 
 export function entitlementFromSubscription(subscription, fallbackPlan = 'monthly', now = Date.now()) {

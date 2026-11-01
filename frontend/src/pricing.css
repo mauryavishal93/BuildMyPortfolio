@@ -240,6 +240,7 @@
 :root[data-theme=light] .pricing-links a:hover{color:#503a16}
 
 @media(max-width:700px){.pricing-hero{padding:26px 20px}.plan-card{padding:24px 20px}}
+
 @media(prefers-reduced-motion:reduce){.plan-card{transition:none}.plan-card:hover{transform:none}}
 
 .billing-history{margin:28px 0; padding:24px; border:1px solid var(--line); border-radius:18px; background:var(--panel-soft,var(--panel));}

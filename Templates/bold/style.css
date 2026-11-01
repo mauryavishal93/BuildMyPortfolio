@@ -1,0 +1,6 @@
+.layout-bold{--col-gap:20px}
+.layout-bold .resume-header{margin:0;padding:var(--mt) var(--mx) 18px;background:#1f2937;color:#fff}
+.layout-bold .name{color:#fff}
+.layout-bold .headline,.layout-bold .contact{color:#e9edf5}
+.layout-bold .section-heading{background:var(--resume-accent);color:#fff;border:0;padding:5px 8px}
+.layout-bold .photo{border:3px solid rgba(255,255,255,.85)}

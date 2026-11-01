@@ -4,6 +4,8 @@ import { buildCoverLetterPdf } from './cover-letter-pdf.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
+import { formatCurrencyPrice, preferredPricingCurrency } from './pricing-currency.js';
+import { templateDefs as resumeTemplateDefs } from '../../Templates/index.js';
 import {
  chooseAuthenticatedResume,
  createGuestResumeStorage,
@@ -24,28 +26,7 @@ const baseDocumentTitle=document.title;
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
 const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
-const templateDefs=[
-{id:'classic',name:'Classic',sub:'ATS-friendly',accent:'#31547a',cls:'layout-classic',layout:'single'},
-{id:'modern',name:'Modern',sub:'Two-column',accent:'#344b67',cls:'layout-modern',layout:'two',banner:true},
-{id:'minimal',name:'Minimal',sub:'Clean type',accent:'#202a3a',cls:'layout-minimal',layout:'single'},
-{id:'creative',name:'Creative',sub:'Color accents',accent:'#6b4eff',cls:'layout-creative',layout:'single'},
-{id:'compact',name:'Compact',sub:'Space-saving',accent:'#2c5260',cls:'layout-compact',layout:'single'},
-{id:'elegant',name:'Elegant',sub:'Editorial',accent:'#7a5947',cls:'layout-elegant',layout:'single'},
-{id:'tech',name:'Tech',sub:'Engineering',accent:'#166b73',cls:'layout-tech',layout:'single'},
-{id:'executive',name:'Executive',sub:'Leadership',accent:'#27364d',cls:'layout-executive',layout:'single'},
-{id:'photo',name:'Photo Sidebar',sub:'Portrait layout',accent:'#215e69',cls:'layout-photo',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'timeline',name:'Timeline',sub:'Career milestones',accent:'#8b4b37',cls:'layout-timeline',layout:'single'},
-{id:'pastel',name:'Soft Pastel',sub:'Warm palette',accent:'#9b5878',cls:'layout-pastel',layout:'single',banner:true},
-{id:'bold',name:'Bold Split',sub:'High contrast',accent:'#b45309',cls:'layout-bold',layout:'two',banner:true},
-{id:'student',name:'Graduate',sub:'Early career',accent:'#18756d',cls:'layout-student',layout:'single'},
-{id:'portrait',name:'Portrait Left',sub:'Photo + rule',accent:'#2f4a7a',cls:'layout-portrait',layout:'single',photo:true,photoPos:'left'},
-{id:'card',name:'Centered Card',sub:'Photo on top',accent:'#6a4c7d',cls:'layout-card',layout:'single',photo:true,photoPos:'center'},
-{id:'photobanner',name:'Photo Banner',sub:'Banner + photo',accent:'#1f5d73',cls:'layout-photobanner',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'studio',name:'Studio',sub:'Serif + frame',accent:'#8a4b2d',cls:'layout-studio',layout:'single',banner:true,photo:true,photoPos:'right'},
-{id:'luxe',name:'Luxe',sub:'Luxury serif',accent:'#7b4b42',cls:'layout-luxe',layout:'single',banner:true},
-{id:'verve',name:'Verve',sub:'Vibrant modern',accent:'#6d28d9',cls:'layout-verve',layout:'single',banner:true},
-{id:'arc',name:'Arc',sub:'Rounded profile',accent:'#0f766e',cls:'layout-arc',layout:'single',banner:true,photo:true,photoPos:'right'}
-];
+const templateDefs=resumeTemplateDefs;
 const makeSections=()=>{
   return [
     {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
@@ -89,6 +70,7 @@ const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState)
 let lastWorkedResumeWrite=Promise.resolve();
 let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
+let billingPricingConfig=null;
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
 let signOutPending=false;
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
@@ -502,6 +484,7 @@ async function updateCloudAccount(user,error){
   }
   try{
    const config=await loadBillingConfig();
+   billingPricingConfig=config;
    if(config.entitlementEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
   }catch(billingError){
@@ -519,6 +502,7 @@ window.addEventListener('focus',async()=>{
  if(!user)return;
  try{
   const config=await loadBillingConfig();
+  billingPricingConfig=config;
   const entitlement=config.entitlementEnabled?await loadBillingEntitlement(user):null;
   if(cloudUser?.uid!==user.uid)return;
   verifiedEntitlement=entitlement;
@@ -550,7 +534,8 @@ function websiteHref(value){
 function templateCardMarkup(t){
  const pro=isProTemplate(t.id),selected=state.template===t.id;
  const photo=t.photo&&t.id!=='photo'?`<span class="mini-photo" style="${t.photoPos==='left'?'left':'right'}:${t.photoPos==='center'?'calc(50% - 7px)':'8px'};${t.photoPos==='center'?'left:calc(50% - 7px);right:auto':''}"></span>`:'';
- const sidebar=t.layout==='two'?`<div style="float:left;width:30%;height:100%;background:${t.accent};margin-right:5px">${t.id==='photo'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
+ const hasSidebar=t.layout==='two'||['interio-designer','brian-baxter'].includes(t.id);
+ const sidebar=hasSidebar?`<div style="float:left;width:30%;height:100%;background:${t.id==='interio-designer'?'#315f4b':t.id==='brian-baxter'?'#303030':t.accent};margin-right:5px">${t.photo?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
  return `<div class="template-card"><button class="template ${selected?'active':''} ${pro?'template-pro':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, ${pro?'Pro':'Free'}"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="plan-badge ${pro?'pro':'free'}">${pro?'PRO':'FREE'}</span></span><small>${$esc(t.sub)}</small></button></div>`;
 }
 function renderTemplates(){
@@ -585,6 +570,52 @@ function sheetHTML(index,cols){
  const contact=[p.email?`<span contenteditable="true" spellcheck="true" data-profile-field="email" title="Click to edit email">${$esc(p.email)}</span>`:'',p.phone?`<span contenteditable="true" spellcheck="true" data-profile-field="phone" title="Click to edit phone">${$esc(p.phone)}</span>`:'',p.location?`<span contenteditable="true" spellcheck="true" data-profile-field="location" title="Click to edit location">${$esc(p.location)}</span>`:'',p.website?`<span contenteditable="true" spellcheck="true" data-profile-field="website" title="Click to edit website">${$esc(p.website)}</span>`:''].filter(Boolean).join('<span class="contact-separator"> · </span>');
  const photoMarkup=p.photo?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:'<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded"></span>';
  const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?photoMarkup:''}<div class="header-text"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="contact" contenteditable="false" title="Edit contact details in the right panel">${contact}</div></div></header>`:'';
+ const initials=String(p.name||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toLocaleUpperCase()||'';
+ if(tmpl.id==='brian-baxter'){
+  const portrait=p.photo
+   ?`<img class="br-portrait" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="br-portrait br-portrait-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Phone','phone','☎'],['Email','email','@'],['Website','website','↗'],['Location','location','⌖']]
+   .filter(([,field])=>p[field])
+   .map(([label,field,icon])=>`<li class="br-contact-item"><span class="br-small-icon" aria-hidden="true">${icon}</span><span contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</span></li>`)
+   .join('');
+  const profile=index===0?`<header class="br-header"><div class="br-yellow-panel"></div><div class="br-header-photo">${portrait}</div><div class="br-header-name"><h1 contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><p contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your professional title">${$esc(p.headline||'Professional Title')}</p></div></header>`:'';
+  const contactSection=index===0&&contactFields?`<section class="br-side-section br-contact-section"><h2 class="br-section-title"><span class="br-title-icon" aria-hidden="true">●</span>Contact</h2><ul class="br-contact-list">${contactFields}</ul></section>`:'';
+  return `<div class="sheet-inner br-sheet">${profile}<div class="br-body"><aside class="br-sidebar">${contactSection}<div class="br-sidebar-sections"></div></aside><main class="br-main"><div class="sections-area"></div></main></div></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='teal-modern'){
+  const tealPhoto=p.photo
+   ?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Location','location','⌖'],['Website','website','↗'],['Phone','phone','☎'],['Email','email','✉']]
+   .filter(([,field])=>p[field])
+   .map(([label,field,icon])=>`<div class="tr-contact-item"><span class="tr-contact-icon" aria-hidden="true">${icon}</span><span contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</span></div>`)
+   .join('');
+  const profile=index===0?`<header class="tr-header"><div class="tr-header-art" aria-hidden="true"></div><div class="tr-header-copy"><div class="tr-kicker"><span></span>PROFILE</div><h1 class="tr-name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="tr-title" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="tr-header-rule"></div><div class="tr-contact-row">${contactFields}</div></div><div class="tr-photo-frame">${tealPhoto}</div></header>`:'';
+  return `<div class="sheet-inner tr-sheet">${profile}<div class="tr-layout"><aside class="tr-sidebar"><div class="tr-sidebar-sections"></div></aside><main class="tr-main"><div class="sections-area"></div></main></div></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='peach-mint'){
+  const peachPhoto=p.photo
+   ?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Location','location'],['Website','website'],['Phone','phone'],['Email','email']]
+   .filter(([,field])=>p[field])
+   .map(([label,field])=>`<div class="pm-contact-item"><span class="pm-contact-icon" aria-hidden="true">${label==='Location'?'⌖':label==='Website'?'↗':label==='Phone'?'☎':'✉'}</span><div><span class="pm-contact-label">${label}</span><div contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</div></div></div>`)
+   .join('');
+  const profile=index===0?`<header class="pm-profile">${peachPhoto}<h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><span class="pm-name-underline"></span></header><div class="pm-contact">${contactFields}</div>`:'';
+  return `<div class="sheet-inner pm-sheet"><aside class="pm-sidebar">${profile}<div class="pm-sidebar-sections"></div></aside><main class="pm-main"><div class="sections-area"></div></main></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='interio-designer'){
+  const interioPhoto=p.photo
+   ?`<img class="interio-photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="interio-photo interio-photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const interioHeader=index===0?`<header class="resume-header"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div></header>`:'';
+  const contactBlocks=[['Address','location'],['Phone','phone'],['Mail','email'],['Social Media','website']]
+   .filter(([,field])=>p[field])
+   .map(([label,field])=>`<div class="interio-contact-block"><h3>${label}</h3><p contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</p></div>`)
+   .join('');
+  return `<div class="sheet-inner interio-layout"><div class="interio-resume-label">RESUME</div><aside class="interio-sidebar">${interioPhoto}${contactBlocks}<div class="interio-sidebar-sections"></div></aside><div class="interio-main">${interioHeader}<div class="sections-area"></div></div></div><div class="page-number"></div>`;
+ }
  return `<div class="sheet-inner">${head}<div class="sections-area">${cols?'<div class="section-columns"><div class="section-column"></div><div class="section-column"></div></div>':''}</div></div><div class="page-number"></div>`;
 }
 function createSheet(index,tmpl,cols){
@@ -651,32 +682,45 @@ function renderWhole(s){const shell=makeShell(s,false),st={};sectionAtoms(s).for
    then the other column, and only then to a new page. Everything is measured, never estimated. */
 const MAIN_TYPES=new Set(['summary','experience']),SIDE_TYPES=new Set(['skills','education','certifications']);
 function flowSections(root,tmpl){
- const two=state.layout==='two',pages=[],streams=Array.from({length:two?2:1},()=>({page:0}));
+  const two=state.layout==='two',pages=[],streams=Array.from({length:tmpl.id==='brian-baxter'?2:two?2:1},()=>({page:0}));
  const addPage=()=>{const p=createSheet(pages.length,tmpl,two);root.appendChild(p);pages.push(p);return p};
  addPage();
- const colOf=(si,pi)=>two?pages[pi].querySelectorAll('.section-column')[si]:pages[pi].querySelector('.sections-area');
- const limitOf=pi=>{const a=pages[pi].querySelector('.sections-area');return a.getBoundingClientRect().bottom-parseFloat(getComputedStyle(a).paddingBottom)};
- const fits=(si,pi)=>{const l=colOf(si,pi).lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi)+.5};
- const fill=si=>{const st=streams[si],c=colOf(si,st.page),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
- const attempt=(si,pi,s,cont,first,force)=>{
-  const shell=makeShell(s,cont),st={};colOf(si,pi).appendChild(shell);appendAtom(shell,first,st,s);
-  if(fits(si,pi)||force)return {si,pi,shell,st,s};
-  shell.remove();return null;
- };
- for(const s of state.sections.filter(x=>x.visible)){
-  const atoms=sectionAtoms(s);let i=0,cont=false,cur=null,lastSi=0;
-  const pref=!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0)<=fill(1)?0:1);
+  const colOf=(si,pi,s)=>tmpl.id==='peach-mint'
+   ?pages[pi].querySelector(s.type==='skills'||s.type==='certifications'?'.pm-sidebar-sections':'.pm-main .sections-area')
+   :tmpl.id==='brian-baxter'
+    ?pages[pi].querySelector(s.type==='education'||s.type==='certifications'?'.br-sidebar-sections':'.br-main .sections-area')
+   :tmpl.id==='teal-modern'
+    ?pages[pi].querySelector(s.type==='skills'?'.tr-sidebar-sections':'.tr-main .sections-area')
+   :tmpl.id==='interio-designer'&&s.type==='skills'
+    ?pages[pi].querySelector(pi===0?'.interio-sidebar-sections':'.interio-main .sections-area')
+   :two?pages[pi].querySelectorAll('.section-column')[si]:pages[pi].querySelector('.sections-area');
+  const limitOf=(pi,c)=>c.classList.contains('interio-sidebar-sections')
+   ||c.classList.contains('pm-sidebar-sections')
+   ||c.classList.contains('tr-sidebar-sections')
+   ||c.classList.contains('br-sidebar-sections')
+   ?c.getBoundingClientRect().bottom
+   :c.closest('.sections-area').getBoundingClientRect().bottom-parseFloat(getComputedStyle(c.closest('.sections-area')).paddingBottom);
+  const fits=(si,pi,s)=>{const c=colOf(si,pi,s),l=c.lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi,c)+.5};
+  const fill=(si,s)=>{const st=streams[si],c=colOf(si,st.page,s),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
+  const attempt=(si,pi,s,cont,first,force)=>{
+   const shell=makeShell(s,cont),st={},container=colOf(si,pi,s);container.appendChild(shell);appendAtom(shell,first,st,s);
+   if(fits(si,pi,s)||force)return {si,pi,shell,st,s};
+   shell.remove();return null;
+  };
+  for(const s of state.sections.filter(x=>x.visible)){
+   const atoms=sectionAtoms(s);let i=0,cont=false,cur=null,lastSi=0;
+   const pref=tmpl.id==='peach-mint'?(s.type==='skills'||s.type==='certifications'?1:0):tmpl.id==='teal-modern'?(s.type==='skills'?1:0):tmpl.id==='brian-baxter'?(s.type==='education'||s.type==='certifications'?1:0):!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0,s)<=fill(1,s)?0:1);
   while(i<atoms.length){
-   const a=atoms[i];
-   if(cur){
-    const el=appendAtom(cur.shell,a,cur.st,cur.s || s);
-    if(fits(cur.si,cur.pi)){i++;continue}
+    const a=atoms[i];
+    if(cur){
+     const el=appendAtom(cur.shell,a,cur.st,cur.s || s);
+     if(fits(cur.si,cur.pi,cur.s)){i++;continue}
     el.remove();lastSi=cur.si;cur=null;cont=true;
    }
    const first=cont&&a.k==='li'?{k:'entry',e:a.e,continuation:true}:a;
    let placed=null;
    if(!cont){
-    const order=two?[pref,1-pref]:[0];
+    const order=two?(tmpl.id==='peach-mint'||tmpl.id==='teal-modern'?[pref]:[pref,1-pref]):tmpl.id==='brian-baxter'?[pref]:[0];
     for(const si of order){placed=attempt(si,streams[si].page,s,false,first,false);if(placed)break}
     lastSi=pref;
    }
@@ -692,6 +736,7 @@ function flowSections(root,tmpl){
 function renderFree(root,tmpl){
  const page=createSheet(0,tmpl,false);root.appendChild(page);
  const area=page.querySelector('.sections-area'),mx=clamp(state.design.margin,0,100,DEFAULT_MARGIN),defW=PAGE_W-2*mx;
+ if(tmpl.id==='interio-designer')area.style.pointerEvents='auto';
  let cursor=area.offsetTop+parseFloat(getComputedStyle(area).paddingTop);
  state.sections.filter(s=>s.visible).forEach(s=>{
   const node=renderWhole(s),pos=state.positions[s.id];
@@ -739,6 +784,7 @@ async function openTemplatePreview(templateId){
   state.template=template.id;
   state.layout=template.layout;
   state.design.accent=template.accent;
+  if(template.id==='brian-baxter'){state.positions={};state.freePageCount=1}
   selectedId=null;
   zoom=1;
   renderSheets();
@@ -1127,6 +1173,7 @@ async function exportPDF(templateId=null){
   state.template=template.id;
   state.layout=template.layout;
   state.design.accent=template.accent;
+  if(template.id==='brian-baxter'){state.positions={};state.freePageCount=1}
   selectedId=null;
   zoom=1;
   renderSheets();
@@ -1607,7 +1654,7 @@ function applyAtsFriendlyLayout(){
 function showUpgrade(featureId,title,description){
  $('upgradeFeature').textContent=title;
  $('upgradeDescription').textContent=description;
- $('upgradePrice').textContent=`₹${PLAN_CONFIG.pro.monthly.price}/month or ₹${PLAN_CONFIG.pro.yearly.price}/year · recurring subscription`;
+ updateUpgradePrice();
  pendingUpgradeFeature=featureId;
  const previewTemplate=pendingUpgradeFeature==='template'&&pendingProTemplate?templateDefs.find(item=>item.id===pendingProTemplate):null;
  $('continueFree').textContent=featureId.startsWith('template')?'Use free Template':'Use free ATS checks';
@@ -1617,6 +1664,19 @@ function showUpgrade(featureId,title,description){
  $('upgradeModalBg').setAttribute('aria-hidden','false');
  $('viewPlans').focus();
 }
+function updateUpgradePrice(){
+ const currency=preferredPricingCurrency(),fallback=PLAN_CONFIG.pro.currencies[currency];
+ const configured=billingPricingConfig?.currencyPlans?.[currency];
+ const monthlyAmount=Number(configured?.monthly?.amount);
+ const yearlyAmount=Number(configured?.yearly?.amount);
+ const monthlyPrice=Number.isSafeInteger(monthlyAmount)&&monthlyAmount>0?monthlyAmount/100:fallback.monthly.price;
+ const yearlyPrice=Number.isSafeInteger(yearlyAmount)&&yearlyAmount>0?yearlyAmount/100:fallback.yearly.price;
+ $('upgradePrice').textContent=`${formatCurrencyPrice(monthlyPrice,currency)}/month or ${formatCurrencyPrice(yearlyPrice,currency)}/year · recurring subscription`;
+}
+void loadBillingConfig().then(config=>{
+ billingPricingConfig=config;
+ if($('upgradeModalBg')?.classList.contains('show'))updateUpgradePrice();
+}).catch(error=>console.warn('Could not load current regional prices for the upgrade dialog.',error));
 function closeUpgrade(){
  $('upgradeModalBg').classList.remove('show');
  $('upgradeModalBg').setAttribute('aria-hidden','true');
@@ -1649,6 +1709,7 @@ async function requestProTemplate(templateId){
    state.template=template.id;
    state.layout=template.layout;
    state.design.accent=template.accent;
+   if(template.id==='brian-baxter'){state.positions={};state.freePageCount=1}
    selectedId=null;
   });
   pendingProTemplate=null;

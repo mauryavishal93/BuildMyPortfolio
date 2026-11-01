@@ -7,6 +7,7 @@ import {
 } from './billing-client.js';
 import { cloudConfigured, observeAuth, signInWithGoogle } from './firebase-cloud.js';
 import { PLAN_CONFIG, PRICING_FEATURES } from './plan-access.js';
+import { formatCurrencyPrice, preferredPricingCurrency } from './pricing-currency.js';
 
 const $ = selector => document.querySelector(selector);
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -21,6 +22,7 @@ const voucherStatus = $('#pricingVoucherStatus');
 let currentUser = null;
 let billingConfig = null;
 let entitlement = null;
+let selectedCurrency = preferredPricingCurrency();
 
 $('#supportLink')?.addEventListener('click', event => {
   event.preventDefault();
@@ -32,42 +34,48 @@ supportDialog?.addEventListener('click', event => {
   if (event.target === supportDialog) supportDialog.close();
 });
 
-const formatPrice = amount => new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: PLAN_CONFIG.pro.currency,
-  maximumFractionDigits: 0
-}).format(amount);
+const formatPrice = (amount, currency = selectedCurrency) => formatCurrencyPrice(amount, currency);
 
-function getConfiguredPrice(planKey, fallback) {
-  const value = Number(window.__pricingConfig?.[planKey]?.currentPrice ?? fallback);
+function pricingForCurrency(currency) {
+  if (currency === 'USD') {
+    return window.__pricingConfig?.USD || PLAN_CONFIG.pro.currencies.USD;
+  }
+  return window.__pricingConfig || {};
+}
+
+function getConfiguredPrice(planKey, fallback, currency = selectedCurrency) {
+  const value = Number(pricingForCurrency(currency)?.[planKey]?.currentPrice ?? fallback);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-function getConfiguredActualPrice(planKey, fallback) {
-  const value = Number(window.__pricingConfig?.[planKey]?.actualPrice ?? fallback);
+function getConfiguredActualPrice(planKey, fallback, currency = selectedCurrency) {
+  const value = Number(pricingForCurrency(currency)?.[planKey]?.actualPrice ?? fallback);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-function renderStoredPricing() {
-  const monthlyActual = getConfiguredActualPrice('monthly', PLAN_CONFIG.pro.monthly.price);
-  const monthlyCurrent = getConfiguredPrice('monthly', PLAN_CONFIG.pro.monthly.price);
-  const yearlyActual = getConfiguredActualPrice('yearly', PLAN_CONFIG.pro.yearly.price);
-  const yearlyCurrent = getConfiguredPrice('yearly', PLAN_CONFIG.pro.yearly.price);
+function renderStoredPricing(currency = selectedCurrency) {
+  const planConfig = PLAN_CONFIG.pro.currencies[currency];
+  const monthlyActual = getConfiguredActualPrice('monthly', planConfig.monthly.price, currency);
+  const monthlyCurrent = getConfiguredPrice('monthly', planConfig.monthly.price, currency);
+  const yearlyActual = getConfiguredActualPrice('yearly', planConfig.yearly.price, currency);
+  const yearlyCurrent = getConfiguredPrice('yearly', planConfig.yearly.price, currency);
 
   const renderPlanPrice = (node, currentPrice, actualPrice, suffixLabel) => {
     const discount = actualPrice > currentPrice ? Math.round(((actualPrice - currentPrice) / actualPrice) * 100) : 0;
     const actualMarkup = actualPrice > currentPrice
-      ? `<span class="price-original">${formatPrice(actualPrice)}</span>`
+      ? `<span class="price-original">${formatPrice(actualPrice, currency)}</span>`
       : '';
     const discountMarkup = discount > 0
       ? `<span class="price-discount">Save ${discount}%</span>`
       : '';
-    node.innerHTML = `${actualMarkup}${formatPrice(currentPrice)} <span>${suffixLabel}${discountMarkup}</span>`;
+    node.innerHTML = `${actualMarkup}${formatPrice(currentPrice, currency)} <span>${suffixLabel}${discountMarkup}</span>`;
+    node.setAttribute('aria-busy', 'false');
   };
 
   renderPlanPrice($('#monthlyPrice'), monthlyCurrent, monthlyActual, 'per month, recurring');
   renderPlanPrice($('#yearlyPrice'), yearlyCurrent, yearlyActual, 'per year, recurring');
-  $('#freePrice').innerHTML = `${formatPrice(PLAN_CONFIG.free.price)} <span>always free</span>`;
+  $('#freePrice').innerHTML = `${formatPrice(PLAN_CONFIG.free.price, currency)} <span>always free</span>`;
+  $('#freePrice').setAttribute('aria-busy', 'false');
 }
 
 function updateVoucherControls() {
@@ -104,19 +112,20 @@ async function loadPublicPricingConfig() {
     const response = await fetch('/api/pricing/config', { cache: 'no-store' });
     if (!response.ok) throw new Error('Unable to load pricing configuration.');
     const body = await response.json();
-    window.__pricingConfig = body.pricing || { monthly: { currentPrice: PLAN_CONFIG.pro.monthly.price, actualPrice: PLAN_CONFIG.pro.monthly.price }, yearly: { currentPrice: PLAN_CONFIG.pro.yearly.price, actualPrice: PLAN_CONFIG.pro.yearly.price } };
-    renderStoredPricing();
+    window.__pricingConfig = body.pricing || {};
+    renderStoredPricing(selectedCurrency);
   } catch (error) {
     console.error('Pricing config could not be loaded.', error);
     window.__pricingConfig = {
       monthly: { currentPrice: PLAN_CONFIG.pro.monthly.price, actualPrice: PLAN_CONFIG.pro.monthly.price },
-      yearly: { currentPrice: PLAN_CONFIG.pro.yearly.price, actualPrice: PLAN_CONFIG.pro.yearly.price }
+      yearly: { currentPrice: PLAN_CONFIG.pro.yearly.price, actualPrice: PLAN_CONFIG.pro.yearly.price },
+      USD: PLAN_CONFIG.pro.currencies.USD
     };
-    renderStoredPricing();
+    renderStoredPricing(selectedCurrency);
   }
 }
 
-renderStoredPricing();
+renderStoredPricing(selectedCurrency);
 void loadPublicPricingConfig();
 
 const tableBody = $('#pricingFeatures');
@@ -132,7 +141,10 @@ for (const feature of PRICING_FEATURES) {
 }
 
 function updatePurchaseControls() {
-  const checkoutReady = Boolean(billingConfig?.checkoutEnabled);
+  const checkoutReady = Boolean(
+    billingConfig?.checkoutEnabled
+    && billingConfig.supportedCurrencies?.includes(selectedCurrency)
+  );
   const active = entitlement?.status === 'active';
   const activePlan = active ? entitlement.billingPlan : null;
 
@@ -142,7 +154,9 @@ function updatePurchaseControls() {
   if (!checkoutReady) {
     monthlyButton.textContent = 'Coming soon';
     yearlyButton.textContent = 'Coming soon';
-    checkoutStatus.textContent = 'Checkout is coming soon. Please check back later.  Till then user voucher code is available for free access. Please contact support for more details.';
+    checkoutStatus.textContent = billingConfig?.checkoutEnabled
+      ? `${selectedCurrency} checkout is not available yet. Please select another currency or check back later.`
+      : 'Checkout is coming soon. Please check back later. Till then user voucher code is available for free access. Please contact support for more details.';
   } else if (!currentUser) {
     monthlyButton.textContent = 'Sign in to purchase monthly';
     yearlyButton.textContent = 'Sign in to purchase yearly';
@@ -204,7 +218,7 @@ async function loadRazorpayCheckout() {
 }
 
 async function startCheckout(planKey) {
-  if (!billingConfig?.checkoutEnabled) {
+  if (!billingConfig?.checkoutEnabled || !billingConfig.supportedCurrencies?.includes(selectedCurrency)) {
     checkoutStatus.textContent = 'Checkout is coming soon. Please check back later. Till then user voucher code is available for free access. Please contact support for more details.';
     return;
   }
@@ -219,12 +233,15 @@ async function startCheckout(planKey) {
   try {
     const checkoutUser = currentUser;
     await loadRazorpayCheckout();
-    const created = await createBillingSubscription(checkoutUser, planKey);
+    const planConfig = PLAN_CONFIG.pro.currencies[selectedCurrency];
+    const expectedAmount = Math.round(getConfiguredPrice(planKey, planConfig[planKey].price, selectedCurrency) * 100);
+    const created = await createBillingSubscription(checkoutUser, planKey, selectedCurrency, expectedAmount);
     const checkout = new window.Razorpay({
       key: created.keyId,
       subscription_id: created.subscriptionId,
       name: 'PersonaCraftPro',
       description: `${created.plan.label} subscription`,
+      currency: created.plan.currency,
       prefill: {
         name: checkoutUser.displayName || '',
         email: checkoutUser.email || ''

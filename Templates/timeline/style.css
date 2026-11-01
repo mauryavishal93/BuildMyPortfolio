@@ -1,0 +1,3 @@
+.layout-timeline .resume-section{border-left:2px solid #ead0c6;padding-left:12px;margin-left:0}
+.layout-timeline .resume-section:before{content:"";position:absolute;left:-6px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--resume-accent)}
+.layout-timeline .section-heading{border:0}

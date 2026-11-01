@@ -73,10 +73,10 @@ export async function redeemBillingVoucher(user, code) {
   });
 }
 
-export async function createBillingSubscription(user, planKey) {
+export async function createBillingSubscription(user, planKey, currency, expectedAmount) {
   return billingRequest('subscriptions', user, {
     method: 'POST',
-    body: { planKey }
+    body: { planKey, currency, expectedAmount }
   });
 }
 

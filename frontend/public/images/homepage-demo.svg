@@ -1,0 +1,343 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 880" role="img" aria-labelledby="title description">
+  <title id="title">PersonaCraftPro resume editor walkthrough</title>
+  <desc id="description">An animated, cursor-guided preview of the real editor: select a template, edit the resume in the center, adjust profile settings in the right panel, and sign in with Google for cloud saves.</desc>
+  <defs>
+    <linearGradient id="page" x2="0" y2="1">
+      <stop stop-color="#faf9f6"/>
+      <stop offset="1" stop-color="#f2f0e9"/>
+    </linearGradient>
+    <linearGradient id="paper" x2="0" y2="1">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#fffefa"/>
+    </linearGradient>
+    <filter id="cursor-shadow" x="-80%" y="-60%" width="250%" height="230%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2.4" result="blur"/>
+      <feOffset dy="2" result="offset"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".34"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      text{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+      .tiny{font-size:10px;fill:#796e5b}.muted{fill:#827b6e}
+      .label{font-size:9px;font-weight:800;letter-spacing:1px;fill:#807766}
+      .border{stroke:#e8e4da;stroke-width:1}
+      .stage{opacity:0;animation:caption 10s infinite}
+      .stage-one{animation-delay:0s}.stage-two{animation-delay:2.5s}
+      .stage-three{animation-delay:5s}.stage-four{animation-delay:7.5s}
+      .focus{opacity:0;animation:focus 10s infinite}
+      .focus-left{animation-delay:0s}.focus-center{animation-delay:2.5s}
+      .focus-right{animation-delay:5s}.focus-cloud{animation-delay:7.5s}
+      .local-status{animation:local-status 10s infinite}
+      .saving-status{opacity:0;animation:saving-status 10s infinite}
+      .saved-status{opacity:0;animation:saved-status 10s infinite}
+      .cloud-copy{animation:cloud-copy 10s infinite}
+      .cloud-success{opacity:0;animation:cloud-success 10s infinite}
+      .pointer{opacity:0;pointer-events:none}
+      .pointer-left{animation:pointer-left 10s infinite}
+      .pointer-center{animation:pointer-center 10s infinite}
+      .pointer-right{animation:pointer-right 10s infinite}
+      .pointer-cloud{animation:pointer-cloud 10s infinite}
+      .click-wave{opacity:0;transform-box:fill-box;transform-origin:center}
+      .click-left{animation:click-left 10s infinite}
+      .click-center{animation:click-center 10s infinite}
+      .click-right{animation:click-right 10s infinite}
+      .click-cloud{animation:click-cloud 10s infinite}
+      @keyframes caption{0%,21%{opacity:1}24%,100%{opacity:0}}
+      @keyframes focus{
+        0%,3%,20%,23%,100%{opacity:0}
+        6%,17%{opacity:1}
+      }
+      @keyframes pointer-left{0%,20%{opacity:1}23%,100%{opacity:0}}
+      @keyframes pointer-center{0%,23%{opacity:0}26%,45%{opacity:1}48%,100%{opacity:0}}
+      @keyframes pointer-right{0%,48%{opacity:0}51%,70%{opacity:1}73%,100%{opacity:0}}
+      @keyframes pointer-cloud{0%,73%{opacity:0}76%,95%{opacity:1}98%,100%{opacity:0}}
+      @keyframes click-left{0%,6%,100%{opacity:0;transform:scale(.5)}8%,12%{opacity:.85;transform:scale(1)}14%,18%{opacity:0;transform:scale(1.25)}}
+      @keyframes click-center{0%,30%,100%{opacity:0;transform:scale(.5)}32%,36%{opacity:.85;transform:scale(1)}38%,42%{opacity:0;transform:scale(1.25)}}
+      @keyframes click-right{0%,55%,100%{opacity:0;transform:scale(.5)}57%,61%{opacity:.85;transform:scale(1)}63%,67%{opacity:0;transform:scale(1.25)}}
+      @keyframes click-cloud{0%,80%,100%{opacity:0;transform:scale(.5)}82%,86%{opacity:.85;transform:scale(1)}88%,92%{opacity:0;transform:scale(1.25)}}
+      @keyframes local-status{0%,67%{opacity:1}70%,100%{opacity:0}}
+      @keyframes saving-status{0%,68%,70%,100%{opacity:0}73%,81%{opacity:1}}
+      @keyframes saved-status{0%,83%,85%,100%{opacity:0}88%,98%{opacity:1}}
+      @keyframes cloud-copy{0%,65%{opacity:1}68%,100%{opacity:0}}
+      @keyframes cloud-success{0%,84%,86%,100%{opacity:0}89%,98%{opacity:1}}
+      @media(prefers-reduced-motion:reduce){
+        .stage,.focus,.saving-status,.saved-status,.cloud-success,.click-wave,.pointer{animation:none!important;opacity:0}
+        .stage-one{opacity:1}
+        .pointer-left{opacity:1}
+        .local-status,.cloud-copy{animation:none!important;opacity:1}
+      }
+    </style>
+  </defs>
+
+  <rect width="1440" height="880" fill="url(#page)"/>
+
+  <rect width="1440" height="64" fill="#fff"/>
+  <path d="M0 63.5h1440" stroke="#e9e5db"/>
+  <rect x="17" y="12" width="38" height="38" rx="11" fill="#5146e5"/>
+  <path d="M28 20h15v20H28z" fill="#fff" opacity=".97"/>
+  <path d="M32 25h8v2h-8zm0 4h8v2h-8zm0 4h5v2h-5z" fill="#5146e5"/>
+  <text x="66" y="38" font-size="17" font-weight="800" fill="#202738">PersonaCraft</text>
+  <rect x="184" y="20" width="38" height="22" rx="7" fill="#6957de"/>
+  <text x="192" y="35" font-size="11" font-weight="800" fill="#fff">Pro</text>
+  <text x="250" y="37" font-size="12" fill="#536075">Untitled resume</text>
+
+  <g class="local-status">
+    <circle cx="839" cy="31" r="4" fill="#43a274"/>
+    <text x="849" y="35" font-size="10" fill="#687467">Saved locally</text>
+  </g>
+  <g class="saving-status">
+    <circle cx="839" cy="31" r="4" fill="#dda63d"/>
+    <text x="849" y="35" font-size="10" fill="#8a672d">Saving to cloud…</text>
+  </g>
+  <g class="saved-status">
+    <circle cx="839" cy="31" r="4" fill="#43a274"/>
+    <text x="849" y="35" font-size="10" font-weight="700" fill="#327c59">Saved to cloud</text>
+  </g>
+
+  <rect x="951" y="12" width="183" height="40" rx="9" fill="#fff" stroke="#e5dfd4"/>
+  <circle cx="973" cy="32" r="9" fill="#fff" stroke="#e8e8e8"/>
+  <text x="969.4" y="36" font-size="12" font-weight="800" fill="#4285f4">G</text>
+  <g class="cloud-copy">
+    <text x="989" y="36" font-size="11" font-weight="700" fill="#414b5a">Sign in with Google</text>
+  </g>
+  <g class="cloud-success">
+    <rect x="951" y="12" width="183" height="40" rx="9" fill="#eaf7ef" stroke="#a9d8b8"/>
+    <path d="m966 32 4 4 8-9" fill="none" stroke="#32845b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="989" y="36" font-size="11" font-weight="700" fill="#28714d">Cloud resume saved</text>
+  </g>
+  <rect x="1144" y="12" width="112" height="40" rx="9" fill="#fff" stroke="#e5dfd4"/>
+  <text x="1157" y="36" font-size="11" font-weight="700" fill="#414b5a">Cover letter</text>
+  <rect x="1265" y="12" width="67" height="40" rx="9" fill="#fff" stroke="#e5dfd4"/>
+  <text x="1281" y="36" font-size="11" font-weight="700" fill="#414b5a">Plans</text>
+  <rect x="1341" y="12" width="84" height="40" rx="9" fill="#b89553"/>
+  <text x="1355" y="36" font-size="11" font-weight="800" fill="#fff">Export PDF</text>
+
+  <rect x="0" y="64" width="258" height="816" fill="#fbfaf7"/>
+  <path d="M258 64v816" stroke="#e7e2d8"/>
+  <rect x="15" y="81" width="226" height="34" rx="9" fill="#f1eee6"/>
+  <rect x="18" y="84" width="103" height="28" rx="7" fill="#fff"/>
+  <text x="43" y="102" font-size="10" font-weight="700" fill="#655a47">Templates</text>
+  <text x="158" y="102" font-size="10" font-weight="700" fill="#756d60">Sections</text>
+  <text x="18" y="139" class="label">CHOOSE A TEMPLATE</text>
+
+  <g>
+    <rect x="15" y="153" width="121" height="132" rx="10" fill="#fff" stroke="#c5a65f" stroke-width="1.5"/>
+    <rect x="24" y="163" width="103" height="78" rx="4" fill="#f8f8f7" stroke="#ebe9e3"/>
+    <rect x="33" y="173" width="72" height="7" rx="2" fill="#31547a"/>
+    <rect x="33" y="187" width="82" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="33" y="195" width="69" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="33" y="209" width="46" height="4" rx="2" fill="#62748a"/>
+    <rect x="33" y="218" width="80" height="3" rx="1.5" fill="#d5d9de"/>
+    <text x="24" y="258" font-size="10" font-weight="700" fill="#3f4652">Classic</text>
+    <text x="24" y="274" font-size="9" fill="#77776d">ATS-friendly</text>
+    <text x="101" y="258" font-size="9" fill="#64705f">Free</text>
+
+    <rect x="146" y="153" width="97" height="132" rx="10" fill="#fff" stroke="#e8e4da"/>
+    <rect x="154" y="163" width="81" height="78" rx="4" fill="#f8f8f7" stroke="#ebe9e3"/>
+    <rect x="154" y="163" width="26" height="78" fill="#31547a"/>
+    <rect x="185" y="174" width="42" height="5" rx="2" fill="#31547a"/>
+    <rect x="185" y="187" width="40" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="185" y="195" width="34" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="185" y="210" width="38" height="3" rx="1.5" fill="#d5d9de"/>
+    <text x="154" y="258" font-size="10" font-weight="700" fill="#3f4652">Modern</text>
+    <text x="154" y="274" font-size="9" fill="#77776d">Two-column</text>
+    <text x="213" y="258" font-size="9" fill="#64705f">Free</text>
+
+    <rect x="15" y="294" width="121" height="132" rx="10" fill="#fff" stroke="#e8e4da"/>
+    <rect x="24" y="304" width="103" height="78" rx="4" fill="#f8f8f7" stroke="#ebe9e3"/>
+    <rect x="32" y="314" width="87" height="7" rx="2" fill="#222b3b"/>
+    <rect x="32" y="330" width="73" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="32" y="341" width="55" height="4" rx="2" fill="#697689"/>
+    <rect x="32" y="350" width="84" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="32" y="358" width="73" height="3" rx="1.5" fill="#d5d9de"/>
+    <text x="24" y="399" font-size="10" font-weight="700" fill="#3f4652">Minimal</text>
+    <text x="24" y="415" font-size="9" fill="#77776d">Clean type</text>
+    <text x="101" y="399" font-size="9" fill="#64705f">Free</text>
+
+    <rect x="146" y="294" width="97" height="132" rx="10" fill="#fff" stroke="#e8e4da"/>
+    <rect x="154" y="304" width="81" height="78" rx="4" fill="#f8f8f7" stroke="#ebe9e3"/>
+    <rect x="154" y="304" width="81" height="22" fill="#ece8fb"/>
+    <rect x="163" y="312" width="55" height="4" rx="2" fill="#6856d8"/>
+    <rect x="163" y="335" width="63" height="4" rx="2" fill="#65748c"/>
+    <rect x="163" y="345" width="60" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="163" y="353" width="50" height="3" rx="1.5" fill="#d5d9de"/>
+    <text x="154" y="399" font-size="10" font-weight="700" fill="#3f4652">Creative</text>
+    <text x="154" y="415" font-size="9" fill="#77776d">Color accents</text>
+    <text x="213" y="399" font-size="9" fill="#64705f">Free</text>
+
+    <rect x="15" y="435" width="121" height="132" rx="10" fill="#fff" stroke="#e8e4da"/>
+    <rect x="24" y="445" width="103" height="78" rx="4" fill="#f8f8f7" stroke="#ebe9e3"/>
+    <rect x="32" y="455" width="87" height="10" rx="2" fill="#dcebe6"/>
+    <rect x="32" y="476" width="63" height="4" rx="2" fill="#3f7569"/>
+    <rect x="32" y="485" width="84" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="32" y="494" width="71" height="3" rx="1.5" fill="#d5d9de"/>
+    <text x="24" y="540" font-size="10" font-weight="700" fill="#3f4652">Compact</text>
+    <text x="24" y="556" font-size="9" fill="#77776d">Space-saving</text>
+    <text x="101" y="540" font-size="9" fill="#64705f">Free</text>
+
+    <rect x="146" y="435" width="97" height="132" rx="10" fill="#fff" stroke="#e8e4da"/>
+    <rect x="154" y="445" width="81" height="78" rx="4" fill="#f8f8f7" stroke="#ebe9e3"/>
+    <rect x="162" y="455" width="65" height="8" rx="2" fill="#345a6a"/>
+    <rect x="162" y="474" width="62" height="4" rx="2" fill="#738092"/>
+    <rect x="162" y="484" width="61" height="3" rx="1.5" fill="#d5d9de"/>
+    <rect x="162" y="493" width="51" height="3" rx="1.5" fill="#d5d9de"/>
+    <text x="154" y="540" font-size="10" font-weight="700" fill="#3f4652">Elegant</text>
+    <text x="154" y="556" font-size="9" fill="#77776d">Editorial</text>
+    <text x="213" y="540" font-size="9" fill="#64705f">Free</text>
+  </g>
+
+  <rect x="258" y="64" width="912" height="816" fill="#f4f2ec"/>
+  <path d="M1170 64v816" stroke="#e7e2d8"/>
+  <rect x="277" y="80" width="874" height="99" rx="12" fill="#fff" stroke="#ebe6dc"/>
+  <rect x="291" y="94" width="103" height="33" rx="8" fill="#f5f2ea"/>
+  <path d="m308 111-5-5 5-5m-5 5h14" fill="none" stroke="#827967" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="326" y="114" font-size="10" font-weight="700" fill="#6d6659">Undo</text>
+  <rect x="401" y="94" width="103" height="33" rx="8" fill="#f5f2ea"/>
+  <path d="m421 101 5 5-5 5m5-5h-14" fill="none" stroke="#827967" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="439" y="114" font-size="10" font-weight="700" fill="#6d6659">Redo</text>
+  <rect x="515" y="94" width="129" height="33" rx="8" fill="#fff" stroke="#e7e2d8"/>
+  <text x="529" y="115" font-size="10" fill="#5a554a">Single column</text>
+  <path d="m627 108 4 4 4-4" fill="none" stroke="#827967" stroke-width="1.3"/>
+  <rect x="651" y="94" width="126" height="33" rx="8" fill="#fff" stroke="#e7e2d8"/>
+  <text x="667" y="115" font-size="10" fill="#5a554a">Structured</text>
+  <path d="m760 108 4 4 4-4" fill="none" stroke="#827967" stroke-width="1.3"/>
+  <rect x="785" y="94" width="140" height="33" rx="8" fill="#fff" stroke="#e7e2d8"/>
+  <path d="M801 104v10m-3-3 3 3 3-3m-8 8h10" fill="none" stroke="#726b5e" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="816" y="115" font-size="10" font-weight="600" fill="#5a554a">Download JSON</text>
+  <rect x="933" y="94" width="116" height="33" rx="8" fill="#fff" stroke="#e7e2d8"/>
+  <path d="M949 105h10m-10 5h7m-7 5h4" stroke="#726b5e" stroke-width="1.3" stroke-linecap="round"/>
+  <text x="965" y="115" font-size="10" font-weight="600" fill="#5a554a">ATS Check</text>
+  <rect x="1060" y="94" width="76" height="33" rx="8" fill="#f5f2ea"/>
+  <text x="1080" y="115" font-size="10" font-weight="700" fill="#615b50">100%</text>
+  <path d="M291 141h410" stroke="#e9e5db"/>
+  <text x="291" y="161" font-size="9" fill="#817a6e">Click any name, heading, bullet, skill, or paragraph on the page to edit</text>
+
+  <rect x="258" y="193" width="912" height="687" fill="url(#paper)"/>
+  <rect x="258" y="193" width="912" height="687" fill="none" stroke="#ede9df"/>
+  <text x="290" y="245" font-size="34" font-weight="800" letter-spacing="-.8" fill="#31547a">Name Surname</text>
+  <text x="291" y="274" font-size="16" font-weight="600" fill="#495b71">Engineer</text>
+  <text x="291" y="300" font-size="11" fill="#687587">abc@xyz.com · +91 98765 43210 · Bengaluru, India · linkedin.com/in/abcxyz/</text>
+  <path d="M290 319h848" stroke="#dfe4ea" stroke-width="1.2"/>
+  <text x="291" y="352" font-size="14" font-weight="800" letter-spacing=".5" fill="#31547a">PROFESSIONAL SUMMARY</text>
+  <text x="291" y="378" font-size="12" fill="#343a45">Quality Engineering professional with experience in test automation, scalable test frameworks,</text>
+  <text x="291" y="397" font-size="12" fill="#343a45">and delivering reliable software. Skilled at collaborating across teams to improve product quality</text>
+  <text x="291" y="416" font-size="12" fill="#343a45">and release confidence.</text>
+  <text x="291" y="457" font-size="14" font-weight="800" letter-spacing=".5" fill="#31547a">WORK EXPERIENCE</text>
+  <text x="291" y="483" font-size="12" font-weight="700" fill="#283444">Senior QA Automation Engineer</text>
+  <text x="291" y="502" font-size="11" font-weight="600" fill="#5a6472">Example Technology Company</text>
+  <text x="1032" y="483" font-size="10" fill="#778194">2022 — Present</text>
+  <circle cx="296" cy="525" r="2" fill="#60748d"/>
+  <text x="307" y="529" font-size="11" fill="#394352">Designed and maintained scalable UI and API automation suites.</text>
+  <circle cx="296" cy="547" r="2" fill="#60748d"/>
+  <text x="307" y="551" font-size="11" fill="#394352">Improved regression reliability and reduced repetitive manual effort.</text>
+  <circle cx="296" cy="569" r="2" fill="#60748d"/>
+  <text x="307" y="573" font-size="11" fill="#394352">Collaborated with developers and product teams to resolve release risks.</text>
+  <text x="291" y="610" font-size="12" font-weight="700" fill="#283444">QA Engineer</text>
+  <text x="291" y="629" font-size="11" font-weight="600" fill="#5a6472">Previous Company</text>
+  <text x="1032" y="610" font-size="10" fill="#778194">2019 — 2022</text>
+  <circle cx="296" cy="652" r="2" fill="#60748d"/>
+  <text x="307" y="656" font-size="11" fill="#394352">Built automated tests and reusable test utilities.</text>
+  <circle cx="296" cy="674" r="2" fill="#60748d"/>
+  <text x="307" y="678" font-size="11" fill="#394352">Reported defects with clear reproduction steps and impact analysis.</text>
+  <text x="291" y="719" font-size="14" font-weight="800" letter-spacing=".5" fill="#31547a">TECHNICAL SKILLS</text>
+  <text x="291" y="743" font-size="11" fill="#394352">Playwright · Selenium · JavaScript · TypeScript · API Testing · CI/CD · SQL · Git</text>
+  <text x="291" y="785" font-size="14" font-weight="800" letter-spacing=".5" fill="#31547a">EDUCATION</text>
+  <text x="291" y="809" font-size="11" font-weight="700" fill="#283444">Bachelor of Engineering</text>
+  <text x="465" y="809" font-size="10" fill="#697385">University Name · 2015 — 2019</text>
+
+  <rect x="1170" y="64" width="270" height="816" fill="#fbfaf7"/>
+  <text x="1190" y="98" font-size="13" font-weight="800" fill="#33362f">Design &amp; properties</text>
+  <rect x="1184" y="113" width="242" height="35" rx="9" fill="#f1eee6"/>
+  <rect x="1187" y="116" width="136" height="29" rx="7" fill="#fff"/>
+  <text x="1197" y="135" font-size="9" font-weight="700" fill="#665b49">Design &amp; properties</text>
+  <text x="1330" y="135" font-size="9" font-weight="600" fill="#756d60">Selected section</text>
+  <text x="1190" y="174" class="label">NAME &amp; HEADER ALIGNMENT</text>
+  <rect x="1184" y="185" width="242" height="33" rx="8" fill="#f1eee6"/>
+  <rect x="1187" y="188" width="59" height="27" rx="6" fill="#fff"/>
+  <text x="1198" y="206" font-size="9" font-weight="700" fill="#665b49">Template</text>
+  <text x="1263" y="206" font-size="9" font-weight="600" fill="#756d60">Left</text>
+  <text x="1310" y="206" font-size="9" font-weight="600" fill="#756d60">Center</text>
+  <text x="1371" y="206" font-size="9" font-weight="600" fill="#756d60">Right</text>
+  <text x="1190" y="251" class="label">PROFILE</text>
+  <text x="1190" y="276" font-size="9" font-weight="700" fill="#736b5e">Full name</text>
+  <rect x="1184" y="284" width="242" height="39" rx="8" fill="#fff" stroke="#e5dfd4"/>
+  <text x="1197" y="308" font-size="11" fill="#44463f">Name Surname</text>
+  <text x="1190" y="347" font-size="9" font-weight="700" fill="#736b5e">Professional title</text>
+  <rect x="1184" y="355" width="242" height="39" rx="8" fill="#fff" stroke="#e5dfd4"/>
+  <text x="1197" y="379" font-size="11" fill="#44463f">Engineer</text>
+  <text x="1190" y="418" font-size="9" font-weight="700" fill="#736b5e">Email</text>
+  <text x="1316" y="418" font-size="9" font-weight="700" fill="#736b5e">Phone</text>
+  <rect x="1184" y="426" width="124" height="39" rx="8" fill="#fff" stroke="#e5dfd4"/>
+  <rect x="1316" y="426" width="110" height="39" rx="8" fill="#fff" stroke="#e5dfd4"/>
+  <text x="1194" y="450" font-size="9" fill="#44463f">abc@xyz.com</text>
+  <text x="1324" y="450" font-size="9" fill="#44463f">+91 98765</text>
+  <text x="1190" y="489" font-size="9" font-weight="700" fill="#736b5e">Location</text>
+  <rect x="1184" y="497" width="242" height="39" rx="8" fill="#fff" stroke="#e5dfd4"/>
+  <text x="1197" y="521" font-size="10" fill="#44463f">Bengaluru, India</text>
+  <text x="1190" y="560" font-size="9" font-weight="700" fill="#736b5e">Website / LinkedIn</text>
+  <rect x="1184" y="568" width="242" height="39" rx="8" fill="#fff" stroke="#e5dfd4"/>
+  <text x="1197" y="592" font-size="10" fill="#44463f">linkedin.com/in/abcxyz/</text>
+  <text x="1190" y="632" font-size="9" font-weight="700" fill="#736b5e">Profile photo</text>
+  <rect x="1184" y="640" width="242" height="39" rx="8" fill="#fff" stroke="#e5dfd4"/>
+  <rect x="1193" y="648" width="75" height="23" rx="5" fill="#f4f1e9" stroke="#e5dfd4"/>
+  <text x="1203" y="663" font-size="8" font-weight="700" fill="#665e51">Choose File</text>
+  <text x="1276" y="663" font-size="8" fill="#77776d">No file chosen</text>
+  <text x="1190" y="712" class="label">PHOTO POSITION</text>
+  <rect x="1184" y="724" width="242" height="34" rx="8" fill="#f1eee6"/>
+  <rect x="1187" y="727" width="59" height="28" rx="6" fill="#fff"/>
+  <text x="1197" y="745" font-size="9" font-weight="700" fill="#665b49">Template</text>
+  <text x="1261" y="745" font-size="9" font-weight="600" fill="#756d60">Left</text>
+  <text x="1305" y="745" font-size="9" font-weight="600" fill="#756d60">Center</text>
+  <text x="1370" y="745" font-size="9" font-weight="600" fill="#756d60">Right</text>
+
+  <rect x="11" y="148" width="231" height="143" rx="12" fill="none" stroke="#aa8b46" stroke-width="2.5" class="focus focus-left"/>
+  <rect x="278" y="213" width="420" height="113" rx="10" fill="none" stroke="#aa8b46" stroke-width="2.5" class="focus focus-center"/>
+  <rect x="1177" y="274" width="256" height="198" rx="12" fill="none" stroke="#aa8b46" stroke-width="2.5" class="focus focus-right"/>
+  <rect x="946" y="7" width="193" height="50" rx="12" fill="none" stroke="#47a276" stroke-width="2.5" class="focus focus-cloud"/>
+
+  <g class="stage stage-one">
+    <rect x="425" y="825" width="590" height="39" rx="19" fill="#263346" opacity=".96"/>
+    <circle cx="451" cy="844.5" r="10" fill="#b99b58"/>
+    <text x="447.5" y="848" font-size="10" font-weight="800" fill="#fff">1</text>
+    <text x="470" y="849" font-size="11" font-weight="700" fill="#fff">Choose a resume design from the real Templates panel</text>
+  </g>
+  <g class="stage stage-two">
+    <rect x="425" y="825" width="590" height="39" rx="19" fill="#263346" opacity=".96"/>
+    <circle cx="451" cy="844.5" r="10" fill="#b99b58"/>
+    <text x="447.5" y="848" font-size="10" font-weight="800" fill="#fff">2</text>
+    <text x="470" y="849" font-size="11" font-weight="700" fill="#fff">Click the resume and edit your details right on the page</text>
+  </g>
+  <g class="stage stage-three">
+    <rect x="425" y="825" width="590" height="39" rx="19" fill="#263346" opacity=".96"/>
+    <circle cx="451" cy="844.5" r="10" fill="#b99b58"/>
+    <text x="447.5" y="848" font-size="10" font-weight="800" fill="#fff">3</text>
+    <text x="470" y="849" font-size="11" font-weight="700" fill="#fff">Update your profile and photo in Design &amp; properties</text>
+  </g>
+  <g class="stage stage-four">
+    <rect x="425" y="825" width="590" height="39" rx="19" fill="#263346" opacity=".96"/>
+    <circle cx="451" cy="844.5" r="10" fill="#47a276"/>
+    <text x="447.5" y="848" font-size="10" font-weight="800" fill="#fff">4</text>
+    <text x="470" y="849" font-size="11" font-weight="700" fill="#fff">Sign in with Google to keep a private cloud copy</text>
+  </g>
+
+  <g class="pointer pointer-left" transform="translate(82 222)" filter="url(#cursor-shadow)">
+    <circle class="click-wave click-left" cx="0" cy="0" r="17" fill="#8a72ed" fill-opacity=".12" stroke="#7257dd" stroke-width="2"/>
+    <path d="M0 0v28l7.2-7.4 5.2 12.1 5.2-2.2-5.3-11.9h10.2Z" fill="#fff" stroke="#1b2434" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M3 5v16l4.7-4.8 4.7 10.5 2.1-.9-4.8-10.7h7.6Z" fill="#242b37"/>
+  </g>
+  <g class="pointer pointer-center" transform="translate(464 239)" filter="url(#cursor-shadow)">
+    <circle class="click-wave click-center" cx="0" cy="0" r="17" fill="#8a72ed" fill-opacity=".12" stroke="#7257dd" stroke-width="2"/>
+    <path d="M0 0v28l7.2-7.4 5.2 12.1 5.2-2.2-5.3-11.9h10.2Z" fill="#fff" stroke="#1b2434" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M3 5v16l4.7-4.8 4.7 10.5 2.1-.9-4.8-10.7h7.6Z" fill="#242b37"/>
+  </g>
+  <g class="pointer pointer-right" transform="translate(1213 284)" filter="url(#cursor-shadow)">
+    <circle class="click-wave click-right" cx="0" cy="0" r="17" fill="#8a72ed" fill-opacity=".12" stroke="#7257dd" stroke-width="2"/>
+    <path d="M0 0v28l7.2-7.4 5.2 12.1 5.2-2.2-5.3-11.9h10.2Z" fill="#fff" stroke="#1b2434" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M3 5v16l4.7-4.8 4.7 10.5 2.1-.9-4.8-10.7h7.6Z" fill="#242b37"/>
+  </g>
+  <g class="pointer pointer-cloud" transform="translate(963 24)" filter="url(#cursor-shadow)">
+    <circle class="click-wave click-cloud" cx="0" cy="0" r="17" fill="#8a72ed" fill-opacity=".12" stroke="#7257dd" stroke-width="2"/>
+    <path d="M0 0v28l7.2-7.4 5.2 12.1 5.2-2.2-5.3-11.9h10.2Z" fill="#fff" stroke="#1b2434" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M3 5v16l4.7-4.8 4.7 10.5 2.1-.9-4.8-10.7h7.6Z" fill="#242b37"/>
+  </g>
+</svg>

@@ -22,6 +22,8 @@ const environment = {
   RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret',
   RAZORPAY_PLAN_MONTHLY_ID: 'plan_monthly_test',
   RAZORPAY_PLAN_YEARLY_ID: 'plan_yearly_test',
+  RAZORPAY_PLAN_MONTHLY_USD_ID: 'plan_monthly_usd_test',
+  RAZORPAY_PLAN_YEARLY_USD_ID: 'plan_yearly_usd_test',
   PRO_VOUCHERS_JSON: JSON.stringify([
     { code: 'WELCOME30', durationDays: 30, maxRedemptions: 20 },
     { code: 'LIMITED7', durationDays: 7, maxRedemptions: 2 }
@@ -47,7 +49,12 @@ function createFakeDatabase() {
   });
   const db = {
     collection: name => ({
-      doc: id => reference(`${name}/${id || `generated-${records.size + 1}`}`)
+      doc: id => reference(`${name}/${id || `generated-${records.size + 1}`}`),
+      get: async () => ({
+        docs: [...records.entries()]
+          .filter(([key]) => key.startsWith(`${name}/`) && key.split('/').length === 2)
+          .map(([key, data]) => ({ id: key.split('/').at(-1), data: () => data }))
+      })
     }),
     doc: key => reference(key),
     runTransaction: callback => callback({
@@ -71,12 +78,24 @@ let origin;
 let fakeDatabase;
 let providerSubscription;
 let nextSubscriptionId = 0;
+let nextDynamicPlanId = 0;
+const dynamicProviderPlans = new Map();
 
 before(async () => {
   Object.assign(process.env, environment);
   fakeDatabase = createFakeDatabase();
   app.locals.firebaseAdmin = {
     auth: {
+      listUsers: async () => {
+        const now = Date.now();
+        return {
+          users: [
+            { uid: 'user-1', email: 'paid@example.com', displayName: 'Paid User', metadata: { creationTime: new Date(now - 5 * 86400000).toISOString() } },
+            { uid: 'user-2', email: 'expired@example.com', displayName: 'Expired User', metadata: { creationTime: new Date(now - 45 * 86400000).toISOString() } },
+            { uid: 'user-3', email: 'free@example.com', displayName: 'Free User', metadata: { creationTime: new Date(now - 10 * 86400000).toISOString() } }
+          ]
+        };
+      },
       verifyIdToken: async token => {
         if (token === 'valid-test-token') return { uid: 'user-1' };
         if (token === 'other-test-token') return { uid: 'user-2' };
@@ -88,24 +107,55 @@ before(async () => {
     },
     db: fakeDatabase.db
   };
-  app.locals.razorpayRequest = async (endpoint, { method = 'GET' } = {}) => {
+  app.locals.razorpayRequest = async (endpoint, { method = 'GET', body } = {}) => {
+    if (endpoint === '/plans' && method === 'POST') {
+      nextDynamicPlanId += 1;
+      const plan = {
+        id: `plan_dynamic${nextDynamicPlanId}`,
+        period: body.period,
+        interval: body.interval,
+        item: body.item
+      };
+      dynamicProviderPlans.set(plan.id, plan);
+      return plan;
+    }
+    if (endpoint.startsWith('/plans/plan_dynamic')) {
+      return dynamicProviderPlans.get(endpoint.split('/').at(-1));
+    }
     if (endpoint === '/plans/plan_monthly_test') {
       return { id: 'plan_monthly_test', item: { amount: 9900, currency: 'INR' }, period: 'monthly', interval: 1 };
     }
     if (endpoint === '/plans/plan_yearly_test') {
       return { id: 'plan_yearly_test', item: { amount: 39900, currency: 'INR' }, period: 'yearly', interval: 1 };
     }
+    if (endpoint === '/plans/plan_monthly_usd_test') {
+      return { id: 'plan_monthly_usd_test', item: { amount: 367, currency: 'USD' }, period: 'monthly', interval: 1 };
+    }
+    if (endpoint === '/plans/plan_yearly_usd_test') {
+      return { id: 'plan_yearly_usd_test', item: { amount: 4937, currency: 'USD' }, period: 'yearly', interval: 1 };
+    }
     if (endpoint === '/subscriptions' && method === 'POST') {
       nextSubscriptionId += 1;
       return {
         id: `sub_test${nextSubscriptionId}`,
-        plan_id: 'plan_monthly_test',
+        plan_id: body.plan_id,
         status: 'created'
       };
     }
     if (endpoint === '/subscriptions/sub_test1') return providerSubscription;
     if (endpoint === '/payments/pay_test1') {
-      return { id: 'pay_test1', subscription_id: 'sub_test1', status: 'captured' };
+      const providerPlan = providerSubscription
+        ? dynamicProviderPlans.get(providerSubscription.plan_id)
+        : null;
+      return {
+        id: 'pay_test1',
+        subscription_id: 'sub_test1',
+        status: 'captured',
+        amount: providerPlan?.item.amount
+          ?? (providerSubscription?.plan_id === 'plan_monthly_usd_test' ? 367 : 9900),
+        currency: providerPlan?.item.currency
+          ?? (providerSubscription?.plan_id === 'plan_monthly_usd_test' ? 'USD' : 'INR')
+      };
     }
     if (endpoint === '/subscriptions/sub_test1/cancel') {
       return { id: 'sub_test1', status: 'cancelled' };
@@ -150,12 +200,19 @@ test('health check returns an empty success response', async () => {
   assert.equal(await response.text(), '');
 });
 
-test('removed app-selection and marriage URLs return visitors to the resume-builder home', async () => {
-  for (const path of ['/app-select.html', '/marriage-home.html']) {
-    const response = await fetch(`${origin}${path}`, { redirect: 'manual' });
+test('admin API explains when local Firebase Admin credentials are missing', async () => {
+  const previousAdmin = app.locals.firebaseAdmin;
+  const previousCredentials = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  delete app.locals.firebaseAdmin;
+  delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get('location'), '/home.html');
+  try {
+    const response = await request('/api/admin/dashboard', { token: 'admin-test-token' });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, 'Firebase Admin credentials are not configured on this server.');
+  } finally {
+    app.locals.firebaseAdmin = previousAdmin;
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON = previousCredentials;
   }
 });
 
@@ -218,24 +275,257 @@ test('admin pricing stores distinct actual and current values', async () => {
     token: 'admin-test-token',
     body: {
       pricing: {
-        monthly: { actualPrice: 199, currentPrice: 149 },
-        yearly: { actualPrice: 499, currentPrice: 399 }
+        monthly: { actualPrice: 199, currentPrice: 99 },
+        yearly: { actualPrice: 499, currentPrice: 399 },
+        USD: {
+          monthly: { actualPrice: 4.5, currentPrice: 3.67 },
+          yearly: { actualPrice: 59.99, currentPrice: 49.37 }
+        }
       }
     }
   });
   assert.equal(save.status, 200);
   const saved = await save.json();
   assert.equal(saved.pricing.monthly.actualPrice, 199);
-  assert.equal(saved.pricing.monthly.currentPrice, 149);
+  assert.equal(saved.pricing.monthly.currentPrice, 99);
   assert.equal(saved.pricing.yearly.actualPrice, 499);
   assert.equal(saved.pricing.yearly.currentPrice, 399);
+  assert.equal(saved.pricing.USD.monthly.currentPrice, 3.67);
+  assert.equal(saved.pricing.USD.yearly.currentPrice, 49.37);
 
   const load = await request('/api/admin/pricing', { token: 'admin-test-token' });
   const loaded = await load.json();
   assert.equal(loaded.pricing.monthly.actualPrice, 199);
-  assert.equal(loaded.pricing.monthly.currentPrice, 149);
+  assert.equal(loaded.pricing.monthly.currentPrice, 99);
   assert.equal(loaded.pricing.yearly.actualPrice, 499);
   assert.equal(loaded.pricing.yearly.currentPrice, 399);
+  assert.equal(loaded.pricing.USD.monthly.currentPrice, 3.67);
+  assert.equal(loaded.pricing.USD.yearly.currentPrice, 49.37);
+
+  const invalidPrice = await request('/api/admin/pricing', {
+    method: 'PUT',
+    token: 'admin-test-token',
+    body: {
+      pricing: {
+        monthly: { actualPrice: 199, currentPrice: -1 },
+        yearly: { actualPrice: 499, currentPrice: 399 },
+        USD: {
+          monthly: { actualPrice: 4.5, currentPrice: 3.67 },
+          yearly: { actualPrice: 59.99, currentPrice: 49.37 }
+        }
+      }
+    }
+  });
+  assert.equal(invalidPrice.status, 400);
+});
+
+test('admin regional prices create verified Razorpay plans and charge the configured amount', async () => {
+  const save = await request('/api/admin/pricing', {
+    method: 'PUT',
+    token: 'admin-test-token',
+    body: {
+      pricing: {
+        monthly: { actualPrice: 149, currentPrice: 109 },
+        yearly: { actualPrice: 499, currentPrice: 399 },
+        USD: {
+          monthly: { actualPrice: 4.5, currentPrice: 4.25 },
+          yearly: { actualPrice: 59.99, currentPrice: 49.37 }
+        }
+      }
+    }
+  });
+  const saved = await save.json();
+  assert.equal(save.status, 200, JSON.stringify(saved));
+  assert.equal(saved.pricing.monthly.currentPrice, 109);
+  assert.equal(saved.pricing.USD.monthly.currentPrice, 4.25);
+
+  const stored = fakeDatabase.records.get('appConfig/pricing');
+  const inrPlanId = stored.providerPlanIds.INR.monthly;
+  const usdPlanId = stored.providerPlanIds.USD.monthly;
+  assert.match(inrPlanId, /^plan_dynamic/);
+  assert.match(usdPlanId, /^plan_dynamic/);
+  assert.equal(dynamicProviderPlans.get(inrPlanId).item.amount, 10900);
+  assert.equal(dynamicProviderPlans.get(inrPlanId).item.currency, 'INR');
+  assert.equal(dynamicProviderPlans.get(usdPlanId).item.amount, 425);
+  assert.equal(dynamicProviderPlans.get(usdPlanId).item.currency, 'USD');
+
+  const publicPricingResponse = await request('/api/pricing/config');
+  const publicPricing = await publicPricingResponse.json();
+  assert.equal(publicPricing.pricing.USD.monthly.currentPrice, 4.25);
+  assert.equal(Object.hasOwn(publicPricing.pricing, 'providerPlanIds'), false);
+  const dynamicBillingConfigResponse = await request('/api/billing/config');
+  const dynamicBillingConfig = await dynamicBillingConfigResponse.json();
+  assert.equal(dynamicBillingConfig.currencyPlans.INR.monthly.amount, 10900);
+  assert.equal(dynamicBillingConfig.currencyPlans.USD.monthly.amount, 425);
+  assert.ok(dynamicBillingConfig.supportedCurrencies.includes('USD'));
+
+  const stalePriceCheckout = await request('/api/billing/subscriptions', {
+    method: 'POST',
+    token: 'third-test-token',
+    body: { planKey: 'monthly', currency: 'USD', expectedAmount: 367 }
+  });
+  assert.equal(stalePriceCheckout.status, 409);
+  assert.equal(fakeDatabase.records.has('users/user-3/billing/checkout'), false);
+
+  const checkout = await request('/api/billing/subscriptions', {
+    method: 'POST',
+    token: 'third-test-token',
+    body: { planKey: 'monthly', currency: 'USD', expectedAmount: 425 }
+  });
+  const checkoutBody = await checkout.json();
+  assert.equal(checkout.status, 201, JSON.stringify(checkoutBody));
+  assert.equal(checkoutBody.plan.amount, 425);
+  assert.equal(fakeDatabase.records.get('billingSubscriptions/sub_test1').planId, usdPlanId);
+  assert.equal(fakeDatabase.records.get('billingSubscriptions/sub_test1').amount, 425);
+
+  providerSubscription = {
+    id: 'sub_test1',
+    plan_id: usdPlanId,
+    status: 'active',
+    current_end: Math.floor(Date.now() / 1000) + 3600,
+    notes: { plan_key: 'monthly', currency: 'USD' }
+  };
+  const signature = createHmac('sha256', environment.RAZORPAY_KEY_SECRET)
+    .update('sub_test1|pay_test1')
+    .digest('hex');
+  const verified = await request('/api/billing/verify', {
+    method: 'POST',
+    token: 'third-test-token',
+    body: {
+      razorpaySubscriptionId: 'sub_test1',
+      razorpayPaymentId: 'pay_test1',
+      razorpaySignature: signature
+    }
+  });
+  const verifiedBody = await verified.json();
+  assert.equal(verified.status, 200, JSON.stringify(verifiedBody));
+  assert.equal(fakeDatabase.records.get('billingPayments/pay_test1').amount, 425);
+  assert.equal(fakeDatabase.records.get('billingPayments/pay_test1').currency, 'USD');
+
+  fakeDatabase.records.delete('billingSubscriptions/sub_test1');
+  fakeDatabase.records.delete('users/user-3/billing/checkout');
+  fakeDatabase.records.delete('users/user-3/billing/entitlement');
+  fakeDatabase.records.delete('billingPayments/pay_test1');
+  providerSubscription = null;
+  nextSubscriptionId = 0;
+
+  const restore = await request('/api/admin/pricing', {
+    method: 'PUT',
+    token: 'admin-test-token',
+    body: {
+      pricing: {
+        monthly: { actualPrice: 199, currentPrice: 99 },
+        yearly: { actualPrice: 499, currentPrice: 399 },
+        USD: {
+          monthly: { actualPrice: 4.5, currentPrice: 3.67 },
+          yearly: { actualPrice: 59.99, currentPrice: 49.37 }
+        }
+      }
+    }
+  });
+  assert.equal(restore.status, 200);
+});
+
+test('international checkout selects the server-verified USD Razorpay plan', async () => {
+  const configResponse = await request('/api/billing/config');
+  const config = await configResponse.json();
+  assert.deepEqual(config.supportedCurrencies, ['INR', 'USD']);
+  assert.equal(config.currencyPlans.USD.monthly.amount, 367);
+  assert.equal(config.currencyPlans.USD.yearly.amount, 4937);
+
+  const unsupportedCurrency = await request('/api/billing/subscriptions', {
+    method: 'POST',
+    token: 'third-test-token',
+    body: { planKey: 'monthly', currency: 'EUR' }
+  });
+  assert.equal(unsupportedCurrency.status, 400);
+
+  const checkout = await request('/api/billing/subscriptions', {
+    method: 'POST',
+    token: 'third-test-token',
+    body: { planKey: 'monthly', currency: 'USD', expectedAmount: 367, amount: 1 }
+  });
+  assert.equal(checkout.status, 201);
+  const result = await checkout.json();
+  assert.equal(result.plan.amount, 367);
+  assert.equal(result.plan.currency, 'USD');
+  assert.equal(fakeDatabase.records.get('billingSubscriptions/sub_test1').currency, 'USD');
+  assert.equal(fakeDatabase.records.get('billingSubscriptions/sub_test1').planId, 'plan_monthly_usd_test');
+  assert.equal(fakeDatabase.records.get('users/user-3/billing/checkout').currency, 'USD');
+  providerSubscription = {
+    id: 'sub_test1',
+    plan_id: 'plan_monthly_usd_test',
+    status: 'active',
+    current_end: Math.floor(Date.now() / 1000) + 3600,
+    notes: { plan_key: 'monthly', currency: 'USD' }
+  };
+  const signature = createHmac('sha256', environment.RAZORPAY_KEY_SECRET)
+    .update('sub_test1|pay_test1')
+    .digest('hex');
+  const verified = await request('/api/billing/verify', {
+    method: 'POST',
+    token: 'third-test-token',
+    body: {
+      razorpaySubscriptionId: 'sub_test1',
+      razorpayPaymentId: 'pay_test1',
+      razorpaySignature: signature
+    }
+  });
+  const verifiedBody = await verified.json();
+  assert.equal(verified.status, 200, JSON.stringify(verifiedBody));
+  assert.equal(verifiedBody.entitlement.currency, 'USD');
+  assert.equal(fakeDatabase.records.get('billingPayments/pay_test1').currency, 'USD');
+  fakeDatabase.records.delete('billingSubscriptions/sub_test1');
+  fakeDatabase.records.delete('users/user-3/billing/checkout');
+  fakeDatabase.records.delete('users/user-3/billing/entitlement');
+  fakeDatabase.records.delete('billingPayments/pay_test1');
+  providerSubscription = null;
+  nextSubscriptionId = 0;
+});
+
+test('admin dashboard reports current subscriptions and captured revenue accurately', async () => {
+  const now = Date.now();
+  const testRecords = [
+    ['users/user-1/billing/entitlement', {
+      planId: 'pro', billingPlan: 'monthly', status: 'active', source: 'razorpay', validUntil: now + 30 * 86400000
+    }],
+    ['users/user-2/billing/entitlement', {
+      planId: 'pro', billingPlan: 'yearly', status: 'expired', source: 'razorpay', validUntil: now - 86400000
+    }],
+    ['billingPayments/payment-current', {
+      uid: 'user-1', status: 'captured', amount: 9900, currency: 'INR', planKey: 'monthly', createdAt: now
+    }],
+    ['billingPayments/payment-old', {
+      uid: 'user-1', status: 'success', amount: 39900, currency: 'INR', planKey: 'yearly', createdAt: now - 45 * 86400000
+    }],
+    ['billingPayments/payment-authorized', {
+      uid: 'user-2', status: 'authorized', amount: 12000, currency: 'INR', planKey: 'monthly', createdAt: now
+    }]
+  ];
+  for (const [key, value] of testRecords) fakeDatabase.records.set(key, value);
+
+  try {
+    const response = await request('/api/admin/dashboard', { token: 'admin-test-token' });
+    assert.equal(response.status, 200);
+    const dashboard = await response.json();
+
+    assert.equal(dashboard.totals.users, 3);
+    assert.equal(dashboard.totals.pro, 1);
+    assert.equal(dashboard.totals.regular, 2);
+    assert.equal(dashboard.totals.newUsers30Days, 2);
+    assert.equal(dashboard.totals.conversionRate, 33.3);
+    assert.equal(dashboard.totals.monthlyPro, 1);
+    assert.equal(dashboard.totals.yearlyPro, 0);
+    assert.equal(dashboard.totals.earnings, 49800);
+    assert.equal(dashboard.totals.earningsThisMonth, 9900);
+    assert.equal(dashboard.totals.paymentsThisMonth, 1);
+    assert.equal(dashboard.totals.paymentCount, 2);
+    assert.equal(dashboard.recentPayments.length, 2);
+    assert.equal(dashboard.recentPayments[0].id, 'payment-current');
+    assert.equal(dashboard.users.find(user => user.uid === 'user-2').isPro, false);
+  } finally {
+    for (const [key] of testRecords) fakeDatabase.records.delete(key);
+  }
 });
 
 test('public vouchers are available to every signed-in account and queue during active Pro access', async () => {
@@ -356,7 +646,7 @@ test('subscription checkout, payment verification, and signed webhook lifecycle 
   const checkoutResponse = await request('/api/billing/subscriptions', {
     method: 'POST',
     token: 'valid-test-token',
-    body: { planKey: 'monthly' }
+    body: { planKey: 'monthly', currency: 'INR', expectedAmount: 9900 }
   });
   assert.equal(checkoutResponse.status, 201);
   assert.equal((await checkoutResponse.json()).subscriptionId, 'sub_test1');

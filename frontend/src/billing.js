@@ -7,6 +7,8 @@ import {
   scheduleBillingPlanChange
 } from './billing-client.js';
 import { cloudConfigured, observeAuth } from './firebase-cloud.js';
+import { PLAN_CONFIG } from './plan-access.js';
+import { formatCurrencyPrice } from './pricing-currency.js';
 
 const $ = selector => document.querySelector(selector);
 const accountStatus = $('#billingAccountStatus');
@@ -222,7 +224,12 @@ document.querySelectorAll('[data-close-cancel-dialog]').forEach(button => {
 yearlyButton.addEventListener('click', async () => {
   if (!currentUser || entitlement?.billingPlan !== 'monthly' || !billingConfig?.checkoutEnabled) return;
   const date = entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleDateString('en-IN') : 'the end of this billing period';
-  if (!window.confirm(`Schedule Pro Yearly to begin after ${date}? Your monthly access continues until then; ₹399/year will be charged when the switch takes effect.`)) return;
+  const currency = entitlement.currency === 'USD' ? 'USD' : 'INR';
+  const configuredAmount = Number(billingConfig.currencyPlans?.[currency]?.yearly?.amount);
+  const price = Number.isSafeInteger(configuredAmount) && configuredAmount > 0
+    ? configuredAmount / 100
+    : PLAN_CONFIG.pro.currencies[currency].yearly.price;
+  if (!window.confirm(`Schedule Pro Yearly to begin after ${date}? Your monthly access continues until then; ${formatCurrencyPrice(price, currency)}/year will be charged when the switch takes effect.`)) return;
   yearlyButton.disabled = true;
   try {
     const result = await scheduleBillingPlanChange(currentUser, 'yearly');

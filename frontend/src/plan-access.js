@@ -2,7 +2,8 @@ export const TEMPLATE_IDS = Object.freeze({
   FREE: Object.freeze(['classic', 'modern', 'minimal', 'compact', 'tech', 'student']),
   PRO: Object.freeze([
     'creative', 'elegant', 'executive', 'photo', 'timeline', 'pastel',
-    'bold', 'portrait', 'card', 'photobanner', 'studio'
+    'bold', 'portrait', 'card', 'photobanner', 'studio', 'interio-designer',
+    'profile-split', 'peach-mint', 'teal-modern', 'brian-baxter'
   ])
 });
 
@@ -28,13 +29,25 @@ export const PLAN_CONFIG = Object.freeze({
     id: 'pro',
     currency: 'INR',
     monthly: Object.freeze({ price: 99, interval: 'month' }),
-    yearly: Object.freeze({ price: 399, interval: 'year' })
+    yearly: Object.freeze({ price: 399, interval: 'year' }),
+    currencies: Object.freeze({
+      INR: Object.freeze({
+        currency: 'INR',
+        monthly: Object.freeze({ price: 99, interval: 'month' }),
+        yearly: Object.freeze({ price: 399, interval: 'year' })
+      }),
+      USD: Object.freeze({
+        currency: 'USD',
+        monthly: Object.freeze({ price: 3.67, interval: 'month' }),
+        yearly: Object.freeze({ price: 49.37, interval: 'year' })
+      })
+    })
   })
 });
 
 export const PRICING_FEATURES = Object.freeze([
   Object.freeze({ label: 'Resume editor', free: 'Included', pro: 'Included' }),
-  Object.freeze({ label: 'Resume templates', free: '6 templates', pro: 'All 20 templates' }),
+  Object.freeze({ label: 'Resume templates', free: '6 templates', pro: 'All 25 templates' }),
   Object.freeze({ label: 'Standard PDF export', free: 'Included', pro: 'Included' }),
   Object.freeze({ label: 'Resume-only ATS checks', free: 'Included', pro: 'Included' }),
   Object.freeze({ label: 'Job-description ATS comparison', free: 'Not available', pro: 'Included' }),

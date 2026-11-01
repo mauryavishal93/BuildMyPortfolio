@@ -275,6 +275,28 @@ body.admin-page {
   font-weight: 700;
 }
 
+.dashboard-status[data-state='idle'] {
+  color: var(--admin-muted);
+  background: rgba(148, 163, 184, 0.06);
+  border-color: var(--admin-border);
+}
+
+.dashboard-status[data-state='loading'] .status-dot {
+  animation: pulse 0.9s infinite ease-in-out;
+}
+
+.dashboard-status[data-state='error'] {
+  color: var(--admin-danger);
+  background: rgba(238, 107, 107, 0.08);
+  border-color: rgba(238, 107, 107, 0.28);
+}
+
+.dashboard-status[data-state='error'] .status-dot {
+  background: var(--admin-danger);
+  box-shadow: 0 0 0 5px rgba(238, 107, 107, 0.12);
+  animation: none;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -328,6 +350,12 @@ body.admin-page {
   box-shadow: none;
 }
 
+.admin-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  transform: none;
+}
+
 .admin-button.danger-button {
   background: linear-gradient(135deg, #e86363, var(--admin-danger));
   box-shadow: 0 12px 24px rgba(238, 107, 107, 0.22);
@@ -378,7 +406,7 @@ body.admin-page {
 
 .admin-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin: 10px 0 18px;
 }
@@ -439,6 +467,35 @@ body.admin-page {
   letter-spacing: -0.04em;
 }
 
+.admin-stats small {
+  display: block;
+  margin-top: 6px;
+  color: var(--admin-muted);
+  font-size: 0.76rem;
+}
+
+.payments-card {
+  margin-bottom: 18px;
+}
+
+.payments-table {
+  min-width: 700px;
+}
+
+.payments-table td:first-child {
+  min-width: 180px;
+}
+
+.payments-table .account-name,
+.payments-table .account-email {
+  display: block;
+}
+
+.payments-table .account-email {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
 .admin-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -461,6 +518,19 @@ body.admin-page {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.pricing-region-heading {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  color: var(--admin-text);
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+
+.pricing-region-heading:not(:first-child) {
+  padding-top: 14px;
+  border-top: 1px solid var(--admin-border);
 }
 
 .pricing-config-grid label {

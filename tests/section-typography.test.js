@@ -46,3 +46,11 @@ test('section typography is applied to rendered sections and editable in the ins
   assert.match(styles, /#sheets \.resume-section \.section-body,#sheets \.resume-section \.section-body \*/);
   assert.match(styles, /#sectionTypographyCallout\[hidden\]\{display:none\}/);
 });
+
+test('editing preserves template section backgrounds and uses a visible focus ring', () => {
+  const styles = readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8');
+  const brianStyles = readFileSync(new URL('../Templates/brian-baxter/style.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.sheet \[contenteditable="true"\]:focus\{background:transparent;caret-color:currentColor;box-shadow:0 0 0 2px var\(--resume-accent\)/);
+  assert.doesNotMatch(styles, /\.sheet \[contenteditable="true"\]:focus\{background:#fff/);
+  assert.match(brianStyles, /\.br-sidebar-sections \.resume-section \.section-body \[contenteditable=true\]:focus\{background:transparent!important;color:inherit!important;caret-color:currentColor!important/);
+});

@@ -31,7 +31,7 @@
 .layout-brian-baxter .br-sidebar-sections .entry-title{min-width:0;color:#fff!important;font-size:10px;font-weight:700;line-height:1.4;text-transform:none}
 .layout-brian-baxter .br-sidebar-sections .entry-date{grid-column:1/-1;color:#ffd36a!important;font-size:9px;white-space:normal}
 .layout-brian-baxter .br-sidebar-sections .entry-sub,.layout-brian-baxter .br-sidebar-sections .pointer-list{color:#e4e4e4!important;font-size:9px}
-.layout-brian-baxter .br-sidebar-sections .resume-section .section-body [contenteditable=true]:focus{background:#fffaf0!important;color:#242424!important;caret-color:#242424!important;outline:0;box-shadow:0 0 0 2px var(--br-yellow);outline-offset:2px}
+.layout-brian-baxter .br-sidebar-sections .resume-section .section-body [contenteditable=true]:focus{background:transparent!important;color:inherit!important;caret-color:currentColor!important;outline:0;box-shadow:0 0 0 2px var(--br-yellow);outline-offset:2px}
 .layout-brian-baxter .br-sidebar-sections .skill-list{display:grid;gap:6px}
 .layout-brian-baxter .br-sidebar-sections .skill{padding:0;border:0;color:#fff;font-size:10px}
 .layout-brian-baxter .br-main{display:flex;min-width:0;min-height:0;flex-direction:column;padding:26px 24px 24px;background:#fff}

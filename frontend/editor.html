@@ -35,6 +35,10 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
    <span id="googleSignInLabel">Sign in with Google</span>
   </button>
  </div>
+ <button class="btn outline import-resume-btn" id="importResumeBtn" type="button" aria-label="Import an existing resume">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h14"/></svg>
+  <span>Import resume</span>
+ </button>
  <button class="btn outline" id="coverLetterBtn">Cover letter</button>
  <a class="btn outline" id="plansLink" href="/pricing.html">Plans</a>
  <button class="btn primary" id="pdfBtn">Export PDF</button>
@@ -55,6 +59,7 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
   </div>
  </details>
  <input id="jsonInput" class="hidden" type="file" accept=".json,application/json">
+ <input id="resumeImportInput" class="hidden" type="file" accept=".pdf,.docx,.txt,.json,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/json,image/*">
 </header>
 <div class="modal-bg" id="cloudModalBg" aria-hidden="true">
   <section class="modal cloud-modal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle">
@@ -168,6 +173,55 @@ if (location.hostname.toLowerCase() === 'buildmyportfolio.onrender.com') {
  <aside class="right" id="rightPanel"><button class="panel-toggle right-toggle" id="toggleRightPanel" type="button" aria-label="Hide right panel" title="Hide right panel"><span></span><span></span></button><div class="panel-grip" id="panelGrip" title="Drag to resize panel"></div><div id="inspector"></div></aside>
 </div>
 <div class="toast" id="toast" role="status"></div>
+<div class="modal-bg resume-import-modal-bg" id="resumeImportModalBg" aria-hidden="true">
+ <section class="modal resume-import-modal" role="dialog" aria-modal="true" aria-labelledby="resumeImportTitle">
+  <div class="resume-import-head">
+   <div class="resume-import-icon" aria-hidden="true">↥</div>
+   <div>
+    <p class="eyebrow">RESUME IMPORT</p>
+    <h2 id="resumeImportTitle">Bring your resume into the editor</h2>
+    <p class="resume-import-subtitle" id="resumeImportFileName">Your file stays in this browser while we read it.</p>
+   </div>
+   <button class="size-btn" id="closeResumeImport" type="button" aria-label="Close resume import">✕</button>
+  </div>
+  <div class="resume-import-progress" id="resumeImportProgress">
+   <span class="resume-import-spinner" aria-hidden="true"></span>
+   <div class="resume-import-progress-copy">
+    <strong id="resumeImportStatus" role="status" aria-live="polite">Preparing your resume…</strong>
+    <div class="resume-import-progress-track" role="progressbar" aria-label="Resume import progress"><span id="resumeImportProgressValue"></span></div>
+   </div>
+  </div>
+  <div class="resume-import-start" id="resumeImportStart" hidden>
+   <p>Bring your existing resume into the editor. Choose a PDF, DOCX, TXT, JSON, or image file to get started.</p>
+   <button class="btn primary" id="chooseResumeImportFile" type="button">Choose resume file</button>
+  </div>
+  <div class="resume-import-error" id="resumeImportError" hidden>
+   <span class="resume-import-error-icon" aria-hidden="true">!</span>
+   <div><strong id="resumeImportErrorTitle">Unsupport Resume format, please DOCS or PDF format</strong><p id="resumeImportErrorDetail">Please try another file. Your current resume has not been changed.</p></div>
+  </div>
+  <div class="resume-import-review" id="resumeImportReview" hidden>
+   <div class="resume-import-summary">
+    <div><strong id="resumeImportSectionCount">0 sections found</strong><span>Edit extracted details here before applying.</span></div>
+    <span class="resume-import-template">Template after import <b id="resumeImportTemplateName"></b></span>
+   </div>
+   <div class="resume-import-compatibility" id="resumeImportCompatibility" role="status" aria-live="polite">
+    <span class="resume-import-compatibility-icon" aria-hidden="true">i</span>
+    <p id="resumeImportCompatibilityText"><strong>Formatting may vary.</strong> You can still edit all details in the editor.</p>
+   </div>
+   <div class="resume-import-section-list" id="resumeImportSections"></div>
+   <details class="resume-import-source">
+    <summary>Review all extracted text</summary>
+    <pre id="resumeImportSourceText"></pre>
+   </details>
+   <p class="resume-import-safety">Your file is processed in this browser, and all extracted text is kept with the imported project for reference. “Back up &amp; apply” downloads a copy of your current resume first. “Skip backup” applies the import without that download. If you’re signed in, the imported resume is saved as a new cloud resume.</p>
+  </div>
+  <div class="modal-actions resume-import-actions">
+   <button class="btn soft" id="cancelResumeImport" type="button">Cancel</button>
+   <button class="btn primary" id="applyResumeImport" type="button" disabled>Save Backup &amp; Apply</button>
+   <button class="btn outline" id="skipBackupApplyResumeImport" type="button" disabled>Apply Without Backup</button>
+  </div>
+ </section>
+</div>
 <div class="modal-bg" id="modalBg" aria-hidden="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="customSectionTitle"><h2 id="customSectionTitle">Add custom section</h2><div class="field"><label for="customTitle">Section title</label><input id="customTitle" value="Additional information"></div><div class="field"><label for="customContent">Content</label><textarea id="customContent" placeholder="Write the section content"></textarea></div><div class="modal-actions"><button class="btn soft" id="cancelCustom" type="button">Cancel</button><button class="btn primary" id="confirmCustom" type="button">Add section</button></div></section></div>
 <div class="modal-bg" id="upgradeModalBg" aria-hidden="true">
   <section class="modal upgrade-modal" role="dialog" aria-modal="true" aria-labelledby="upgradeFeature">

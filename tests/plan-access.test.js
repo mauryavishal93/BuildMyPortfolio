@@ -231,6 +231,7 @@ test('Free users preview Pro templates and can render a PDF without applying the
   assert.match(source, /You have used both free Pro-template PDF downloads\. Export is disabled/);
   assert.match(source, /of 2 free Pro PDF downloads remaining/);
   assert.match(source, /exportButton\.disabled=true/);
+  assert.match(source, /sheet\.querySelectorAll\('\[contenteditable\]'\)\.forEach\(element=>\{[\s\S]*?removeAttribute\('contenteditable'\)/);
   assert.match(source, /if\(!cloudUser\)\{[\s\S]*?button\.disabled=true/);
   assert.match(source, /!cloudUser\|\|!Number\.isInteger\(proTemplateDownloadsRemaining\)\|\|proTemplateDownloadsRemaining<1/);
   assert.doesNotMatch(source, /applyPendingProTemplate|showProTemplateTrial/);

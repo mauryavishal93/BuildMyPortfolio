@@ -5,6 +5,9 @@ import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
 import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
 import { formatCurrencyPrice, preferredPricingCurrency } from './pricing-currency.js';
+import { extractResumeFile } from './resume-import.js';
+import { parseResumeText } from './resume-import-structure.js';
+import { splitContentIntoBullets } from './resume-summary.js';
 import { applySectionTypography, normalizeSectionTypography } from './section-typography.js';
 import { templateDefs as resumeTemplateDefs } from '../../Templates/index.js';
 import {
@@ -38,13 +41,15 @@ const makeSections=()=>{
     {id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
   ];
 };
-const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections().map(section=>({...section,headingSize:15,bodySize:12})),positions:{}});
+const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections().map(section=>({...section,headingSize:15,bodySize:12})),positions:{},importedSourceText:''});
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
 function normalizeState(d){
  if(!d||typeof d!=='object'||!d.profile||typeof d.profile!=='object'||!Array.isArray(d.sections)||!d.design||typeof d.design!=='object')throw Error('This is not a valid PersonaCraftPro project.');
  const base=fresh(),ver=Number(d.version)||1,out={...base,version:4};
  out.docName=str(d.docName).trim()?str(d.docName).slice(0,120):base.docName;
+ out.importedSourceText=str(d.importedSourceText);
+ if(new TextEncoder().encode(out.importedSourceText).length>200_000)throw Error('The saved original resume text exceeds the supported size.');
  out.template=templateDefs.some(t=>t.id===d.template)?d.template:base.template;
  out.layout=d.layout==='two'?'two':'single';out.mode=d.mode==='free'?'free':'flow';
  out.profile={...base.profile};for(const k of Object.keys(base.profile))if(typeof d.profile[k]==='string')out.profile[k]=d.profile[k];
@@ -65,6 +70,7 @@ function normalizeState(d){
  return out;
 }
 let state=fresh(),selectedId=null,selectedSectionAnchor=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
+let pendingResumeImport=null,resumeImportBusy=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
 const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
 const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
@@ -846,6 +852,11 @@ async function openTemplatePreview(templateId){
    if(generation!==templatePreviewGeneration)return;
    const sheet=renderedPages[index];
    sheet.querySelectorAll('.selected').forEach(element=>element.classList.remove('selected'));
+   sheet.querySelectorAll('[contenteditable]').forEach(element=>{
+    element.removeAttribute('contenteditable');
+    element.removeAttribute('spellcheck');
+    element.removeAttribute('title');
+   });
    sheet.style.transform='none';
    sheet.style.marginBottom='0';
    captureRoot.replaceChildren(sheet);
@@ -941,7 +952,7 @@ function renderInspector(){
  <div class="field-row"><div class="field"><label>Body size (px)</label><input data-design="fontSize" type="number" min="8" max="24" value="${d.fontSize}"></div><div class="field"><label>Heading size (px)</label><input data-design="headingSize" type="number" min="10" max="28" value="${d.headingSize}"></div></div>
  <div class="field-row"><div class="field"><label>Left/right margin (px)</label><input data-design="margin" type="number" min="0" max="100" value="${d.margin}"></div><div class="field"><label>Top/bottom margin (px)</label><input data-design="marginY" type="number" min="0" max="100" value="${d.marginY}"></div></div>
  <div class="field"><label><input type="checkbox" data-design="pageNumbers" ${d.pageNumbers?'checked':''}>Show page numbers (reserves a small footer)</label></div>
- <div class="small-note">Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.</div>`:''}`;
+ <div class="small-note">Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.</div>${state.importedSourceText?`<details class="resume-import-source"><summary>Original imported text (saved with this project)</summary><pre>${$esc(state.importedSourceText)}</pre></details>`:''}`:''}`;
  if(rightTab==='section'&&s){
    h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field-row"><div class="field"><label for="sectionHeadingSize">Heading size (px)</label><input id="sectionHeadingSize" type="number" min="10" max="36" step="1" value="${s.headingSize}"></div><div class="field"><label for="sectionBodySize">Body size (px)</label><input id="sectionBodySize" type="number" min="8" max="24" step="1" value="${s.bodySize}"></div></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
    if(s.entries){
@@ -966,7 +977,7 @@ function renderInspector(){
  $('sectionTitle')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.title=e.target.value||'Untitled section';saveLocal();syncSheetFields();});
  $('sectionHeadingSize')?.addEventListener('change',e=>{const value=Number(e.target.value);if(e.target.value===''||!Number.isFinite(value)){renderInspector();return}const id=selectedId;transact(()=>{const section=sectionById(id);if(section)section.headingSize=clamp(value,10,36,section.headingSize)})});
  $('sectionBodySize')?.addEventListener('change',e=>{const value=Number(e.target.value);if(e.target.value===''||!Number.isFinite(value)){renderInspector();return}const id=selectedId;transact(()=>{const section=sectionById(id);if(section)section.bodySize=clamp(value,8,24,section.bodySize)})});
- $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();renderInspector();});
+ $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;const nextStyle=e.target.value;if(x.listStyle==='none'&&nextStyle!=='none'){if(x.entries)x.entries.forEach(entry=>{entry.details=splitContentIntoBullets(entry.details)});else if(x.type!=='skills')x.content=splitContentIntoBullets(x.content)}x.listStyle=nextStyle;saveLocal();renderSheets();renderInspector();});
  $('sectionContent')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.content=e.target.value;saveLocal();syncSheetFields();});
  $('inspector').querySelectorAll('[data-entry]').forEach(el=>el.addEventListener('input',()=>{const x=sectionById(selectedId),i=+el.dataset.index;if(!x?.entries?.[i])return;x.entries[i][el.dataset.entry]=el.value;if(el.dataset.entry==='role'||el.dataset.entry==='company')updateInspectorEntryTitle(i,x.entries[i]);saveLocal();syncSheetFields();}));
  $('inspector').oninput=event=>{
@@ -1060,6 +1071,209 @@ async function importJSON(file){
   await alertModern({ title: 'Import failed', message: 'Could not read that file.' });
  };
  r.readAsText(file);
+}
+function setResumeImportStatus(message,value=0){
+ $('resumeImportStatus').textContent=message;
+ $('resumeImportProgressValue').style.width=`${Math.max(0,Math.min(1,Number(value)||0))*100}%`;
+}
+function setImportedResumeValue(path,value){
+ const update=(target)=>{
+  const parts=path.split('.');
+  let current=target;
+  for(const part of parts.slice(0,-1)){
+   current=current?.[ /^\d+$/.test(part)?Number(part):part ];
+   if(!current)return;
+  }
+  const key=parts.at(-1);
+  if(current&&typeof current==='object')current[key]=value;
+ };
+ update(pendingResumeImport);
+ if(pendingResumeImport?.projectState)update(pendingResumeImport.projectState);
+}
+function createResumeImportField(labelText,value,path,multiline=false){
+ const label=document.createElement('label');
+ label.className='resume-import-edit-field';
+ const caption=document.createElement('span');
+ caption.textContent=labelText;
+ const control=document.createElement(multiline?'textarea':'input');
+ if(!multiline)control.type='text';
+ control.value=value||'';
+ control.addEventListener('input',()=>setImportedResumeValue(path,control.value));
+ label.append(caption,control);
+ return label;
+}
+function renderResumeImportReview(parsed,fileName){
+ pendingResumeImport=parsed;
+ $('resumeImportStart').hidden=true;
+ $('resumeImportFileName').textContent=fileName;
+ $('resumeImportSectionCount').textContent=`${parsed.sections.length} section${parsed.sections.length===1?'':'s'} found`;
+ const importedTemplate=parsed.projectState&&templateDefs.find(template=>template.id===parsed.projectState.template);
+ $('resumeImportTemplateName').textContent=(importedTemplate||activeTemplate()).name;
+ const compatibility=$('resumeImportCompatibility');
+ compatibility.classList.toggle('is-exact',Boolean(parsed.projectState));
+ const compatibilityText=$('resumeImportCompatibilityText');
+ const compatibilityHeading=document.createElement('strong');
+ compatibilityHeading.textContent=parsed.projectState?'Original editor format detected.':'Formatting may vary.';
+ compatibilityText.replaceChildren(
+  compatibilityHeading,
+  document.createTextNode(parsed.projectState?' Template, layout, and details will be restored.':' You can still edit all details in the editor.')
+ );
+ $('resumeImportReview').hidden=false;
+ $('resumeImportProgress').hidden=true;
+ $('resumeImportError').hidden=true;
+ const list=$('resumeImportSections');
+ list.replaceChildren();
+ const profileCard=document.createElement('article');
+ profileCard.className='resume-import-preview-section resume-import-profile-preview';
+ const profileHeading=document.createElement('h3');
+ profileHeading.textContent='Contact & profile';
+ profileCard.appendChild(profileHeading);
+ [['Name','name'],['Headline','headline'],['Email','email'],['Phone','phone'],['Location','location'],['Website','website']]
+  .forEach(([label,key])=>profileCard.appendChild(createResumeImportField(label,parsed.profile[key],`profile.${key}`)));
+ list.appendChild(profileCard);
+ parsed.sections.forEach((section,sectionIndex)=>{
+  const card=document.createElement('article');
+  card.className='resume-import-preview-section';
+  card.appendChild(createResumeImportField('Section heading',section.title,`sections.${sectionIndex}.title`));
+  if(section.entries){
+   section.entries.forEach((entry,entryIndex)=>{
+    const item=document.createElement('div');
+    item.className='resume-import-preview-entry';
+    const entryPath=`sections.${sectionIndex}.entries.${entryIndex}`;
+    item.append(
+     createResumeImportField('Role or degree',entry.role,`${entryPath}.role`),
+     createResumeImportField('Company or institution',entry.company,`${entryPath}.company`),
+     createResumeImportField('Dates',entry.date,`${entryPath}.date`),
+     createResumeImportField('Details',entry.details,`${entryPath}.details`,true)
+    );
+    card.appendChild(item);
+   });
+  }else{
+   card.appendChild(createResumeImportField('Content',section.content,`sections.${sectionIndex}.content`,true));
+  }
+  list.appendChild(card);
+ });
+ $('resumeImportSourceText').textContent=parsed.sourceText;
+ $('applyResumeImport').hidden=false;
+ $('skipBackupApplyResumeImport').hidden=false;
+ $('applyResumeImport').disabled=false;
+ $('skipBackupApplyResumeImport').disabled=false;
+}
+async function reviewResumeFile(file){
+ if(!file)return;
+ resumeImportBusy=true;
+ pendingResumeImport=null;
+ $('resumeImportStart').hidden=true;
+ $('resumeImportModalBg').classList.add('show');
+ $('resumeImportModalBg').setAttribute('aria-hidden','false');
+ $('resumeImportReview').hidden=true;
+ $('resumeImportError').hidden=true;
+ $('resumeImportProgress').hidden=false;
+ $('resumeImportProgressValue').style.width='0%';
+ $('applyResumeImport').disabled=true;
+ $('skipBackupApplyResumeImport').disabled=true;
+ $('cancelResumeImport').disabled=true;
+ $('closeResumeImport').disabled=true;
+ try{
+  const extracted=await extractResumeFile(file,({message,value})=>setResumeImportStatus(message,value));
+  const parsed=extracted.project
+   ?{...normalizeState(extracted.project),projectState:extracted.project,sourceText:extracted.text||JSON.stringify(extracted.project,null,2)}
+   :parseResumeText(extracted.text,file.name);
+  if(!parsed.sections.length)throw new Error('No resume sections could be identified.');
+  renderResumeImportReview(parsed,file.name);
+ }catch(error){
+  console.error('Could not read the uploaded resume.',error);
+  $('resumeImportProgress').hidden=true;
+  $('resumeImportError').hidden=false;
+  $('resumeImportErrorTitle').textContent=error.message==='Unsupported resume file type.'
+   ?'Unsupport Resume format, please DOCS or PDF format'
+   :'Could not import this file';
+  $('resumeImportErrorDetail').textContent=`${error.message||'The file could not be read.'} Your current resume has not been changed.`;
+  $('applyResumeImport').disabled=true;
+  $('skipBackupApplyResumeImport').disabled=true;
+ }finally{
+  resumeImportBusy=false;
+  $('cancelResumeImport').disabled=false;
+  $('closeResumeImport').disabled=false;
+ }
+}
+function makeImportedResume(parsed){
+ if(parsed.projectState)return normalizeState(parsed.projectState);
+ const current=state;
+ const profile={
+  name:parsed.profile.name,
+  headline:parsed.profile.headline,
+  email:parsed.profile.email,
+  phone:parsed.profile.phone,
+  location:parsed.profile.location,
+  website:parsed.profile.website,
+  photo:''
+ };
+ const sections=parsed.sections.map(section=>({
+  ...section,
+  id:uid(),
+  visible:true,
+  headingSize:current.design.headingSize,
+  bodySize:current.design.fontSize,
+  ...(section.entries?{entries:section.entries.map(entry=>({...entry}))}:{})
+ }));
+ return normalizeState({
+  ...current,
+  version:4,
+  docName:parsed.docName,
+  profile,
+  sections,
+  importedSourceText:parsed.sourceText,
+  positions:{}
+ });
+}
+function applyResumeImport({downloadBackup=true}={}){
+ if(!pendingResumeImport)return;
+ try{
+  const next=makeImportedResume(pendingResumeImport);
+  if(downloadBackup){
+   const backupName=(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'-before-import.json';
+   download(backupName,new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));
+  }
+  if(cloudUser){
+   clearTimeout(cloudSaveTimer);
+   if(cloudSaving)cloudSavePending=true;
+   cloudSessionGeneration++;
+   activeCloudResumeId=null;
+   activeCloudRevision=null;
+   cloudSaveBlocked=false;
+  }
+  localPersistenceBlocked=false;
+  recoverySnapshot=null;
+  $('recoveryBanner').hidden=true;
+  transact(()=>{state=next;selectedId=null;selectedSectionAnchor=null});
+  $('resumeImportModalBg').classList.remove('show');
+  $('resumeImportModalBg').setAttribute('aria-hidden','true');
+  pendingResumeImport=null;
+  toast(cloudUser?'Imported as a new cloud resume':downloadBackup?'Resume imported. A backup was downloaded.':'Resume imported without a backup.');
+ }catch(error){
+  console.error('Could not apply the imported resume.',error);
+  $('resumeImportError').hidden=false;
+  $('resumeImportErrorDetail').textContent='The current resume remains unchanged. Please try again or download a backup before continuing.';
+ }
+}
+function closeResumeImport(){
+ if(resumeImportBusy)return;
+ $('resumeImportModalBg').classList.remove('show');
+ $('resumeImportModalBg').setAttribute('aria-hidden','true');
+ $('resumeImportStart').hidden=true;
+ pendingResumeImport=null;
+}
+function openResumeImportPrompt(){
+ $('resumeImportModalBg').classList.add('show');
+ $('resumeImportModalBg').setAttribute('aria-hidden','false');
+ $('resumeImportStart').hidden=false;
+ $('resumeImportProgress').hidden=true;
+ $('resumeImportReview').hidden=true;
+ $('resumeImportError').hidden=true;
+ $('applyResumeImport').hidden=true;
+ $('skipBackupApplyResumeImport').hidden=true;
+ $('cancelResumeImport').focus();
 }
 function showRecoveryNotice(recovery){
  if(!recovery.error)return;
@@ -1243,6 +1457,7 @@ async function exportPDF(templateId=null){
    addPdfDecorations,
    addSelectableText,
    addPDFLinks,
+   resumeState:state,
   });
   if(generation!==pdfPreviewGeneration)return;
   showPdfPreview(blob,`${(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')}.pdf`,sheets.length,'Preview your resume PDF');
@@ -2201,6 +2416,14 @@ $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.
 $('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
 $('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
+$('importResumeBtn').addEventListener('click',()=>$('resumeImportInput').click());
+$('chooseResumeImportFile').addEventListener('click',()=>$('resumeImportInput').click());
+$('resumeImportInput').addEventListener('change',event=>{const file=event.target.files?.[0];event.target.value='';if(file)void reviewResumeFile(file)});
+$('applyResumeImport').addEventListener('click',applyResumeImport);
+$('skipBackupApplyResumeImport').addEventListener('click',()=>applyResumeImport({downloadBackup:false}));
+$('cancelResumeImport').addEventListener('click',closeResumeImport);
+$('closeResumeImport').addEventListener('click',closeResumeImport);
+$('resumeImportModalBg').addEventListener('click',event=>{if(event.target===$('resumeImportModalBg'))closeResumeImport()});
  $('googleSignInBtn').addEventListener('click',async()=>{
   try{await signInWithGoogle()}
   catch(error){toast(authErrorMessage(error))}
@@ -2295,7 +2518,7 @@ document.addEventListener('keydown',e=>{
   if(!e.shiftKey){e.preventDefault();undo();return}
  }
  if(modifier&&(key==='y'||(key==='z'&&e.shiftKey))){e.preventDefault();redo();return}
- if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}
+ if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeResumeImport();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}
 });
 const savedProject=guestResumeStorage.load();
 if(savedProject.state)state=savedProject.state;
@@ -2310,5 +2533,5 @@ addEventListener('pagehide',()=>{
  if(persistenceMode!=='browser'||localPersistenceBlocked)return;
  try{guestResumeStorage.save(state)}catch(error){console.error('Could not save the resume while closing the page.',error)}
 });
-loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}updateBrowserPersistenceUI();if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
+loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}updateBrowserPersistenceUI();if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);const pageParams=new URLSearchParams(location.search);if(pageParams.get('tool')==='cover-letter')openCoverLetter();if(pageParams.get('open')==='import')openResumeImportPrompt()
 })();

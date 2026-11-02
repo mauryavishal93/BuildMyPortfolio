@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Build a tailored fresher or experienced resume with a simple step-by-step wizard.">
+  <title>Build a Resume | PersonaCraftPro</title>
+  <link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
+  <link rel="stylesheet" href="/src/about.css">
+  <link rel="stylesheet" href="/src/resume-wizard.css">
+</head>
+<body class="about-page resume-wizard-page">
+  <header class="about-header">
+    <a class="about-brand" href="/home.html" aria-label="PersonaCraftPro home">
+      <img class="about-logo" src="/images/personacraftpro-mark.svg" alt="" aria-hidden="true">
+      <span class="about-brand-name">PersonaCraft<span>Pro</span></span>
+    </a>
+    <nav class="about-nav" aria-label="Main navigation">
+      <a class="btn outline wizard-home-link" href="/home.html">Back to home</a>
+      <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="false" aria-label="Dark theme">
+        <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
+        <span class="theme-switch-label">Dark</span>
+      </button>
+    </nav>
+  </header>
+
+  <main class="resume-wizard-main">
+    <a class="wizard-return-link" id="wizardReturn" href="/home.html">← Back to experience selection</a>
+    <section class="wizard-card" aria-labelledby="wizardTitle">
+      <div class="wizard-card-heading">
+        <p class="about-eyebrow">Your story, one step at a time</p>
+        <h1 id="wizardTitle" tabindex="-1">Build your resume from scratch</h1>
+        <p id="wizardDescription">Choose your experience level and we’ll guide you through the right details.</p>
+      </div>
+      <div class="wizard-progress" id="wizardProgress" hidden>
+        <div class="wizard-progress-label">
+          <span id="wizardStepLabel"></span>
+          <span id="wizardStepCount"></span>
+        </div>
+        <div class="wizard-progress-track" role="progressbar" aria-label="Resume wizard progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="wizardProgressBar">
+          <span id="wizardProgressFill"></span>
+        </div>
+      </div>
+      <div class="wizard-step-content" id="wizardStepContent" aria-live="polite"></div>
+      <div class="wizard-actions">
+        <button class="btn outline" id="wizardPrevious" type="button" hidden>Previous</button>
+        <span class="wizard-action-spacer"></span>
+        <button class="btn primary" id="wizardNext" type="button" hidden>Continue</button>
+      </div>
+      <p class="wizard-status" id="wizardStatus" role="status" aria-live="polite"></p>
+      <p class="wizard-privacy-note">Your details stay in this tab and are copied into the editor only when you create your resume.</p>
+    </section>
+  </main>
+
+  <script type="module" src="/src/theme.js"></script>
+  <script type="module" src="/src/resume-wizard.js"></script>
+</body>
+</html>

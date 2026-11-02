@@ -43,7 +43,7 @@ test('mobile editor provides view tabs and shows one full-width panel above the 
   assert.match(source, /document\.querySelectorAll\('\.mobile-editor-tab'\)\.forEach/);
   assert.match(source, /if\(next!=='resume'\)\{leftCollapsed=false;collapsed=false;applyPanels\(\)\}/);
   assert.match(source, /function fitMobileZoom\(\)/);
-  assert.match(source, /fitMobileZoom\(\);updateBrowserPersistenceUI\(\)/);
+  assert.match(source, /fitMobileZoom\(\);\s*updateBrowserPersistenceUI\(\)/);
   assert.match(styles, /grid-template-areas:"mobile-panel" "mobile-canvas"/);
   assert.match(styles, /#layout\[data-mobile-panel=resume\] #leftPanel,#layout\[data-mobile-panel=resume\] #rightPanel/);
   assert.match(styles, /#layout\[data-mobile-panel=design\] #leftPanel\{display:none\}/);

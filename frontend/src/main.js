@@ -3,7 +3,14 @@ import { buildCoverLetterDraft } from './cover-letter.js';
 import { buildCoverLetterPdf } from './cover-letter-pdf.js';
 import { loadBillingConfig, loadBillingEntitlement } from './billing-client.js';
 import { alertModern, confirmModern, promptModern } from './modern-modal.js';
-import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade } from './plan-access.js';
+import { canUseFeature, FEATURE_IDS, isProTemplate, PLAN_CONFIG, shouldPromptForJobDescriptionAtsUpgrade, TEMPLATE_IDS } from './plan-access.js';
+import { formatCurrencyPrice, preferredPricingCurrency } from './pricing-currency.js';
+import { extractResumeFile } from './resume-import.js';
+import { parseResumeText } from './resume-import-structure.js';
+import { splitContentIntoBullets } from './resume-summary.js';
+import { applySectionTypography, normalizeSectionTypography } from './section-typography.js';
+import { templateDefs as resumeTemplateDefs } from '../../Templates/index.js';
+import { createResumeDraftFromWizard, RESUME_WIZARD_DRAFT_KEY } from './resume-wizard-data.js';
 import {
  chooseAuthenticatedResume,
  createGuestResumeStorage,
@@ -24,28 +31,9 @@ const baseDocumentTitle=document.title;
 const clamp=(v,min,max,def)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):def};
 const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana','Trebuchet MS','Times New Roman','Courier New'];
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
-const templateDefs=[
-{id:'classic',name:'Classic',sub:'ATS-friendly',accent:'#31547a',cls:'layout-classic',layout:'single'},
-{id:'modern',name:'Modern',sub:'Two-column',accent:'#344b67',cls:'layout-modern',layout:'two',banner:true},
-{id:'minimal',name:'Minimal',sub:'Clean type',accent:'#202a3a',cls:'layout-minimal',layout:'single'},
-{id:'creative',name:'Creative',sub:'Color accents',accent:'#6b4eff',cls:'layout-creative',layout:'single'},
-{id:'compact',name:'Compact',sub:'Space-saving',accent:'#2c5260',cls:'layout-compact',layout:'single'},
-{id:'elegant',name:'Elegant',sub:'Editorial',accent:'#7a5947',cls:'layout-elegant',layout:'single'},
-{id:'tech',name:'Tech',sub:'Engineering',accent:'#166b73',cls:'layout-tech',layout:'single'},
-{id:'executive',name:'Executive',sub:'Leadership',accent:'#27364d',cls:'layout-executive',layout:'single'},
-{id:'photo',name:'Photo Sidebar',sub:'Portrait layout',accent:'#215e69',cls:'layout-photo',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'timeline',name:'Timeline',sub:'Career milestones',accent:'#8b4b37',cls:'layout-timeline',layout:'single'},
-{id:'pastel',name:'Soft Pastel',sub:'Warm palette',accent:'#9b5878',cls:'layout-pastel',layout:'single',banner:true},
-{id:'bold',name:'Bold Split',sub:'High contrast',accent:'#b45309',cls:'layout-bold',layout:'two',banner:true},
-{id:'student',name:'Graduate',sub:'Early career',accent:'#18756d',cls:'layout-student',layout:'single'},
-{id:'portrait',name:'Portrait Left',sub:'Photo + rule',accent:'#2f4a7a',cls:'layout-portrait',layout:'single',photo:true,photoPos:'left'},
-{id:'card',name:'Centered Card',sub:'Photo on top',accent:'#6a4c7d',cls:'layout-card',layout:'single',photo:true,photoPos:'center'},
-{id:'photobanner',name:'Photo Banner',sub:'Banner + photo',accent:'#1f5d73',cls:'layout-photobanner',layout:'two',banner:true,photo:true,photoPos:'right'},
-{id:'studio',name:'Studio',sub:'Serif + frame',accent:'#8a4b2d',cls:'layout-studio',layout:'single',banner:true,photo:true,photoPos:'right'},
-{id:'luxe',name:'Luxe',sub:'Luxury serif',accent:'#7b4b42',cls:'layout-luxe',layout:'single',banner:true},
-{id:'verve',name:'Verve',sub:'Vibrant modern',accent:'#6d28d9',cls:'layout-verve',layout:'single',banner:true},
-{id:'arc',name:'Arc',sub:'Rounded profile',accent:'#0f766e',cls:'layout-arc',layout:'single',banner:true,photo:true,photoPos:'right'}
-];
+const templateDefs=resumeTemplateDefs;
+const requestedHomepageTemplateId=new URLSearchParams(location.search).get('template');
+const requestedWizardResume=new URLSearchParams(location.search).get('newResume')==='1';
 const makeSections=()=>{
   return [
     {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
@@ -56,13 +44,15 @@ const makeSections=()=>{
     {id:uid(),type:'certifications',title:'Certifications',visible:true,content:'Add relevant certifications, courses, or professional training.'}
   ];
 };
-const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections(),positions:{}});
+const fresh=()=>({version:4,docName:'Untitled resume',template:'classic',layout:'single',mode:'flow',profile:{name:'Name Surname',headline:'Engineer',email:'abc@xyz.com',phone:'+91 98765 43210',location:'Bengaluru, India',website:'linkedin.com/in/abcxyz/',photo:''},design:{accent:'#31547a',font:'Arial',fontSize:12,headingSize:15,margin:DEFAULT_MARGIN,marginY:DEFAULT_MARGIN,pageNumbers:true,headerAlign:'',photoAlign:''},sections:makeSections().map(section=>({...section,headingSize:15,bodySize:12})),positions:{},importedSourceText:''});
 const str=v=>typeof v==='string'?v:'';
 /* Validates + upgrades any project (import or autosave). Throws on files that are not projects. */
 function normalizeState(d){
  if(!d||typeof d!=='object'||!d.profile||typeof d.profile!=='object'||!Array.isArray(d.sections)||!d.design||typeof d.design!=='object')throw Error('This is not a valid PersonaCraftPro project.');
  const base=fresh(),ver=Number(d.version)||1,out={...base,version:4};
  out.docName=str(d.docName).trim()?str(d.docName).slice(0,120):base.docName;
+ out.importedSourceText=str(d.importedSourceText);
+ if(new TextEncoder().encode(out.importedSourceText).length>200_000)throw Error('The saved original resume text exceeds the supported size.');
  out.template=templateDefs.some(t=>t.id===d.template)?d.template:base.template;
  out.layout=d.layout==='two'?'two':'single';out.mode=d.mode==='free'?'free':'flow';
  out.profile={...base.profile};for(const k of Object.keys(base.profile))if(typeof d.profile[k]==='string')out.profile[k]=d.profile[k];
@@ -74,7 +64,7 @@ function normalizeState(d){
  out.sections=d.sections.filter(s=>s&&typeof s==='object').map(s=>{
   const type=KNOWN_TYPES.includes(s.type)?s.type:'custom';let id=str(s.id)||uid();while(seen.has(id))id=uid();seen.add(id);
   const normalizedListStyle=['none','bullet','number','arrow','check','dash','diamond'].includes(s.listStyle)?s.listStyle:(type==='summary'?'none':'bullet');
-  const n={id,type,title:str(s.title).trim()?str(s.title):'Untitled section',visible:s.visible!==false,listStyle:(type==='summary'&&ver<4&&normalizedListStyle==='bullet')?'none':normalizedListStyle};
+  const n={id,type,title:str(s.title).trim()?str(s.title):'Untitled section',visible:s.visible!==false,listStyle:(type==='summary'&&ver<4&&normalizedListStyle==='bullet')?'none':normalizedListStyle,...normalizeSectionTypography(s,out.design)};
   if(['experience','education','projects'].includes(type)||Array.isArray(s.entries))n.entries=(Array.isArray(s.entries)?s.entries:[]).filter(e=>e&&typeof e==='object').map(e=>({role:str(e.role),company:str(e.company),date:str(e.date),details:str(e.details)}));
   else n.content=str(s.content);
   return n});
@@ -82,13 +72,15 @@ function normalizeState(d){
  if(pos&&typeof pos==='object')for(const [k,p] of Object.entries(pos)){if(!seen.has(k)||!p||typeof p!=='object')continue;const x=Number(p.x),y=Number(p.y),w=Number(p.w);if(![x,y,w].every(Number.isFinite))continue;if(ver<3&&x===0&&w===610)continue;out.positions[k]={x:clamp(x,0,PAGE_W,0),y:clamp(y,0,PAGE_H,0),w:clamp(w,120,PAGE_W,610)}}
  return out;
 }
-let state=fresh(),selectedId=null,zoom=1,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
+let state=fresh(),selectedId=null,selectedSectionAnchor=null,zoom=1,mobileAutoFitZoom=true,history=[],redoHistory=[],draggingId=null,saveTimer=null,panelWidth=260,collapsed=false,leftWidth=260,leftCollapsed=false,leftTab='templates',rightTab='design',touchPoints=new Map(),pinchStart=null,pinchUsed=false,onboardingDismissed=false,customSectionTrigger=null,inspectorEntriesExpanded=false;
+let pendingResumeImport=null,resumeImportBusy=false;
 let localPersistenceBlocked=false,recoverySnapshot=null;
 const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
 const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
 let lastWorkedResumeWrite=Promise.resolve();
-let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
+let guestResumeLoaded=false,guestResumeDirty=false,wizardResumeDraftPending=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
+let billingPricingConfig=null;
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
 let signOutPending=false;
 let pdfPreviewUrl=null,pdfPreviewBlob=null,pdfPreviewFilename='',pdfPreviewGeneration=0,templatePreviewGeneration=0,pdfPreviewUsesProTemplate=false;
@@ -361,7 +353,7 @@ async function updateCloudAccount(user,error){
  const guestLogin=transition==='guest-login';
  const loggingOut=transition==='logout';
  const accountSwitch=transition==='account-switch';
- const hasGuestDraft=guestLogin&&(guestResumeLoaded||guestResumeDirty);
+ const hasGuestDraft=guestLogin&&(guestResumeLoaded||guestResumeDirty||wizardResumeDraftPending);
  const generation=accountChanged?++authGeneration:authGeneration;
  if(accountChanged){
   clearTimeout(saveTimer);
@@ -379,6 +371,7 @@ async function updateCloudAccount(user,error){
    catch(storageError){console.error('Could not clear the guest resume after sign-in.',storageError)}
   }
   if(accountSwitch||loggingOut){
+   wizardResumeDraftPending=false;
    state=fresh();
    selectedId=null;
    history=[];redoHistory=[];
@@ -449,18 +442,20 @@ async function updateCloudAccount(user,error){
     console.error('Could not load the last-opened cloud resume preference.',error);
     toast('Could not load your last-opened resume. Opening your most recently updated resume instead.');
    }
-   const decision=chooseAuthenticatedResume({
-    hasGuestDraft:hasGuestDraft||cloudDraftDirty,
-    resumes,
-    lastWorkedResumeId
-   });
+   const decision=wizardResumeDraftPending
+    ?{type:'migrate-guest-copy'}
+    :chooseAuthenticatedResume({
+     hasGuestDraft:hasGuestDraft||cloudDraftDirty,
+     resumes,
+     lastWorkedResumeId
+    });
    if(decision.type==='open-cloud-resume'){
     const selectedResume=resumes.find(resume=>resume.id===decision.resumeId);
     state=normalizeState(selectedResume.state);
     activeCloudResumeId=selectedResume.id;
     activeCloudRevision=selectedResume.revision;
     void rememberLastWorkedResume(user.uid,selectedResume.id,cloudSessionGeneration);
-    cloudDraftDirty=false;
+    cloudDraftDirty=applyHomepageTemplate();
     history=[];redoHistory=[];selectedId=null;
     render();
    }else{
@@ -470,6 +465,7 @@ async function updateCloudAccount(user,error){
     activeCloudResumeId=result.id;
     activeCloudRevision=result.revision;
     cloudDraftDirty=false;
+    wizardResumeDraftPending=false;
     if(JSON.stringify(snapshot)!==JSON.stringify(state))cloudSavePending=true;
    }
    cloudReady=true;
@@ -480,7 +476,7 @@ async function updateCloudAccount(user,error){
     openCloudModal();
    }
    setSaveState(cloudDraftDirty||cloudSavePending?'Saving…':'All changes saved');
-   if(cloudSavePending)scheduleCloudSave();
+   if(cloudSavePending||cloudDraftDirty)scheduleCloudSave();
   }catch(error){
    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
    cloudReady=false;
@@ -502,6 +498,7 @@ async function updateCloudAccount(user,error){
   }
   try{
    const config=await loadBillingConfig();
+   billingPricingConfig=config;
    if(config.entitlementEnabled)verifiedEntitlement=await loadBillingEntitlement(user);
    if(authGeneration!==generation||cloudUser?.uid!==user.uid)return;
   }catch(billingError){
@@ -519,6 +516,7 @@ window.addEventListener('focus',async()=>{
  if(!user)return;
  try{
   const config=await loadBillingConfig();
+  billingPricingConfig=config;
   const entitlement=config.entitlementEnabled?await loadBillingEntitlement(user):null;
   if(cloudUser?.uid!==user.uid)return;
   verifiedEntitlement=entitlement;
@@ -542,6 +540,30 @@ function transact(fn){const previous=deep(state);fn();if(JSON.stringify(previous
 function undo(){if(!history.length)return;redoHistory.push(deep(state));state=history.pop();if(!state.sections.some(s=>s.id===selectedId))selectedId=null;render();saveLocal();updateUndoButton();toast('Undo complete')}
 function redo(){if(!redoHistory.length)return;history.push(deep(state));state=redoHistory.pop();if(!state.sections.some(s=>s.id===selectedId))selectedId=null;render();saveLocal();updateUndoButton();toast('Redo complete')}
 function activeTemplate(){return templateDefs.find(t=>t.id===state.template)||templateDefs[0]}
+function applyHomepageTemplate(){
+ const template=templateDefs.find(item=>item.id===requestedHomepageTemplateId&&TEMPLATE_IDS.FREE.includes(item.id));
+ if(!template)return false;
+ const changed=state.template!==template.id||state.layout!==template.layout||state.design.accent!==template.accent;
+ state.template=template.id;
+ state.layout=template.layout;
+ state.design.accent=template.accent;
+ if(changed)selectedId=null;
+ return changed;
+}
+function clearHomepageTemplateParam(){
+ if(!requestedHomepageTemplateId)return;
+ const params=new URLSearchParams(location.search);
+ params.delete('template');
+ const query=params.toString();
+ window.history.replaceState(null,'',`${location.pathname}${query?`?${query}`:''}${location.hash}`);
+}
+function clearWizardResumeParam(){
+ if(!requestedWizardResume)return;
+ const params=new URLSearchParams(location.search);
+ params.delete('newResume');
+ const query=params.toString();
+ window.history.replaceState(null,'',`${location.pathname}${query?`?${query}`:''}${location.hash}`);
+}
 function sectionById(id){return state.sections.find(s=>s.id===id)}
 function websiteHref(value){
  const raw=String(value||'').trim();if(!raw)return '';
@@ -550,7 +572,8 @@ function websiteHref(value){
 function templateCardMarkup(t){
  const pro=isProTemplate(t.id),selected=state.template===t.id;
  const photo=t.photo&&t.id!=='photo'?`<span class="mini-photo" style="${t.photoPos==='left'?'left':'right'}:${t.photoPos==='center'?'calc(50% - 7px)':'8px'};${t.photoPos==='center'?'left:calc(50% - 7px);right:auto':''}"></span>`:'';
- const sidebar=t.layout==='two'?`<div style="float:left;width:30%;height:100%;background:${t.accent};margin-right:5px">${t.id==='photo'?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
+ const hasSidebar=t.layout==='two'||['interio-designer','brian-baxter'].includes(t.id);
+ const sidebar=hasSidebar?`<div style="float:left;width:30%;height:100%;background:${t.id==='interio-designer'?'#315f4b':t.id==='brian-baxter'?'#303030':t.accent};margin-right:5px">${t.photo?'<div style="width:16px;height:16px;border-radius:50%;background:#eee;margin:8px auto"></div>':''}</div>`:'';
  return `<div class="template-card"><button class="template ${selected?'active':''} ${pro?'template-pro':''}" data-template="${t.id}" aria-pressed="${selected}" aria-label="${$esc(t.name)} template, ${pro?'Pro':'Free'}"><div class="mini" style="background:${t.id==='pastel'?'#fbf1f6':t.id==='bold'?'#fff7ed':'#f8f9fc'}">${photo}<div class="mini-main">${sidebar}<div class="mini-head" style="background:${t.accent}"></div><div class="mini-line" style="width:85%"></div><div class="mini-line" style="width:68%"></div><div class="mini-head" style="height:6px;width:60%;margin-top:10px;background:${t.accent}"></div><div class="mini-line"></div><div class="mini-line" style="width:75%"></div></div></div><span class="template-label-row"><strong>${$esc(t.name)}</strong><span class="plan-badge ${pro?'pro':'free'}">${pro?'PRO':'FREE'}</span></span><small>${$esc(t.sub)}</small></button></div>`;
 }
 function renderTemplates(){
@@ -585,6 +608,52 @@ function sheetHTML(index,cols){
  const contact=[p.email?`<span contenteditable="true" spellcheck="true" data-profile-field="email" title="Click to edit email">${$esc(p.email)}</span>`:'',p.phone?`<span contenteditable="true" spellcheck="true" data-profile-field="phone" title="Click to edit phone">${$esc(p.phone)}</span>`:'',p.location?`<span contenteditable="true" spellcheck="true" data-profile-field="location" title="Click to edit location">${$esc(p.location)}</span>`:'',p.website?`<span contenteditable="true" spellcheck="true" data-profile-field="website" title="Click to edit website">${$esc(p.website)}</span>`:''].filter(Boolean).join('<span class="contact-separator"> · </span>');
  const photoMarkup=p.photo?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`:'<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded"></span>';
  const head=index===0?`<header class="resume-header${hasPhoto?' has-photo':''}"${hasPhoto?` data-photo-pos="${photoPos}"`:''}>${hasPhoto?photoMarkup:''}<div class="header-text"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="contact" contenteditable="false" title="Edit contact details in the right panel">${contact}</div></div></header>`:'';
+ const initials=String(p.name||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toLocaleUpperCase()||'';
+ if(tmpl.id==='brian-baxter'){
+  const portrait=p.photo
+   ?`<img class="br-portrait" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="br-portrait br-portrait-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Phone','phone','☎'],['Email','email','@'],['Website','website','↗'],['Location','location','⌖']]
+   .filter(([,field])=>p[field])
+   .map(([label,field,icon])=>`<li class="br-contact-item"><span class="br-small-icon" aria-hidden="true">${icon}</span><span contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</span></li>`)
+   .join('');
+  const profile=index===0?`<header class="br-header"><div class="br-yellow-panel"></div><div class="br-header-photo">${portrait}</div><div class="br-header-name"><h1 contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><p contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your professional title">${$esc(p.headline||'Professional Title')}</p></div></header>`:'';
+  const contactSection=index===0&&contactFields?`<section class="br-side-section br-contact-section"><h2 class="br-section-title"><span class="br-title-icon" aria-hidden="true">●</span>Contact</h2><ul class="br-contact-list">${contactFields}</ul></section>`:'';
+  return `<div class="sheet-inner br-sheet">${profile}<div class="br-body"><aside class="br-sidebar">${contactSection}<div class="br-sidebar-sections"></div></aside><main class="br-main"><div class="sections-area"></div></main></div></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='teal-modern'){
+  const tealPhoto=p.photo
+   ?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Location','location','⌖'],['Website','website','↗'],['Phone','phone','☎'],['Email','email','✉']]
+   .filter(([,field])=>p[field])
+   .map(([label,field,icon])=>`<div class="tr-contact-item"><span class="tr-contact-icon" aria-hidden="true">${icon}</span><span contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</span></div>`)
+   .join('');
+  const profile=index===0?`<header class="tr-header"><div class="tr-header-art" aria-hidden="true"></div><div class="tr-header-copy"><div class="tr-kicker"><span></span>PROFILE</div><h1 class="tr-name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="tr-title" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><div class="tr-header-rule"></div><div class="tr-contact-row">${contactFields}</div></div><div class="tr-photo-frame">${tealPhoto}</div></header>`:'';
+  return `<div class="sheet-inner tr-sheet">${profile}<div class="tr-layout"><aside class="tr-sidebar"><div class="tr-sidebar-sections"></div></aside><main class="tr-main"><div class="sections-area"></div></main></div></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='peach-mint'){
+  const peachPhoto=p.photo
+   ?`<img class="photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="photo photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const contactFields=[['Location','location'],['Website','website'],['Phone','phone'],['Email','email']]
+   .filter(([,field])=>p[field])
+   .map(([label,field])=>`<div class="pm-contact-item"><span class="pm-contact-icon" aria-hidden="true">${label==='Location'?'⌖':label==='Website'?'↗':label==='Phone'?'☎':'✉'}</span><div><span class="pm-contact-label">${label}</span><div contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</div></div></div>`)
+   .join('');
+  const profile=index===0?`<header class="pm-profile">${peachPhoto}<h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div><span class="pm-name-underline"></span></header><div class="pm-contact">${contactFields}</div>`:'';
+  return `<div class="sheet-inner pm-sheet"><aside class="pm-sidebar">${profile}<div class="pm-sidebar-sections"></div></aside><main class="pm-main"><div class="sections-area"></div></main></div><div class="page-number"></div>`;
+ }
+ if(tmpl.id==='interio-designer'){
+  const interioPhoto=p.photo
+   ?`<img class="interio-photo" src="${$esc(p.photo)}" alt="Profile photo">`
+   :`<span class="interio-photo interio-photo-placeholder" role="img" aria-label="No profile photo uploaded">${$esc(initials)}</span>`;
+  const interioHeader=index===0?`<header class="resume-header"><h1 class="name" contenteditable="true" spellcheck="true" data-profile-field="name" title="Click to edit your name">${$esc(p.name||'Your Name')}</h1><div class="headline" contenteditable="true" spellcheck="true" data-profile-field="headline" title="Click to edit your headline">${$esc(p.headline||'Professional Title')}</div></header>`:'';
+  const contactBlocks=[['Address','location'],['Phone','phone'],['Mail','email'],['Social Media','website']]
+   .filter(([,field])=>p[field])
+   .map(([label,field])=>`<div class="interio-contact-block"><h3>${label}</h3><p contenteditable="true" spellcheck="true" data-profile-field="${field}" title="Click to edit ${label.toLowerCase()}">${$esc(p[field])}</p></div>`)
+   .join('');
+  return `<div class="sheet-inner interio-layout"><div class="interio-resume-label">RESUME</div><aside class="interio-sidebar">${interioPhoto}${contactBlocks}<div class="interio-sidebar-sections"></div></aside><div class="interio-main">${interioHeader}<div class="sections-area"></div></div></div><div class="page-number"></div>`;
+ }
  return `<div class="sheet-inner">${head}<div class="sections-area">${cols?'<div class="section-columns"><div class="section-column"></div><div class="section-column"></div></div>':''}</div></div><div class="page-number"></div>`;
 }
 function createSheet(index,tmpl,cols){
@@ -620,6 +689,7 @@ function sectionAtoms(s){
 }
 function makeShell(s,cont){
  const sec=document.createElement('section');sec.className='resume-section pointer-'+(s.listStyle||'bullet')+(selectedId===s.id?' selected':'');sec.dataset.resumeSection=s.id;
+ applySectionTypography(sec,s);
  sec.innerHTML=`${cont?'':`<h2 class="section-heading" contenteditable="true" spellcheck="true" data-section-title="${$esc(s.id)}" title="Click to edit this section title">${$esc(s.title)}</h2>`}<div class="section-body"></div>`;return sec;
 }
 /* Appends one atom and returns the element it created (so a failed fit can be undone). */
@@ -651,32 +721,45 @@ function renderWhole(s){const shell=makeShell(s,false),st={};sectionAtoms(s).for
    then the other column, and only then to a new page. Everything is measured, never estimated. */
 const MAIN_TYPES=new Set(['summary','experience']),SIDE_TYPES=new Set(['skills','education','certifications']);
 function flowSections(root,tmpl){
- const two=state.layout==='two',pages=[],streams=Array.from({length:two?2:1},()=>({page:0}));
+  const two=state.layout==='two',pages=[],streams=Array.from({length:tmpl.id==='brian-baxter'?2:two?2:1},()=>({page:0}));
  const addPage=()=>{const p=createSheet(pages.length,tmpl,two);root.appendChild(p);pages.push(p);return p};
  addPage();
- const colOf=(si,pi)=>two?pages[pi].querySelectorAll('.section-column')[si]:pages[pi].querySelector('.sections-area');
- const limitOf=pi=>{const a=pages[pi].querySelector('.sections-area');return a.getBoundingClientRect().bottom-parseFloat(getComputedStyle(a).paddingBottom)};
- const fits=(si,pi)=>{const l=colOf(si,pi).lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi)+.5};
- const fill=si=>{const st=streams[si],c=colOf(si,st.page),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
- const attempt=(si,pi,s,cont,first,force)=>{
-  const shell=makeShell(s,cont),st={};colOf(si,pi).appendChild(shell);appendAtom(shell,first,st,s);
-  if(fits(si,pi)||force)return {si,pi,shell,st,s};
-  shell.remove();return null;
- };
- for(const s of state.sections.filter(x=>x.visible)){
-  const atoms=sectionAtoms(s);let i=0,cont=false,cur=null,lastSi=0;
-  const pref=!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0)<=fill(1)?0:1);
+  const colOf=(si,pi,s)=>tmpl.id==='peach-mint'
+   ?pages[pi].querySelector(s.type==='skills'||s.type==='certifications'?'.pm-sidebar-sections':'.pm-main .sections-area')
+   :tmpl.id==='brian-baxter'
+    ?pages[pi].querySelector(s.type==='education'||s.type==='certifications'?'.br-sidebar-sections':'.br-main .sections-area')
+   :tmpl.id==='teal-modern'
+    ?pages[pi].querySelector(s.type==='skills'?'.tr-sidebar-sections':'.tr-main .sections-area')
+   :tmpl.id==='interio-designer'&&s.type==='skills'
+    ?pages[pi].querySelector(pi===0?'.interio-sidebar-sections':'.interio-main .sections-area')
+   :two?pages[pi].querySelectorAll('.section-column')[si]:pages[pi].querySelector('.sections-area');
+  const limitOf=(pi,c)=>c.classList.contains('interio-sidebar-sections')
+   ||c.classList.contains('pm-sidebar-sections')
+   ||c.classList.contains('tr-sidebar-sections')
+   ||c.classList.contains('br-sidebar-sections')
+   ?c.getBoundingClientRect().bottom
+   :c.closest('.sections-area').getBoundingClientRect().bottom-parseFloat(getComputedStyle(c.closest('.sections-area')).paddingBottom);
+  const fits=(si,pi,s)=>{const c=colOf(si,pi,s),l=c.lastElementChild;return !l||l.getBoundingClientRect().bottom<=limitOf(pi,c)+.5};
+  const fill=(si,s)=>{const st=streams[si],c=colOf(si,st.page,s),l=c.lastElementChild;return st.page*10000+(l?l.getBoundingClientRect().bottom-c.getBoundingClientRect().top:0)};
+  const attempt=(si,pi,s,cont,first,force)=>{
+   const shell=makeShell(s,cont),st={},container=colOf(si,pi,s);container.appendChild(shell);appendAtom(shell,first,st,s);
+   if(fits(si,pi,s)||force)return {si,pi,shell,st,s};
+   shell.remove();return null;
+  };
+  for(const s of state.sections.filter(x=>x.visible)){
+   const atoms=sectionAtoms(s);let i=0,cont=false,cur=null,lastSi=0;
+   const pref=tmpl.id==='peach-mint'?(s.type==='skills'||s.type==='certifications'?1:0):tmpl.id==='teal-modern'?(s.type==='skills'?1:0):tmpl.id==='brian-baxter'?(s.type==='education'||s.type==='certifications'?1:0):!two?0:MAIN_TYPES.has(s.type)?0:SIDE_TYPES.has(s.type)?1:(fill(0,s)<=fill(1,s)?0:1);
   while(i<atoms.length){
-   const a=atoms[i];
-   if(cur){
-    const el=appendAtom(cur.shell,a,cur.st,cur.s || s);
-    if(fits(cur.si,cur.pi)){i++;continue}
+    const a=atoms[i];
+    if(cur){
+     const el=appendAtom(cur.shell,a,cur.st,cur.s || s);
+     if(fits(cur.si,cur.pi,cur.s)){i++;continue}
     el.remove();lastSi=cur.si;cur=null;cont=true;
    }
    const first=cont&&a.k==='li'?{k:'entry',e:a.e,continuation:true}:a;
    let placed=null;
    if(!cont){
-    const order=two?[pref,1-pref]:[0];
+    const order=two?(tmpl.id==='peach-mint'||tmpl.id==='teal-modern'?[pref]:[pref,1-pref]):tmpl.id==='brian-baxter'?[pref]:[0];
     for(const si of order){placed=attempt(si,streams[si].page,s,false,first,false);if(placed)break}
     lastSi=pref;
    }
@@ -692,6 +775,7 @@ function flowSections(root,tmpl){
 function renderFree(root,tmpl){
  const page=createSheet(0,tmpl,false);root.appendChild(page);
  const area=page.querySelector('.sections-area'),mx=clamp(state.design.margin,0,100,DEFAULT_MARGIN),defW=PAGE_W-2*mx;
+ if(tmpl.id==='interio-designer')area.style.pointerEvents='auto';
  let cursor=area.offsetTop+parseFloat(getComputedStyle(area).paddingTop);
  state.sections.filter(s=>s.visible).forEach(s=>{
   const node=renderWhole(s),pos=state.positions[s.id];
@@ -710,6 +794,62 @@ function renderSheets(){
  });
  $('hint').textContent=state.mode==='free'?'Free position: drag sections · Click text directly to edit':'Click any name, heading, bullet, skill, or paragraph on the page to edit · Use the right panel for design and photo details';
  $('zoomLabel').textContent=Math.round(zoom*100)+'%';
+ updateSectionTypographyCallout();
+}
+function fitMobileZoom(){
+ if(!mobileAutoFitZoom||!window.matchMedia('(max-width:800px)').matches)return;
+ const width=$('sheets').clientWidth-4;
+ if(width<=0)return;
+ const fitted=Math.max(.45,Math.min(1,width/PAGE_W));
+ if(Math.abs(fitted-zoom)<.005)return;
+ zoom=fitted;
+ renderSheets();
+}
+function updateSectionTypographyCallout(){
+ let callout=$('sectionTypographyCallout');
+ if(!callout){
+  callout=document.createElement('aside');
+  callout.id='sectionTypographyCallout';
+  callout.className='section-typography-callout';
+  callout.setAttribute('role','note');
+  callout.setAttribute('aria-label','Selected section text sizes');
+  callout.hidden=true;
+  callout.innerHTML='<span class="section-typography-label">TEXT SIZE</span><strong class="section-typography-title"></strong><span class="section-typography-value"><span>Heading</span><b class="section-heading-value"></b></span><span class="section-typography-value"><span>Body</span><b class="section-body-value"></b></span>';
+  document.body.appendChild(callout);
+ }
+ const section=sectionById(selectedId);
+ const target=selectedSectionAnchor?.isConnected?selectedSectionAnchor:Array.from(document.querySelectorAll('#sheets [data-resume-section].selected')).find(element=>element.dataset.resumeSection===selectedId);
+ if(!section||!target){callout.hidden=true;return}
+ callout.querySelector('.section-typography-title').textContent=section.title;
+ callout.querySelector('.section-heading-value').textContent=`${section.headingSize} px`;
+ callout.querySelector('.section-body-value').textContent=`${section.bodySize} px`;
+
+ const targetRect=target.getBoundingClientRect(),sheetRect=target.closest('.sheet').getBoundingClientRect();
+ callout.hidden=false;
+ const calloutRect=callout.getBoundingClientRect(),width=calloutRect.width,height=calloutRect.height,gap=10,padding=8;
+ const right=sheetRect.right+gap,left=sheetRect.left-width-gap;
+ let placeLeft=false,x=right;
+ if(right+width>window.innerWidth-padding){
+  if(left>=padding){x=left;placeLeft=true}
+  else x=Math.max(padding,Math.min(right,window.innerWidth-width-padding));
+ }
+ const visibleTop=Math.max(0,target.closest('.center').getBoundingClientRect().top),visibleBottom=Math.min(window.innerHeight,target.closest('.center').getBoundingClientRect().bottom);
+ const sectionCenter=Math.max(visibleTop+height/2,Math.min(targetRect.bottom,visibleBottom-height/2,(targetRect.top+targetRect.bottom)/2));
+ let top=Math.max(padding,Math.min(sectionCenter-height/2,window.innerHeight-height-padding));
+ if(window.matchMedia('(max-width:800px)').matches){
+  const sheetsRect=$('sheets').getBoundingClientRect();
+  const mobileVisibleTop=Math.max(padding,sheetsRect.top+padding);
+  const mobileVisibleBottom=Math.min(window.innerHeight-padding,sheetsRect.bottom-padding);
+  const targetMiddle=(targetRect.top+targetRect.bottom)/2;
+  const placeAtBottom=targetMiddle<(mobileVisibleTop+mobileVisibleBottom)/2;
+  top=placeAtBottom?mobileVisibleBottom-height:mobileVisibleTop;
+  top=Math.max(padding,Math.min(top,window.innerHeight-height-padding));
+  x=Math.max(padding,Math.min(x,window.innerWidth-width-padding));
+ }
+ callout.classList.toggle('is-left',placeLeft);
+ callout.style.left=`${x}px`;
+ callout.style.top=`${top}px`;
+ callout.hidden=false;
 }
 function closeTemplatePreview(){
  templatePreviewGeneration++;
@@ -739,6 +879,7 @@ async function openTemplatePreview(templateId){
   state.template=template.id;
   state.layout=template.layout;
   state.design.accent=template.accent;
+  if(template.id==='brian-baxter'){state.positions={};state.freePageCount=1}
   selectedId=null;
   zoom=1;
   renderSheets();
@@ -763,6 +904,11 @@ async function openTemplatePreview(templateId){
    if(generation!==templatePreviewGeneration)return;
    const sheet=renderedPages[index];
    sheet.querySelectorAll('.selected').forEach(element=>element.classList.remove('selected'));
+   sheet.querySelectorAll('[contenteditable]').forEach(element=>{
+    element.removeAttribute('contenteditable');
+    element.removeAttribute('spellcheck');
+    element.removeAttribute('title');
+   });
    sheet.style.transform='none';
    sheet.style.marginBottom='0';
    captureRoot.replaceChildren(sheet);
@@ -858,9 +1004,9 @@ function renderInspector(){
  <div class="field-row"><div class="field"><label>Body size (px)</label><input data-design="fontSize" type="number" min="8" max="24" value="${d.fontSize}"></div><div class="field"><label>Heading size (px)</label><input data-design="headingSize" type="number" min="10" max="28" value="${d.headingSize}"></div></div>
  <div class="field-row"><div class="field"><label>Left/right margin (px)</label><input data-design="margin" type="number" min="0" max="100" value="${d.margin}"></div><div class="field"><label>Top/bottom margin (px)</label><input data-design="marginY" type="number" min="0" max="100" value="${d.marginY}"></div></div>
  <div class="field"><label><input type="checkbox" data-design="pageNumbers" ${d.pageNumbers?'checked':''}>Show page numbers (reserves a small footer)</label></div>
- <div class="small-note">Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.</div>`:''}`;
+ <div class="small-note">Page size is A4 (210 × 297 mm). The same margins drive the preview, print and PDF. Your draft is saved in this browser. Export JSON for a backup.</div>${state.importedSourceText?`<details class="resume-import-source"><summary>Original imported text (saved with this project)</summary><pre>${$esc(state.importedSourceText)}</pre></details>`:''}`:''}`;
  if(rightTab==='section'&&s){
-   h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
+   h+=`<div class="eyebrow">Selected section</div><div class="field"><label>Section title</label><input id="sectionTitle" value="${$esc(s.title)}"></div><div class="field-row"><div class="field"><label for="sectionHeadingSize">Heading size (px)</label><input id="sectionHeadingSize" type="number" min="10" max="36" step="1" value="${s.headingSize}"></div><div class="field"><label for="sectionBodySize">Body size (px)</label><input id="sectionBodySize" type="number" min="8" max="24" step="1" value="${s.bodySize}"></div></div><div class="field"><label>Line pointers</label><select id="sectionPointer">${[['bullet','• Bullet'],['number','1. Numbered'],['arrow','→ Arrow'],['check','✓ Check mark'],['dash','– Dash'],['diamond','◆ Diamond'],['none','No pointer']].map(([value,label])=>`<option value="${value}" ${(s.listStyle||'bullet')===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
    if(s.entries){
     h+=s.entries.map((e,i)=>`<details class="inspector-entry"${i===0?' open':''}><summary><span>Entry ${i+1}</span><span class="inspector-entry-title" data-entry-summary="${i}">${$esc(e.role||e.company||'Add entry details')}</span></summary><div class="inspector-entry-content"><div class="field"><label>Role / qualification</label><input data-entry="role" data-index="${i}" value="${$esc(e.role)}"></div><div class="field"><label>Company / institution</label><input data-entry="company" data-index="${i}" value="${$esc(e.company)}"></div><div class="field"><label>Date</label><input data-entry="date" data-index="${i}" value="${$esc(e.date)}"></div><div class="field"><label>Details</label><div class="detail-bullet-list" data-entry-details="${i}">${renderDetailInputs(e,i)}</div><button class="btn outline small" type="button" data-add-detail-line="${i}">＋ Add bullet</button></div><button class="btn danger small" data-remove-entry="${i}">Remove entry</button></div></details>`).join('');
      h+='<button class="btn outline small" id="addEntry">＋ Add entry</button>';
@@ -876,12 +1022,14 @@ function renderInspector(){
   if(el.type==='checkbox')v=el.checked;
   else if(el.type==='number'){v=Number(el.value);if(el.value===''||!Number.isFinite(v)){renderInspector();return}v=clamp(v,Number(el.min),Number(el.max),state.design[k])}
   else v=el.value;
-  transact(()=>{state.design[k]=v});
+  transact(()=>{state.design[k]=v;if(k==='fontSize')state.sections.forEach(section=>section.bodySize=v);if(k==='headingSize')state.sections.forEach(section=>section.headingSize=v)});
  }));
  const photo=$('photoInput');photo?.addEventListener('change',()=>{const f=photo.files&&photo.files[0];if(!f)return;if(!f.type.startsWith('image/')||f.size>8*1024*1024){toast('Choose an image under 8 MB');return}const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const scale=Math.min(1,500/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,im.width*scale);c.height=Math.max(1,im.height*scale);c.getContext('2d').drawImage(im,0,0,c.width,c.height);transact(()=>state.profile.photo=c.toDataURL('image/jpeg',.84))};im.onerror=()=>toast('That image could not be read');im.src=String(r.result)};r.readAsDataURL(f)});
  $('removePhoto')?.addEventListener('click',()=>transact(()=>state.profile.photo=''));
  $('sectionTitle')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.title=e.target.value||'Untitled section';saveLocal();syncSheetFields();});
- $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;x.listStyle=e.target.value;saveLocal();renderSheets();renderInspector();});
+ $('sectionHeadingSize')?.addEventListener('change',e=>{const value=Number(e.target.value);if(e.target.value===''||!Number.isFinite(value)){renderInspector();return}const id=selectedId;transact(()=>{const section=sectionById(id);if(section)section.headingSize=clamp(value,10,36,section.headingSize)})});
+ $('sectionBodySize')?.addEventListener('change',e=>{const value=Number(e.target.value);if(e.target.value===''||!Number.isFinite(value)){renderInspector();return}const id=selectedId;transact(()=>{const section=sectionById(id);if(section)section.bodySize=clamp(value,8,24,section.bodySize)})});
+ $('sectionPointer')?.addEventListener('change',e=>{const x=sectionById(selectedId);if(!x)return;const nextStyle=e.target.value;if(x.listStyle==='none'&&nextStyle!=='none'){if(x.entries)x.entries.forEach(entry=>{entry.details=splitContentIntoBullets(entry.details)});else if(x.type!=='skills')x.content=splitContentIntoBullets(x.content)}x.listStyle=nextStyle;saveLocal();renderSheets();renderInspector();});
  $('sectionContent')?.addEventListener('input',e=>{const x=sectionById(selectedId);if(x)x.content=e.target.value;saveLocal();syncSheetFields();});
  $('inspector').querySelectorAll('[data-entry]').forEach(el=>el.addEventListener('input',()=>{const x=sectionById(selectedId),i=+el.dataset.index;if(!x?.entries?.[i])return;x.entries[i][el.dataset.entry]=el.value;if(el.dataset.entry==='role'||el.dataset.entry==='company')updateInspectorEntryTitle(i,x.entries[i]);saveLocal();syncSheetFields();}));
  $('inspector').oninput=event=>{
@@ -936,13 +1084,21 @@ function togglePanel(){collapsed=!collapsed;applyPanels();savePrefs()}
 function toggleLeft(){leftCollapsed=!leftCollapsed;applyPanels();savePrefs()}
 function setTab(t){leftTab=t==='sections'?'sections':'templates';leftCollapsed=false;for(const k of ['templates','sections']){const on=k===leftTab;$('pane'+k[0].toUpperCase()+k.slice(1)).hidden=!on;const b=$('tab'+k[0].toUpperCase()+k.slice(1));b.classList.toggle('active',on);b.setAttribute('aria-selected',on)}applyPanels();savePrefs()}
 function setRightTab(t){rightTab=t==='section'?'section':'design';renderInspector();savePrefs()}
+function setMobilePanel(panel){
+ const next=['templates','sections','design'].includes(panel)?panel:'resume';
+ $('layout').dataset.mobilePanel=next;
+ document.querySelectorAll('.mobile-editor-tab').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.mobilePanel===next)));
+ if(next!=='resume'){leftCollapsed=false;collapsed=false;applyPanels()}
+ if(next==='templates'||next==='sections')setTab(next);
+ else if(next==='design'&&rightTab!=='design')setRightTab('design');
+}
 function savePrefs(){try{localStorage.setItem('resumeStudioUI',JSON.stringify({leftWidth,panelWidth,leftCollapsed,collapsed,leftTab,rightTab,onboardingDismissed}))}catch(e){}}
 function loadPrefs(){try{const u=JSON.parse(localStorage.getItem('resumeStudioUI')||'null');if(u){leftWidth=clamp(u.leftWidth,LW[0],LW[1],260);panelWidth=clamp(u.panelWidth,RW[0],RW[1],300);leftCollapsed=!!u.leftCollapsed;collapsed=!!u.collapsed;leftTab=u.leftTab==='sections'?'sections':'templates';rightTab=u.rightTab==='section'?'section':'design';onboardingDismissed=u.onboardingDismissed===true}}catch(e){}}
 function render(){renderTemplates();renderSectionList();renderSheets();renderInspector();$('docName').value=state.docName;$('pageLayout').value=state.layout;$('editMode').value=state.mode;updateUndoButton()}
 /* Selecting only toggles highlight classes: no re-layout, so the page never jumps while you click around. */
-function selectSection(id,expandEntries=false){selectedId=id;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector()}
+function selectSection(id,expandEntries=false,anchor=null){selectedId=id;selectedSectionAnchor=anchor;rightTab='section';inspectorEntriesExpanded=expandEntries;renderSectionList();document.querySelectorAll('[data-resume-section]').forEach(el=>el.classList.toggle('selected',el.dataset.resumeSection===id));renderInspector();updateSectionTypographyCallout()}
 function addSection(type,title,content){
- const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet'};
+ const s={id:uid(),type,title:title||type.charAt(0).toUpperCase()+type.slice(1),visible:true,listStyle:'bullet',headingSize:state.design.headingSize,bodySize:state.design.fontSize};
  if(['experience','education','projects'].includes(type)){
   const defaultRole = type==='education'?'Degree / qualification':type==='projects'?'Project name':'Role / milestone';
   s.entries=[{role:defaultRole,company:'Organization',date:'Year',details:'Add one detail per line.'}];
@@ -975,6 +1131,209 @@ async function importJSON(file){
   await alertModern({ title: 'Import failed', message: 'Could not read that file.' });
  };
  r.readAsText(file);
+}
+function setResumeImportStatus(message,value=0){
+ $('resumeImportStatus').textContent=message;
+ $('resumeImportProgressValue').style.width=`${Math.max(0,Math.min(1,Number(value)||0))*100}%`;
+}
+function setImportedResumeValue(path,value){
+ const update=(target)=>{
+  const parts=path.split('.');
+  let current=target;
+  for(const part of parts.slice(0,-1)){
+   current=current?.[ /^\d+$/.test(part)?Number(part):part ];
+   if(!current)return;
+  }
+  const key=parts.at(-1);
+  if(current&&typeof current==='object')current[key]=value;
+ };
+ update(pendingResumeImport);
+ if(pendingResumeImport?.projectState)update(pendingResumeImport.projectState);
+}
+function createResumeImportField(labelText,value,path,multiline=false){
+ const label=document.createElement('label');
+ label.className='resume-import-edit-field';
+ const caption=document.createElement('span');
+ caption.textContent=labelText;
+ const control=document.createElement(multiline?'textarea':'input');
+ if(!multiline)control.type='text';
+ control.value=value||'';
+ control.addEventListener('input',()=>setImportedResumeValue(path,control.value));
+ label.append(caption,control);
+ return label;
+}
+function renderResumeImportReview(parsed,fileName){
+ pendingResumeImport=parsed;
+ $('resumeImportStart').hidden=true;
+ $('resumeImportFileName').textContent=fileName;
+ $('resumeImportSectionCount').textContent=`${parsed.sections.length} section${parsed.sections.length===1?'':'s'} found`;
+ const importedTemplate=parsed.projectState&&templateDefs.find(template=>template.id===parsed.projectState.template);
+ $('resumeImportTemplateName').textContent=(importedTemplate||activeTemplate()).name;
+ const compatibility=$('resumeImportCompatibility');
+ compatibility.classList.toggle('is-exact',Boolean(parsed.projectState));
+ const compatibilityText=$('resumeImportCompatibilityText');
+ const compatibilityHeading=document.createElement('strong');
+ compatibilityHeading.textContent=parsed.projectState?'Original editor format detected.':'Formatting may vary.';
+ compatibilityText.replaceChildren(
+  compatibilityHeading,
+  document.createTextNode(parsed.projectState?' Template, layout, and details will be restored.':' You can still edit all details in the editor.')
+ );
+ $('resumeImportReview').hidden=false;
+ $('resumeImportProgress').hidden=true;
+ $('resumeImportError').hidden=true;
+ const list=$('resumeImportSections');
+ list.replaceChildren();
+ const profileCard=document.createElement('article');
+ profileCard.className='resume-import-preview-section resume-import-profile-preview';
+ const profileHeading=document.createElement('h3');
+ profileHeading.textContent='Contact & profile';
+ profileCard.appendChild(profileHeading);
+ [['Name','name'],['Headline','headline'],['Email','email'],['Phone','phone'],['Location','location'],['Website','website']]
+  .forEach(([label,key])=>profileCard.appendChild(createResumeImportField(label,parsed.profile[key],`profile.${key}`)));
+ list.appendChild(profileCard);
+ parsed.sections.forEach((section,sectionIndex)=>{
+  const card=document.createElement('article');
+  card.className='resume-import-preview-section';
+  card.appendChild(createResumeImportField('Section heading',section.title,`sections.${sectionIndex}.title`));
+  if(section.entries){
+   section.entries.forEach((entry,entryIndex)=>{
+    const item=document.createElement('div');
+    item.className='resume-import-preview-entry';
+    const entryPath=`sections.${sectionIndex}.entries.${entryIndex}`;
+    item.append(
+     createResumeImportField('Role or degree',entry.role,`${entryPath}.role`),
+     createResumeImportField('Company or institution',entry.company,`${entryPath}.company`),
+     createResumeImportField('Dates',entry.date,`${entryPath}.date`),
+     createResumeImportField('Details',entry.details,`${entryPath}.details`,true)
+    );
+    card.appendChild(item);
+   });
+  }else{
+   card.appendChild(createResumeImportField('Content',section.content,`sections.${sectionIndex}.content`,true));
+  }
+  list.appendChild(card);
+ });
+ $('resumeImportSourceText').textContent=parsed.sourceText;
+ $('applyResumeImport').hidden=false;
+ $('skipBackupApplyResumeImport').hidden=false;
+ $('applyResumeImport').disabled=false;
+ $('skipBackupApplyResumeImport').disabled=false;
+}
+async function reviewResumeFile(file){
+ if(!file)return;
+ resumeImportBusy=true;
+ pendingResumeImport=null;
+ $('resumeImportStart').hidden=true;
+ $('resumeImportModalBg').classList.add('show');
+ $('resumeImportModalBg').setAttribute('aria-hidden','false');
+ $('resumeImportReview').hidden=true;
+ $('resumeImportError').hidden=true;
+ $('resumeImportProgress').hidden=false;
+ $('resumeImportProgressValue').style.width='0%';
+ $('applyResumeImport').disabled=true;
+ $('skipBackupApplyResumeImport').disabled=true;
+ $('cancelResumeImport').disabled=true;
+ $('closeResumeImport').disabled=true;
+ try{
+  const extracted=await extractResumeFile(file,({message,value})=>setResumeImportStatus(message,value));
+  const parsed=extracted.project
+   ?{...normalizeState(extracted.project),projectState:extracted.project,sourceText:extracted.text||JSON.stringify(extracted.project,null,2)}
+   :parseResumeText(extracted.text,file.name);
+  if(!parsed.sections.length)throw new Error('No resume sections could be identified.');
+  renderResumeImportReview(parsed,file.name);
+ }catch(error){
+  console.error('Could not read the uploaded resume.',error);
+  $('resumeImportProgress').hidden=true;
+  $('resumeImportError').hidden=false;
+  $('resumeImportErrorTitle').textContent=error.message==='Unsupported resume file type.'
+   ?'Unsupport Resume format, please DOCS or PDF format'
+   :'Could not import this file';
+  $('resumeImportErrorDetail').textContent=`${error.message||'The file could not be read.'} Your current resume has not been changed.`;
+  $('applyResumeImport').disabled=true;
+  $('skipBackupApplyResumeImport').disabled=true;
+ }finally{
+  resumeImportBusy=false;
+  $('cancelResumeImport').disabled=false;
+  $('closeResumeImport').disabled=false;
+ }
+}
+function makeImportedResume(parsed){
+ if(parsed.projectState)return normalizeState(parsed.projectState);
+ const current=state;
+ const profile={
+  name:parsed.profile.name,
+  headline:parsed.profile.headline,
+  email:parsed.profile.email,
+  phone:parsed.profile.phone,
+  location:parsed.profile.location,
+  website:parsed.profile.website,
+  photo:''
+ };
+ const sections=parsed.sections.map(section=>({
+  ...section,
+  id:uid(),
+  visible:true,
+  headingSize:current.design.headingSize,
+  bodySize:current.design.fontSize,
+  ...(section.entries?{entries:section.entries.map(entry=>({...entry}))}:{})
+ }));
+ return normalizeState({
+  ...current,
+  version:4,
+  docName:parsed.docName,
+  profile,
+  sections,
+  importedSourceText:parsed.sourceText,
+  positions:{}
+ });
+}
+function applyResumeImport({downloadBackup=true}={}){
+ if(!pendingResumeImport)return;
+ try{
+  const next=makeImportedResume(pendingResumeImport);
+  if(downloadBackup){
+   const backupName=(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')+'-before-import.json';
+   download(backupName,new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));
+  }
+  if(cloudUser){
+   clearTimeout(cloudSaveTimer);
+   if(cloudSaving)cloudSavePending=true;
+   cloudSessionGeneration++;
+   activeCloudResumeId=null;
+   activeCloudRevision=null;
+   cloudSaveBlocked=false;
+  }
+  localPersistenceBlocked=false;
+  recoverySnapshot=null;
+  $('recoveryBanner').hidden=true;
+  transact(()=>{state=next;selectedId=null;selectedSectionAnchor=null});
+  $('resumeImportModalBg').classList.remove('show');
+  $('resumeImportModalBg').setAttribute('aria-hidden','true');
+  pendingResumeImport=null;
+  toast(cloudUser?'Imported as a new cloud resume':downloadBackup?'Resume imported. A backup was downloaded.':'Resume imported without a backup.');
+ }catch(error){
+  console.error('Could not apply the imported resume.',error);
+  $('resumeImportError').hidden=false;
+  $('resumeImportErrorDetail').textContent='The current resume remains unchanged. Please try again or download a backup before continuing.';
+ }
+}
+function closeResumeImport(){
+ if(resumeImportBusy)return;
+ $('resumeImportModalBg').classList.remove('show');
+ $('resumeImportModalBg').setAttribute('aria-hidden','true');
+ $('resumeImportStart').hidden=true;
+ pendingResumeImport=null;
+}
+function openResumeImportPrompt(){
+ $('resumeImportModalBg').classList.add('show');
+ $('resumeImportModalBg').setAttribute('aria-hidden','false');
+ $('resumeImportStart').hidden=false;
+ $('resumeImportProgress').hidden=true;
+ $('resumeImportReview').hidden=true;
+ $('resumeImportError').hidden=true;
+ $('applyResumeImport').hidden=true;
+ $('skipBackupApplyResumeImport').hidden=true;
+ $('cancelResumeImport').focus();
 }
 function showRecoveryNotice(recovery){
  if(!recovery.error)return;
@@ -1127,6 +1486,7 @@ async function exportPDF(templateId=null){
   state.template=template.id;
   state.layout=template.layout;
   state.design.accent=template.accent;
+  if(template.id==='brian-baxter'){state.positions={};state.freePageCount=1}
   selectedId=null;
   zoom=1;
   renderSheets();
@@ -1157,6 +1517,7 @@ async function exportPDF(templateId=null){
    addPdfDecorations,
    addSelectableText,
    addPDFLinks,
+   resumeState:state,
   });
   if(generation!==pdfPreviewGeneration)return;
   showPdfPreview(blob,`${(state.docName||'resume').replace(/[^a-z0-9-_]+/gi,'-')}.pdf`,sheets.length,'Preview your resume PDF');
@@ -1607,7 +1968,7 @@ function applyAtsFriendlyLayout(){
 function showUpgrade(featureId,title,description){
  $('upgradeFeature').textContent=title;
  $('upgradeDescription').textContent=description;
- $('upgradePrice').textContent=`₹${PLAN_CONFIG.pro.monthly.price}/month or ₹${PLAN_CONFIG.pro.yearly.price}/year · recurring subscription`;
+ updateUpgradePrice();
  pendingUpgradeFeature=featureId;
  const previewTemplate=pendingUpgradeFeature==='template'&&pendingProTemplate?templateDefs.find(item=>item.id===pendingProTemplate):null;
  $('continueFree').textContent=featureId.startsWith('template')?'Use free Template':'Use free ATS checks';
@@ -1617,6 +1978,19 @@ function showUpgrade(featureId,title,description){
  $('upgradeModalBg').setAttribute('aria-hidden','false');
  $('viewPlans').focus();
 }
+function updateUpgradePrice(){
+ const currency=preferredPricingCurrency(),fallback=PLAN_CONFIG.pro.currencies[currency];
+ const configured=billingPricingConfig?.currencyPlans?.[currency];
+ const monthlyAmount=Number(configured?.monthly?.amount);
+ const yearlyAmount=Number(configured?.yearly?.amount);
+ const monthlyPrice=Number.isSafeInteger(monthlyAmount)&&monthlyAmount>0?monthlyAmount/100:fallback.monthly.price;
+ const yearlyPrice=Number.isSafeInteger(yearlyAmount)&&yearlyAmount>0?yearlyAmount/100:fallback.yearly.price;
+ $('upgradePrice').textContent=`${formatCurrencyPrice(monthlyPrice,currency)}/month or ${formatCurrencyPrice(yearlyPrice,currency)}/year · recurring subscription`;
+}
+void loadBillingConfig().then(config=>{
+ billingPricingConfig=config;
+ if($('upgradeModalBg')?.classList.contains('show'))updateUpgradePrice();
+}).catch(error=>console.warn('Could not load current regional prices for the upgrade dialog.',error));
 function closeUpgrade(){
  $('upgradeModalBg').classList.remove('show');
  $('upgradeModalBg').setAttribute('aria-hidden','true');
@@ -1649,6 +2023,7 @@ async function requestProTemplate(templateId){
    state.template=template.id;
    state.layout=template.layout;
    state.design.accent=template.accent;
+   if(template.id==='brian-baxter'){state.positions={};state.freePageCount=1}
    selectedId=null;
   });
   pendingProTemplate=null;
@@ -2043,7 +2418,7 @@ $('sheets').addEventListener('keydown',e=>{
 });
 $('sheets').addEventListener('paste',e=>{const el=e.target.closest('[contenteditable="true"]');if(!el)return;e.preventDefault();const text=(e.clipboardData||window.clipboardData).getData('text/plain').replace(/\r/g,'').replace(/\n/g,el.dataset.entryField==='detail'||el.dataset.textSource!==undefined?'\n':' ');document.execCommand('insertText',false,text)});
 $('sheets').addEventListener('cut',()=>{requestAnimationFrame(()=>{document.querySelectorAll('#sheets [contenteditable="true"]').forEach(editable=>editable.dispatchEvent(new Event('input',{bubbles:true})));saveLocal();renderInspector();updateUndoButton()})});
- $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection,Boolean(e.target.closest('[contenteditable="true"]')))});
+ $('sheets').addEventListener('click',e=>{const el=e.target.closest('[data-resume-section]');if(el)selectSection(el.dataset.resumeSection,Boolean(e.target.closest('[contenteditable="true"]')),el)});
 $('sheets').addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch'){
   touchPoints.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -2054,7 +2429,7 @@ $('sheets').addEventListener('pointerdown',e=>{
  if(state.mode!=='free'||e.button!==0)return;const hit=e.target.closest('[data-resume-section]');if(!hit)return;
  const id=hit.dataset.resumeSection;selectSection(id);const el=$('sheets').querySelector(`[data-resume-section="${id}"]`);if(!el)return;
  const beforeDrag=deep(state),startX=e.clientX,startY=e.clientY,start=deep(state.positions[id]||{x:0,y:0,w:PAGE_W}),sheet=el.closest('.sheet'),scale=sheet.getBoundingClientRect().width/PAGE_W||1;
- const move=ev=>{if(pinchUsed)return;const pos={x:clamp(start.x+(ev.clientX-startX)/scale,0,Math.max(0,PAGE_W-start.w),0),y:clamp(start.y+(ev.clientY-startY)/scale,0,PAGE_H-30,0),w:start.w};state.positions[id]=pos;el.style.left=pos.x+'px';el.style.top=pos.y+'px'};
+ const move=ev=>{if(pinchUsed)return;const pos={x:clamp(start.x+(ev.clientX-startX)/scale,0,Math.max(0,PAGE_W-start.w),0),y:clamp(start.y+(ev.clientY-startY)/scale,0,PAGE_H-30,0),w:start.w};state.positions[id]=pos;el.style.left=pos.x+'px';el.style.top=pos.y+'px';updateSectionTypographyCallout()};
  const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);if(JSON.stringify(beforeDrag)!==JSON.stringify(state)){recordHistory(beforeDrag);saveLocal()}};
  document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});
 });
@@ -2064,7 +2439,7 @@ $('sheets').addEventListener('pointermove',e=>{
  if(touchPoints.size<2||!pinchStart)return;
  e.preventDefault();
  const [first,second]=touchPoints.values();
- zoom=zoomFromPinch(pinchStart.zoom,pinchStart.distance,Math.hypot(second.x-first.x,second.y-first.y));
+ mobileAutoFitZoom=false;zoom=zoomFromPinch(pinchStart.zoom,pinchStart.distance,Math.hypot(second.x-first.x,second.y-first.y));
  renderSheets();
 },{passive:false});
 const finishTouchPointer=e=>{
@@ -2099,8 +2474,16 @@ $('modalBg').addEventListener('click',e=>{if(e.target===$('modalBg'))closeCustom
 $('coverLetterBtn').addEventListener('click',openCoverLetter);$('closeCoverLetter').addEventListener('click',closeCoverLetter);$('coverLetterModalBg').addEventListener('click',e=>{if(e.target===$('coverLetterModalBg'))closeCoverLetter()});$('generateCoverLetter').addEventListener('click',generateCoverLetter);$('copyCoverLetter').addEventListener('click',copyCoverLetter);$('downloadCoverLetter').addEventListener('click',downloadCoverLetter);$('downloadCoverLetterPdf').addEventListener('click',previewCoverLetterPdf);
 $('pageLayout').addEventListener('change',e=>transact(()=>state.layout=e.target.value==='two'?'two':'single'));
 $('editMode').addEventListener('change',e=>transact(()=>{state.mode=e.target.value==='free'?'free':'flow'}));
-$('zoomIn').addEventListener('click',()=>{zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{zoom=Math.max(.45,zoom-.05);renderSheets()});
+$('zoomIn').addEventListener('click',()=>{mobileAutoFitZoom=false;zoom=Math.min(1.5,zoom+.05);renderSheets()});$('zoomOut').addEventListener('click',()=>{mobileAutoFitZoom=false;zoom=Math.max(.45,zoom-.05);renderSheets()});
 $('saveBtn').addEventListener('click',exportJSON);$('loadBtn').addEventListener('click',()=>$('jsonInput').click());$('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value=''});
+$('importResumeBtn').addEventListener('click',()=>$('resumeImportInput').click());
+$('chooseResumeImportFile').addEventListener('click',()=>$('resumeImportInput').click());
+$('resumeImportInput').addEventListener('change',event=>{const file=event.target.files?.[0];event.target.value='';if(file)void reviewResumeFile(file)});
+$('applyResumeImport').addEventListener('click',applyResumeImport);
+$('skipBackupApplyResumeImport').addEventListener('click',()=>applyResumeImport({downloadBackup:false}));
+$('cancelResumeImport').addEventListener('click',closeResumeImport);
+$('closeResumeImport').addEventListener('click',closeResumeImport);
+$('resumeImportModalBg').addEventListener('click',event=>{if(event.target===$('resumeImportModalBg'))closeResumeImport()});
  $('googleSignInBtn').addEventListener('click',async()=>{
   try{await signInWithGoogle()}
   catch(error){toast(authErrorMessage(error))}
@@ -2179,13 +2562,21 @@ $('docName').addEventListener('change',e=>transact(()=>state.docName=e.target.va
 $('dismissOnboarding').addEventListener('click',()=>{$('onboardingCard').hidden=true;onboardingDismissed=true;savePrefs()});
 $('undoBtn')?.addEventListener('click',undo);
 $('redoBtn')?.addEventListener('click',redo);
+const mobileToolbarQuery=window.matchMedia('(max-width:800px)'),resumeToolbar=document.querySelector('.toolbar'),resumeToolbarToggle=$('toggleResumeTools');
+function setResumeToolbarCollapsed(collapsed){resumeToolbar.dataset.collapsed=String(collapsed);resumeToolbarToggle.setAttribute('aria-expanded',String(!collapsed))}
+setResumeToolbarCollapsed(mobileToolbarQuery.matches);
+resumeToolbarToggle.addEventListener('click',()=>setResumeToolbarCollapsed(resumeToolbar.dataset.collapsed!=='true'));
+mobileToolbarQuery.addEventListener('change',event=>setResumeToolbarCollapsed(event.matches));
 let resizing=null;
+window.addEventListener('resize',()=>{fitMobileZoom();updateSectionTypographyCallout()});
+document.addEventListener('scroll',updateSectionTypographyCallout,true);
 function gripDown(side){return e=>{if(side==='l'?leftCollapsed:collapsed){side==='l'?toggleLeft():togglePanel();return}resizing=side;e.preventDefault()}}
 $('panelGrip').addEventListener('pointerdown',gripDown('r'));$('leftGrip').addEventListener('pointerdown',gripDown('l'));
 document.addEventListener('pointermove',e=>{if(!resizing)return;if(resizing==='r')panelWidth=Math.max(RW[0],Math.min(RW[1],window.innerWidth-e.clientX));else leftWidth=Math.max(LW[0],Math.min(LW[1],e.clientX));applyPanels()});
 document.addEventListener('pointerup',()=>{if(resizing){resizing=null;savePrefs()}});
 $('toggleLeftPanel')?.addEventListener('click',toggleLeft);$('toggleRightPanel')?.addEventListener('click',togglePanel);
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
+document.querySelectorAll('.mobile-editor-tab').forEach(button=>button.addEventListener('click',()=>setMobilePanel(button.dataset.mobilePanel)));
 document.addEventListener('keydown',e=>{
  const modifier=e.metaKey||e.ctrlKey,key=e.key.toLowerCase(),editable=e.target.closest?.('[contenteditable="true"]');
  if(modifier&&key==='z'){
@@ -2193,12 +2584,38 @@ document.addEventListener('keydown',e=>{
   if(!e.shiftKey){e.preventDefault();undo();return}
  }
  if(modifier&&(key==='y'||(key==='z'&&e.shiftKey))){e.preventDefault();redo();return}
- if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}
+ if(e.key==='Escape'){if($('modalBg').classList.contains('show'))closeCustomSectionDialog();closeResumeImport();closeAts();closeCoverLetter();closePdfPreview();closeCloudModal();closeUpgrade()}
 });
 const savedProject=guestResumeStorage.load();
 if(savedProject.state)state=savedProject.state;
 guestResumeLoaded=Boolean(savedProject.state);
-showRecoveryNotice(savedProject);
+let wizardDraftLoaded=false,wizardDraftError='',wizardDraftWarning='';
+if(requestedWizardResume){
+ try{
+  const serializedDraft=window.sessionStorage.getItem(RESUME_WIZARD_DRAFT_KEY);
+  if(!serializedDraft)throw new Error('The resume wizard details could not be found in this browser session.');
+  state=normalizeState(createResumeDraftFromWizard(JSON.parse(serializedDraft)));
+  wizardResumeDraftPending=true;
+  guestResumeLoaded=true;
+  guestResumeDirty=true;
+  wizardDraftLoaded=true;
+  try{window.sessionStorage.removeItem(RESUME_WIZARD_DRAFT_KEY)}
+  catch(error){
+   console.error('Could not clear the temporary resume wizard draft.',error);
+   wizardDraftWarning='Your resume is ready, but the temporary browser handoff could not be cleared.';
+  }
+ }catch(error){
+  console.error('Could not load the resume wizard draft.',error);
+  wizardDraftError=error.message||'Could not load your new resume details.';
+ }
+ clearWizardResumeParam();
+}
+showRecoveryNotice(wizardDraftLoaded?{error:null}:savedProject);
+if(requestedHomepageTemplateId){
+ if(applyHomepageTemplate())saveLocal();
+ clearHomepageTemplateParam();
+}
+if(wizardDraftLoaded)saveLocal();
 addEventListener('pagehide',()=>{
  const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
  if(persistenceMode==='cloud'){
@@ -2208,5 +2625,28 @@ addEventListener('pagehide',()=>{
  if(persistenceMode!=='browser'||localPersistenceBlocked)return;
  try{guestResumeStorage.save(state)}catch(error){console.error('Could not save the resume while closing the page.',error)}
 });
-loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}updateBrowserPersistenceUI();if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);if(new URLSearchParams(location.search).get('tool')==='cover-letter')openCoverLetter()
+loadPrefs();
+if(wizardDraftLoaded&&!onboardingDismissed){
+ onboardingDismissed=true;
+ savePrefs();
+}
+$('onboardingCard').hidden=onboardingDismissed;
+if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}
+render();
+{
+ const lc=leftCollapsed;
+ setTab(leftTab);
+ leftCollapsed=lc;
+ applyPanels();
+}
+fitMobileZoom();
+updateBrowserPersistenceUI();
+if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');
+if(wizardDraftError)toast(`${wizardDraftError} Please return to the wizard and try again.`);
+else if(wizardDraftWarning)toast(wizardDraftWarning);
+if(!cloudConfigured)updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'));
+else observeAuth(updateCloudAccount);
+const pageParams=new URLSearchParams(location.search);
+if(pageParams.get('tool')==='cover-letter')openCoverLetter();
+if(pageParams.get('open')==='import')openResumeImportPrompt();
 })();

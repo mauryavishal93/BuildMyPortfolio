@@ -1,0 +1,5 @@
+.layout-photo{--col-gap:20px;--c1:1.15fr;--c2:.85fr}
+.layout-photo .resume-header{margin:0;padding:var(--mt) var(--mx) 18px;background:var(--resume-accent);color:#fff}
+.layout-photo .name{color:#fff}
+.layout-photo .headline,.layout-photo .contact{color:#e9edf5}
+.layout-photo .photo{border:3px solid rgba(255,255,255,.85)}

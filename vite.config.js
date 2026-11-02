@@ -18,6 +18,8 @@ export default defineConfig({
       input: {
         home: fileURLToPath(new URL('./frontend/home.html', import.meta.url)),
         index: fileURLToPath(new URL('./frontend/index.html', import.meta.url)),
+        resumeWizard: fileURLToPath(new URL('./frontend/resume-wizard.html', import.meta.url)),
+        community: fileURLToPath(new URL('./frontend/community.html', import.meta.url)),
         admin: fileURLToPath(new URL('./frontend/admin.html', import.meta.url)),
         editor: fileURLToPath(new URL('./frontend/editor.html', import.meta.url)),
         about: fileURLToPath(new URL('./frontend/about.html', import.meta.url)),

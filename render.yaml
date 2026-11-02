@@ -27,3 +27,7 @@ services:
         sync: false
       - key: RAZORPAY_PLAN_YEARLY_ID
         sync: false
+      - key: RAZORPAY_PLAN_MONTHLY_USD_ID
+        sync: false
+      - key: RAZORPAY_PLAN_YEARLY_USD_ID
+        sync: false

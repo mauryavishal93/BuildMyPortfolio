@@ -11,11 +11,52 @@ const filters = {
 const $ = selector => document.querySelector(selector);
 
 async function api(path, options = {}) {
-  const token = await getFirebaseIdToken(currentUser);
-  const response = await fetch(path, { ...options, headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json', ...(options.headers || {}) } });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || 'Request failed');
+  let token;
+  try {
+    token = await getFirebaseIdToken(currentUser);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    const error = new Error(`Could not verify your sign-in: ${detail}`);
+    error.code = 'AUTH_TOKEN';
+    throw error;
+  }
+  let response;
+  try {
+    response = await fetch(path, { ...options, headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json', ...(options.headers || {}) } });
+  } catch {
+    const error = new Error('The admin API could not be reached.');
+    error.code = 'API_UNREACHABLE';
+    throw error;
+  }
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(body?.error || `Admin API request failed (HTTP ${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
   return body;
+}
+
+function setDashboardStatus(message, state = 'ready') {
+  const status = $('#dashboard-status');
+  status.dataset.state = state;
+  status.lastChild.textContent = message;
+}
+
+function formatMoney(amount, currency = 'INR') {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: currency === 'USD' ? 2 : 0,
+    maximumFractionDigits: currency === 'USD' ? 2 : 0
+  }).format((Number(amount) || 0) / 100);
+}
+
+function formatMoneyByCurrency(amounts) {
+  const entries = Object.entries(amounts || {}).filter(([, amount]) => Number(amount) > 0);
+  return entries.length
+    ? entries.map(([currency, amount]) => formatMoney(amount, currency)).join(' · ')
+    : formatMoney(0, 'INR');
 }
 
 function updateAdminMeta() {
@@ -31,31 +72,70 @@ function updateAdminMeta() {
 }
 
 async function load() {
+  const refresh = $('#refresh');
+  if (!currentUser) {
+    $('#access').hidden = false;
+    $('#admin-content').hidden = true;
+    $('#sign-in').hidden = false;
+    setDashboardStatus('Sign in required', 'idle');
+    return;
+  }
+  refresh.disabled = true;
+  setDashboardStatus('Loading dashboard…', 'loading');
   try {
     dashboard = await api('/api/admin/dashboard');
-    $('#stat-users').textContent = dashboard.totals.users;
-    $('#stat-pro').textContent = dashboard.totals.pro;
-    $('#stat-regular').textContent = dashboard.totals.regular;
-    $('#stat-earnings').textContent = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((dashboard.totals.earnings || 0) / 100);
+    const totals = dashboard.totals || {};
+    $('#stat-users').textContent = totals.users ?? 0;
+    $('#stat-pro').textContent = totals.pro ?? 0;
+    $('#stat-regular').textContent = totals.regular ?? 0;
+    $('#stat-new-users').textContent = totals.newUsers30Days ?? 0;
+    $('#stat-earnings').textContent = formatMoneyByCurrency(totals.earningsByCurrency || { INR: totals.earnings });
+    $('#stat-monthly-earnings').textContent = formatMoneyByCurrency(totals.earningsThisMonthByCurrency || { INR: totals.earningsThisMonth });
+    $('#stat-pro-mix').textContent = `${totals.monthlyPro ?? 0} monthly · ${totals.yearlyPro ?? 0} yearly`;
+    $('#stat-conversion').textContent = `${totals.conversionRate ?? 0}% Pro conversion`;
+    $('#stat-monthly-payment-count').textContent = `${totals.paymentsThisMonth ?? 0} captured payment${totals.paymentsThisMonth === 1 ? '' : 's'} this month`;
+    $('#stat-payment-count').textContent = `${totals.paymentCount ?? 0} captured payment${totals.paymentCount === 1 ? '' : 's'} recorded`;
     updateSummaryChips();
-    renderUsers(); renderVouchers();
+    renderUsers();
+    renderPayments();
+    renderVouchers();
     await loadPricingSettings();
     updateAdminMeta();
     $('#access').hidden = true;
     $('#admin-content').hidden = false;
     $('#sign-in').hidden = true;
+    setDashboardStatus('Data is up to date', 'ready');
   } catch (error) {
-    $('#access').hidden = false;
-    $('#admin-content').hidden = true;
+    console.error('Could not load the admin dashboard.', error);
+    let message = error.message;
+    let title = 'Admin dashboard unavailable';
+    if (error.status === 403) {
+      title = 'Administrator access required';
+      message = `Signed in as ${currentUser?.email || 'this account'}, but it is not allowed. Add this Google email to ADMIN_EMAILS on the backend, then restart it.`;
+    } else if (error.status === 401) {
+      title = 'Sign-in needs attention';
+      message = 'Your sign-in could not be verified. Sign in again and confirm the backend has valid Firebase Admin credentials.';
+    } else if (error.status === 503) {
+      message = `${error.message} For local development, set FIREBASE_SERVICE_ACCOUNT_JSON and ADMIN_EMAILS on the backend.`;
+    } else if (error.code === 'API_UNREACHABLE') {
+      message = 'Could not reach the admin API. Start the backend with npm run backend, then open the Vite site at http://localhost:5173/admin.html.';
+    } else if (error.code === 'AUTH_TOKEN') {
+      title = 'Sign-in needs attention';
+      message = error.message;
+    }
+    $('#access').hidden = Boolean(currentUser);
+    $('#access h2').textContent = title;
+    $('#admin-content').hidden = !dashboard;
     $('#sign-in').hidden = !!currentUser;
-    $('#access p').textContent = currentUser
-      ? `Signed in as ${currentUser.email || currentUser.displayName || 'this Google account'}, but this account does not have administrator access.`
-      : error.message;
+    $('#access p').textContent = 'Sign in with an administrator account to unlock revenue, billing, and user controls.';
+    setDashboardStatus(message, 'error');
+  } finally {
+    refresh.disabled = false;
   }
 }
 
 function userIsActive(user) {
-  return Boolean(user.isPro || (Number(user.validUntil) > Date.now()));
+  return Boolean(user.isPro);
 }
 
 function userMatchesStatus(user, status) {
@@ -69,11 +149,10 @@ function userMatchesStatus(user, status) {
 
 function userMatchesPlan(user, plan) {
   const activation = user.activationSource || '';
-  const adminMatch = user.activationSource === 'admin' && String(user.email || '').toLowerCase() === String(dashboard?.adminEmail || '').toLowerCase();
   if (plan === 'pro') return !!user.isPro;
   if (plan === 'free') return !user.isPro;
   if (plan === 'voucher') return activation === 'server-verified';
-  if (plan === 'admin') return adminMatch;
+  if (plan === 'admin') return activation === 'admin';
   return true;
 }
 
@@ -107,21 +186,32 @@ function renderPricingConfig(pricing) {
   const config = pricing?.pricing || pricing || {};
   const monthly = config.monthly || {};
   const yearly = config.yearly || {};
-  $('#monthly-actual-price').value = Number(monthly.actualPrice ?? 99) || 99;
-  $('#monthly-current-price').value = Number(monthly.currentPrice ?? 99) || 99;
-  $('#yearly-actual-price').value = Number(yearly.actualPrice ?? 399) || 399;
-  $('#yearly-current-price').value = Number(yearly.currentPrice ?? 399) || 399;
+  const usdMonthly = config.USD?.monthly || {};
+  const usdYearly = config.USD?.yearly || {};
+  $('#monthly-actual-price').value = monthly.actualPrice ?? 99;
+  $('#monthly-current-price').value = monthly.currentPrice ?? 99;
+  $('#yearly-actual-price').value = yearly.actualPrice ?? 399;
+  $('#yearly-current-price').value = yearly.currentPrice ?? 399;
+  $('#usd-monthly-actual-price').value = usdMonthly.actualPrice ?? 3.67;
+  $('#usd-monthly-current-price').value = usdMonthly.currentPrice ?? 3.67;
+  $('#usd-yearly-actual-price').value = usdYearly.actualPrice ?? 49.37;
+  $('#usd-yearly-current-price').value = usdYearly.currentPrice ?? 49.37;
   const monthlyDiscount = calculateDiscount(monthly.actualPrice, monthly.currentPrice);
   const yearlyDiscount = calculateDiscount(yearly.actualPrice, yearly.currentPrice);
-  $('#pricing-summary').textContent = `Monthly: ${monthlyDiscount}% off · Yearly: ${yearlyDiscount}% off`;
+  const usdMonthlyDiscount = calculateDiscount(usdMonthly.actualPrice, usdMonthly.currentPrice);
+  const usdYearlyDiscount = calculateDiscount(usdYearly.actualPrice, usdYearly.currentPrice);
+  $('#pricing-summary').textContent = `INR monthly: ${monthlyDiscount}% off · yearly: ${yearlyDiscount}% off · USD monthly: ${usdMonthlyDiscount}% off · yearly: ${usdYearlyDiscount}% off`;
 }
 
 async function loadPricingSettings() {
   try {
     const result = await api('/api/admin/pricing');
     renderPricingConfig(result.pricing || result);
+    $('#pricing-config-status').textContent = 'Loaded';
+    $('#save-pricing-config').disabled = false;
   } catch (error) {
-    $('#pricing-config-status').textContent = 'Unavailable';
+    $('#pricing-config-status').textContent = `Unavailable: ${error.message}`;
+    $('#save-pricing-config').disabled = true;
     console.error('Could not load pricing settings.', error);
   }
 }
@@ -168,11 +258,26 @@ function renderUsers() {
   }
 
   $('#user-list').innerHTML = rows.map(user => {
-    const activation = user.activationSource === 'server-verified' ? 'Voucher' : user.activationSource === 'admin' && String(user.email).toLowerCase() === String(dashboard.adminEmail || '').toLowerCase() ? 'Admin granted' : user.isPro ? 'Payment plan' : '—';
-    const paid = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((Number(user.paidAmount) || 0) / 100);
+    const activation = user.activationSource === 'server-verified' ? 'Voucher' : user.activationSource === 'admin' ? 'Admin granted' : user.isPro ? 'Payment plan' : '—';
+    const paid = formatMoneyByCurrency(user.paidAmountByCurrency || { INR: user.paidAmount });
     const status = userIsActive(user) ? 'Active' : 'Inactive';
     const activeClass = userIsActive(user) ? 'pro' : '';
     return `<tr><td><button class="account-link" data-user="${escapeHtml(user.uid)}"><span class="account-name">${escapeHtml(user.name || 'User')}</span><span class="account-email">${escapeHtml(user.email || user.uid)}</span></button></td><td><span class="status-pill ${user.isPro ? 'pro' : activeClass}">${user.isPro ? 'Pro' : status}</span><div class="activation-label">${escapeHtml(activation)}</div></td><td><strong>${paid}</strong><div class="activation-label">${Number(user.paymentCount) || 0} payment(s)</div></td><td>${user.validUntil ? new Date(user.validUntil).toLocaleString() : '—'}</td><td><div class="row-actions">${user.isPro ? '' : `<button class="mini-button" data-action="grant" data-plan="monthly" data-uid="${escapeHtml(user.uid)}">Monthly Pro</button><button class="mini-button" data-action="grant" data-plan="yearly" data-uid="${escapeHtml(user.uid)}">Yearly Pro</button>`}${user.isPro ? `<button class="mini-button danger" data-action="cancel" data-uid="${escapeHtml(user.uid)}">Cancel Pro</button>` : ''}</div></td></tr>`;
+  }).join('');
+}
+
+function renderPayments() {
+  const payments = dashboard.recentPayments || [];
+  $('#recent-payment-count').textContent = `Latest ${payments.length}`;
+  if (!payments.length) {
+    $('#payment-list').innerHTML = '<tr><td colspan="5" class="empty-table-state">No captured payments have been recorded.</td></tr>';
+    return;
+  }
+
+  $('#payment-list').innerHTML = payments.map(payment => {
+    const account = payment.name || payment.email || payment.uid || 'Account unavailable';
+    const date = payment.createdAt ? new Date(payment.createdAt).toLocaleString() : 'Date unavailable';
+    return `<tr><td><span class="account-name">${escapeHtml(account)}</span><span class="account-email">${escapeHtml(payment.email || '')}</span></td><td>${escapeHtml(payment.plan || 'Pro')}</td><td><strong>${formatMoney(payment.amount, payment.currency || 'INR')}</strong></td><td><span class="status-pill pro">${escapeHtml(payment.status || 'Captured')}</span></td><td>${escapeHtml(date)}</td></tr>`;
   }).join('');
 }
 
@@ -199,19 +304,37 @@ document.querySelectorAll('[data-voucher-tab]').forEach(button => button.addEven
 
 function escapeHtml(value) { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; }
 
-observeAuth(user => {
+observeAuth((user, authError) => {
+  const previousUid = currentUser?.uid;
   currentUser = user;
+  if (previousUid !== user?.uid) {
+    dashboard = null;
+    $('#admin-content').hidden = true;
+  }
   updateAdminMeta();
-  if (user) {
+  if (authError) {
+    $('#access').hidden = false;
+    $('#admin-content').hidden = true;
     $('#sign-in').hidden = true;
+    $('#access h2').textContent = 'Authentication unavailable';
+    $('#access p').textContent = authError.message || 'Firebase authentication could not be initialized. Check the browser console and Firebase configuration.';
+    setDashboardStatus('Authentication error', 'error');
+    return;
+  }
+  if (user) {
+    $('#access').hidden = true;
+    $('#sign-in').hidden = true;
+    setDashboardStatus('Connecting to admin API…', 'loading');
     void load();
     return;
   }
 
   $('#access').hidden = false;
+  $('#access h2').textContent = 'Administrator login';
   $('#admin-content').hidden = true;
   $('#sign-in').hidden = false;
   $('#access p').textContent = 'Sign in with an administrator account to unlock revenue, billing, and user controls.';
+  setDashboardStatus('Sign in required', 'idle');
 });
 $('#sign-in').addEventListener('click', () => signInWithGoogle().catch(error => alert(error.message)));
 $('#refresh').addEventListener('click', load);
@@ -261,21 +384,36 @@ $('#save-pricing-config').addEventListener('click', async () => {
   const monthlyCurrent = Number($('#monthly-current-price').value || 0);
   const yearlyActual = Number($('#yearly-actual-price').value || 0);
   const yearlyCurrent = Number($('#yearly-current-price').value || 0);
+  const usdMonthlyActual = Number($('#usd-monthly-actual-price').value || 0);
+  const usdMonthlyCurrent = Number($('#usd-monthly-current-price').value || 0);
+  const usdYearlyActual = Number($('#usd-yearly-actual-price').value || 0);
+  const usdYearlyCurrent = Number($('#usd-yearly-current-price').value || 0);
+  const inrPrices = [monthlyActual, monthlyCurrent, yearlyActual, yearlyCurrent];
+  const usdPrices = [usdMonthlyActual, usdMonthlyCurrent, usdYearlyActual, usdYearlyCurrent];
 
-  if ([monthlyActual, monthlyCurrent, yearlyActual, yearlyCurrent].some(value => Number.isNaN(value) || value < 0)) {
+  if ([...inrPrices, ...usdPrices].some(value => !Number.isFinite(value) || value <= 0)
+    || inrPrices.some(value => !Number.isInteger(value))
+    || usdPrices.some(value => Math.abs(value * 100 - Math.round(value * 100)) > 1e-7)) {
     $('#pricing-config-status').textContent = 'Invalid pricing';
-    alert('Prices must be valid non-negative numbers.');
+    alert('Prices must be positive. INR prices must use whole rupees, and USD prices may have at most two decimal places.');
     return;
   }
 
+  const saveButton = $('#save-pricing-config');
   try {
+    saveButton.disabled = true;
     $('#pricing-config-status').textContent = 'Saving…';
     const result = await api('/api/admin/pricing', {
       method: 'PUT',
       body: JSON.stringify({
         pricing: {
           monthly: { actualPrice: monthlyActual, currentPrice: monthlyCurrent },
-          yearly: { actualPrice: yearlyActual, currentPrice: yearlyCurrent }
+          yearly: { actualPrice: yearlyActual, currentPrice: yearlyCurrent },
+          USD: {
+            currency: 'USD',
+            monthly: { actualPrice: usdMonthlyActual, currentPrice: usdMonthlyCurrent },
+            yearly: { actualPrice: usdYearlyActual, currentPrice: usdYearlyCurrent }
+          }
         }
       })
     });
@@ -284,6 +422,8 @@ $('#save-pricing-config').addEventListener('click', async () => {
   } catch (error) {
     $('#pricing-config-status').textContent = 'Failed';
     alert(error.message);
+  } finally {
+    saveButton.disabled = false;
   }
 });
 
@@ -368,12 +508,10 @@ async function openUserDetail(uid) {
     const details = await api(`/api/admin/users/${encodeURIComponent(uid)}`);
     $('#detail-name').textContent = details.name || details.email || uid;
     const entitlement = details.entitlement || {};
-    const isAdminAccount = String(details.email || '').toLowerCase() === String(dashboard?.adminEmail || '').toLowerCase();
-    const activation = entitlement.billingPlan === 'voucher' ? `Voucher${details.voucher?.code ? ` · ${details.voucher.code}` : ''}` : entitlement.source === 'admin' && isAdminAccount ? `Admin · ${entitlement.billingPlan || 'Pro'}` : entitlement.planId === 'pro' ? `${entitlement.billingPlan || 'Pro'} plan` : 'Free';
-    const money = amount => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((Number(amount) || 0) / 100);
-    const payments = (details.payments || []).map(payment => `<li><strong>${escapeHtml(payment.id)}</strong><span>${escapeHtml(payment.status || 'unknown')} · ${money(payment.amount)}</span><small>${payment.createdAt ? new Date(payment.createdAt).toLocaleString() : 'Date unavailable'}</small></li>`).join('');
+    const activation = entitlement.billingPlan === 'voucher' ? `Voucher${details.voucher?.code ? ` · ${details.voucher.code}` : ''}` : entitlement.source === 'admin' ? `Admin · ${entitlement.billingPlan || 'Pro'}` : entitlement.planId === 'pro' ? `${entitlement.billingPlan || 'Pro'} plan` : 'Free';
+    const payments = (details.payments || []).map(payment => `<li><strong>${escapeHtml(payment.id)}</strong><span>${escapeHtml(payment.status || 'unknown')} · ${formatMoney(payment.amount, payment.currency || 'INR')}</span><small>${payment.createdAt ? new Date(payment.createdAt).toLocaleString() : 'Date unavailable'}</small></li>`).join('');
     const activity = (details.activity || []).map(item => `<li><strong>${escapeHtml(item.title || item.type || 'Billing activity')}</strong><span>${escapeHtml(item.detail || item.message || '')}</span><small>${item.occurredAt || item.createdAt ? new Date(item.occurredAt || item.createdAt).toLocaleString() : 'Date unavailable'}</small></li>`).join('');
-    $('#detail-body').innerHTML = `<div class="detail-summary"><article><span>Account ID</span><strong>${escapeHtml(uid)}</strong></article><article><span>Email</span><strong>${escapeHtml(details.email || 'Not available')}</strong></article><article><span>Account created</span><strong>${details.createdAt ? new Date(details.createdAt).toLocaleString() : 'Not available'}</strong></article><article><span>Current activation</span><strong>${escapeHtml(activation)}</strong></article><article><span>Pro expires</span><strong>${entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleString() : '—'}</strong></article><article><span>Total paid</span><strong>${money(details.paidAmount)}</strong></article></div><div class="detail-columns"><section><h3>Payment history</h3><ul class="detail-list">${payments || '<li class="empty">No payments recorded.</li>'}</ul></section><section><h3>Pro & billing activity</h3><ul class="detail-list">${activity || '<li class="empty">No activity recorded.</li>'}</ul></section></div>`;
+    $('#detail-body').innerHTML = `<div class="detail-summary"><article><span>Account ID</span><strong>${escapeHtml(uid)}</strong></article><article><span>Email</span><strong>${escapeHtml(details.email || 'Not available')}</strong></article><article><span>Account created</span><strong>${details.createdAt ? new Date(details.createdAt).toLocaleString() : 'Not available'}</strong></article><article><span>Current activation</span><strong>${escapeHtml(activation)}</strong></article><article><span>Pro expires</span><strong>${entitlement.validUntil ? new Date(entitlement.validUntil).toLocaleString() : '—'}</strong></article><article><span>Total paid</span><strong>${formatMoneyByCurrency(details.paidAmountByCurrency || { INR: details.paidAmount })}</strong></article></div><div class="detail-columns"><section><h3>Payment history</h3><ul class="detail-list">${payments || '<li class="empty">No payments recorded.</li>'}</ul></section><section><h3>Pro & billing activity</h3><ul class="detail-list">${activity || '<li class="empty">No activity recorded.</li>'}</ul></section></div>`;
   } catch (error) { $('#detail-body').innerHTML = `<p class="detail-error">${escapeHtml(error.message)}</p>`; }
 }
 $('#close-detail').addEventListener('click', () => $('#user-detail').close());

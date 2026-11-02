@@ -63,6 +63,8 @@ function createAccountMenu() {
 
   const billingLink = addMenuItem(panel, 'a', 'account-menu-item', 'Billing', '/billing.html');
   if (location.pathname === '/billing.html') billingLink.setAttribute('aria-current', 'page');
+  const communityLink = addMenuItem(panel, 'a', 'account-menu-item', 'Community', '/community.html');
+  if (location.pathname === '/community.html') communityLink.setAttribute('aria-current', 'page');
   const cloudLink = addMenuItem(panel, 'a', 'account-menu-item', 'My cloud resumes', '/editor.html?open=cloud');
   cloudLink.hidden = true;
   const about = addMenuItem(panel, 'a', 'account-menu-item', 'About', '/about.html');

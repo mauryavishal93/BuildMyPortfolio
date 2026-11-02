@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
+  billingCurrencyConfigured,
+  billingPlan,
+  billingPlanEnvKey,
+  BILLING_CURRENCY_PLANS,
   BILLING_PLANS,
   billingConfigured,
   configuredVouchers,
@@ -9,6 +13,7 @@ import {
   firebaseAdminConfigured,
   planKeyForRazorpayPlanId,
   planMatchesRazorpay,
+  currencyForRazorpayPlanId,
   validRazorpaySignature,
   validWebhookSignature,
   voucherDocumentId
@@ -22,6 +27,18 @@ test('server billing plans use the requested monthly and yearly INR amounts', ()
       yearly: [39900, 'INR', 'yearly', 1]
     }
   );
+});
+
+test('international billing plans use the requested fixed USD prices', () => {
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(BILLING_CURRENCY_PLANS.USD).map(([key, plan]) => [key, [plan.amount, plan.currency, plan.period, plan.interval]])),
+    {
+      monthly: [367, 'USD', 'monthly', 1],
+      yearly: [4937, 'USD', 'yearly', 1]
+    }
+  );
+  assert.equal(billingPlan('monthly', 'USD'), BILLING_CURRENCY_PLANS.USD.monthly);
+  assert.equal(billingPlan('monthly', 'EUR'), null);
 });
 
 test('Razorpay checkout signature accepts only the expected subscription and payment pair', () => {
@@ -58,11 +75,19 @@ test('Razorpay plan metadata must exactly match server-set price and billing int
 test('Razorpay plan IDs resolve only to configured billing plans', () => {
   const env = {
     RAZORPAY_PLAN_MONTHLY_ID: 'plan_monthly',
-    RAZORPAY_PLAN_YEARLY_ID: 'plan_yearly'
+    RAZORPAY_PLAN_YEARLY_ID: 'plan_yearly',
+    RAZORPAY_PLAN_MONTHLY_USD_ID: 'plan_monthly_usd',
+    RAZORPAY_PLAN_YEARLY_USD_ID: 'plan_yearly_usd'
   };
   assert.equal(planKeyForRazorpayPlanId('plan_monthly', env), 'monthly');
   assert.equal(planKeyForRazorpayPlanId('plan_yearly', env), 'yearly');
+  assert.equal(planKeyForRazorpayPlanId('plan_monthly_usd', env), 'monthly');
+  assert.equal(currencyForRazorpayPlanId('plan_monthly_usd', env), 'USD');
+  assert.equal(currencyForRazorpayPlanId('plan_yearly', env), 'INR');
   assert.equal(planKeyForRazorpayPlanId('plan_unknown', env), null);
+  assert.equal(billingPlanEnvKey('monthly', 'USD'), 'RAZORPAY_PLAN_MONTHLY_USD_ID');
+  assert.equal(billingCurrencyConfigured('USD', env), true);
+  assert.equal(billingCurrencyConfigured('EUR', env), false);
 });
 
 test('entitlements are server verified and expire at Razorpay current_end', () => {
@@ -97,7 +122,9 @@ test('billing stays disabled until provider, Firebase, terms and refund configur
     RAZORPAY_KEY_SECRET: 'secret',
     RAZORPAY_WEBHOOK_SECRET: 'webhook',
     RAZORPAY_PLAN_MONTHLY_ID: 'monthly',
-    RAZORPAY_PLAN_YEARLY_ID: 'yearly'
+    RAZORPAY_PLAN_YEARLY_ID: 'yearly',
+    RAZORPAY_PLAN_MONTHLY_USD_ID: 'monthly_usd',
+    RAZORPAY_PLAN_YEARLY_USD_ID: 'yearly_usd'
   };
   assert.equal(billingConfigured(env), true);
   assert.equal(billingConfigured({ ...env, BILLING_REFUNDS_PUBLISHED: 'false' }), false);

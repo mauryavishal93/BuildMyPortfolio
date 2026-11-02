@@ -20,8 +20,8 @@
           <span id="admin-user-badge" class="admin-user-badge">Admin view</span>
           <span id="admin-last-updated" class="admin-last-updated">Not refreshed yet</span>
         </div>
-        <span class="dashboard-status"><span class="status-dot"></span>Live sync</span>
-        <button id="refresh" class="admin-button secondary">Refresh</button>
+        <span id="dashboard-status" class="dashboard-status" role="status" aria-live="polite"><span class="status-dot"></span>Waiting for data</span>
+        <button id="refresh" class="admin-button secondary" type="button">Refresh data</button>
       </div>
     </section>
 
@@ -60,22 +60,56 @@
 
       <div class="admin-stats">
         <article class="stat-card">
-          <div class="stat-header"><span>Total sign-ins</span><span class="stat-trend up">+24%</span></div>
+          <div class="stat-header"><span>Total accounts</span><span class="stat-trend neutral">All time</span></div>
           <strong id="stat-users">0</strong>
+          <small>Registered accounts</small>
         </article>
         <article class="stat-card">
-          <div class="stat-header"><span>Pro users</span><span class="stat-trend up">+18%</span></div>
+          <div class="stat-header"><span>Active Pro</span><span class="stat-trend up">Paid access</span></div>
           <strong id="stat-pro">0</strong>
+          <small id="stat-pro-mix">0 monthly · 0 yearly</small>
         </article>
         <article class="stat-card">
-          <div class="stat-header"><span>Regular users</span><span class="stat-trend neutral">Stable</span></div>
+          <div class="stat-header"><span>Free accounts</span><span class="stat-trend neutral">No active Pro</span></div>
           <strong id="stat-regular">0</strong>
+          <small id="stat-conversion">0% Pro conversion</small>
+        </article>
+        <article class="stat-card">
+          <div class="stat-header"><span>New accounts</span><span class="stat-trend neutral">Last 30 days</span></div>
+          <strong id="stat-new-users">0</strong>
+          <small>Recent registrations</small>
         </article>
         <article class="stat-card accent">
-          <div class="stat-header"><span>Earnings</span><span class="stat-trend up">This month</span></div>
+          <div class="stat-header"><span>Revenue this month</span><span class="stat-trend up">Captured payments</span></div>
+          <strong id="stat-monthly-earnings">₹0</strong>
+          <small id="stat-monthly-payment-count">0 payments this month</small>
+        </article>
+        <article class="stat-card">
+          <div class="stat-header"><span>Lifetime revenue</span><span class="stat-trend neutral">Captured payments</span></div>
           <strong id="stat-earnings">₹0</strong>
+          <small id="stat-payment-count">0 payments recorded</small>
         </article>
       </div>
+
+      <section class="admin-card payments-card" aria-labelledby="payments-title">
+        <div class="admin-card-title">
+          <div>
+            <p class="eyebrow">Revenue</p>
+            <h2 id="payments-title">Recent payments</h2>
+          </div>
+          <span id="recent-payment-count" class="user-count-label">Latest 8</span>
+        </div>
+        <div class="table-wrap">
+          <table class="payments-table">
+            <thead>
+              <tr><th>Account</th><th>Plan</th><th>Amount</th><th>Status</th><th>Date</th></tr>
+            </thead>
+            <tbody id="payment-list">
+              <tr><td colspan="5" class="empty-table-state">Payment activity appears here after data loads.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section class="admin-card pricing-config-card" aria-labelledby="pricing-config-title">
         <div class="admin-card-title">
@@ -83,28 +117,47 @@
             <p class="eyebrow">Pricing</p>
             <h2 id="pricing-config-title">Subscription pricing</h2>
           </div>
-          <span id="pricing-config-status" class="user-count-label">Ready</span>
+          <span id="pricing-config-status" class="user-count-label">Waiting for data</span>
         </div>
         <div class="pricing-config-grid">
+          <h3 class="pricing-region-heading">India · INR</h3>
           <label>
-            <span>Monthly actual price (₹)</span>
-            <input id="monthly-actual-price" type="number" min="0" step="1" placeholder="99">
+            <span>INR monthly original price (₹)</span>
+            <input id="monthly-actual-price" type="number" min="0.01" step="1" placeholder="99">
           </label>
           <label>
-            <span>Monthly current price (₹)</span>
-            <input id="monthly-current-price" type="number" min="0" step="1" placeholder="79">
+            <span>INR monthly checkout price (₹)</span>
+            <input id="monthly-current-price" type="number" min="0.01" step="1" placeholder="99">
           </label>
           <label>
-            <span>Yearly actual price (₹)</span>
-            <input id="yearly-actual-price" type="number" min="0" step="1" placeholder="399">
+            <span>INR yearly original price (₹)</span>
+            <input id="yearly-actual-price" type="number" min="0.01" step="1" placeholder="399">
           </label>
           <label>
-            <span>Yearly current price (₹)</span>
-            <input id="yearly-current-price" type="number" min="0" step="1" placeholder="319">
+            <span>INR yearly checkout price (₹)</span>
+            <input id="yearly-current-price" type="number" min="0.01" step="1" placeholder="399">
+          </label>
+          <h3 class="pricing-region-heading">International · USD</h3>
+          <label>
+            <span>USD monthly original price ($)</span>
+            <input id="usd-monthly-actual-price" type="number" min="0.01" step="0.01" placeholder="3.67">
+          </label>
+          <label>
+            <span>USD monthly checkout price ($)</span>
+            <input id="usd-monthly-current-price" type="number" min="0.01" step="0.01" placeholder="3.67">
+          </label>
+          <label>
+            <span>USD yearly original price ($)</span>
+            <input id="usd-yearly-actual-price" type="number" min="0.01" step="0.01" placeholder="49.37">
+          </label>
+          <label>
+            <span>USD yearly checkout price ($)</span>
+            <input id="usd-yearly-current-price" type="number" min="0.01" step="0.01" placeholder="49.37">
           </label>
         </div>
         <div class="pricing-summary" id="pricing-summary">Discounts will be calculated automatically.</div>
-        <button id="save-pricing-config" class="admin-button" type="button">Save pricing</button>
+        <p class="pricing-summary">Prices are shown automatically by a visitor’s browser region: India uses INR and other regions use USD. Saving a checkout price creates and verifies a matching Razorpay plan before publishing the new price.</p>
+        <button id="save-pricing-config" class="admin-button" type="button" disabled>Save pricing</button>
       </section>
 
       <div class="admin-filter-bar" aria-label="User filters">

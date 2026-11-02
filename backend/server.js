@@ -4,9 +4,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
+  billingPlan,
+  billingPlanEnvKey,
+  BILLING_CURRENCY_PLANS,
   BILLING_PLANS,
   billingConfigured,
   configuredVouchers,
+  currencyForRazorpayPlanId,
   entitlementFromSubscription,
   firebaseAdminConfigured,
   planKeyForRazorpayPlanId,
@@ -87,7 +91,12 @@ async function getFirebaseAdmin() {
 async function requireFirebaseUser(request, response, next) {
   const match = /^Bearer\s+(.+)$/i.exec(request.get('authorization') || '');
   if (!match) {
-    response.status(401).json({ error: 'Sign in before accessing paid plans.' });
+    response.status(401).json({ error: 'Sign in before accessing this feature.' });
+    return;
+  }
+
+  if (!app.locals.firebaseAdmin && !firebaseAdmin && !firebaseAdminConfigured()) {
+    response.status(503).json({ error: 'Firebase Admin credentials are not configured on this server.' });
     return;
   }
 
@@ -96,8 +105,94 @@ async function requireFirebaseUser(request, response, next) {
     request.user = await admin.auth.verifyIdToken(match[1], true);
     next();
   } catch (error) {
-    console.error('Billing authentication failed.', error);
+    console.error('Firebase authentication failed.', error);
     response.status(401).json({ error: 'Your sign-in could not be verified. Sign in again and retry.' });
+  }
+}
+
+async function optionalFirebaseUser(request, response, next) {
+  const match = /^Bearer\s+(.+)$/i.exec(request.get('authorization') || '');
+  if (!match) {
+    next();
+    return;
+  }
+  if (!app.locals.firebaseAdmin && !firebaseAdmin && !firebaseAdminConfigured()) {
+    response.status(503).json({ error: 'Firebase Admin credentials are not configured on this server.' });
+    return;
+  }
+  try {
+    const admin = await getFirebaseAdmin();
+    request.user = await admin.auth.verifyIdToken(match[1], true);
+    next();
+  } catch (error) {
+    console.error('Optional Firebase authentication failed.', error);
+    response.status(401).json({ error: 'Your sign-in could not be verified. Sign in again and retry.' });
+  }
+}
+
+function validForumText(value, minimum, maximum) {
+  return typeof value === 'string' && value.trim().length >= minimum && value.trim().length <= maximum
+    ? value.trim()
+    : null;
+}
+
+function forumPostInput(body, type = body?.type) {
+  if (!['review', 'discussion'].includes(type)) return null;
+  const title = validForumText(body?.title, 4, 120);
+  const content = validForumText(body?.content, 10, 4000);
+  const rating = body?.rating;
+  if (!title || !content) return null;
+  if (type === 'review' && (!Number.isInteger(rating) || rating < 1 || rating > 5)) return null;
+  return { type, title, content, ...(type === 'review' ? { rating } : {}) };
+}
+
+function forumCommentInput(body) {
+  return validForumText(body?.content, 1, 2000);
+}
+
+function forumAuthorName(user) {
+  return validForumText(user?.name, 1, 80)
+    || validForumText(user?.email?.split('@')[0], 1, 80)
+    || 'Google user';
+}
+
+function forumSnapshotExists(snapshot) {
+  return Boolean(snapshot?.exists);
+}
+
+function publicForumPost(document, viewerUid = null) {
+  const data = document.data();
+  const post = forumPostInput(data);
+  if (!post) return null;
+  return {
+    id: document.id,
+    ...post,
+    authorName: forumAuthorName({ name: data.authorName }),
+    isOwner: Boolean(viewerUid && viewerUid === data.authorUid),
+    createdAt: Number.isFinite(data.createdAt) ? data.createdAt : 0,
+    updatedAt: Number.isFinite(data.updatedAt) ? data.updatedAt : 0
+  };
+}
+
+function publicForumComment(document, viewerUid = null) {
+  const data = document.data();
+  const content = forumCommentInput(data);
+  if (!content) return null;
+  return {
+    id: document.id,
+    content,
+    authorName: forumAuthorName({ name: data.authorName }),
+    isOwner: Boolean(viewerUid && viewerUid === data.authorUid),
+    createdAt: Number.isFinite(data.createdAt) ? data.createdAt : 0
+  };
+}
+
+async function deleteForumComments(postReference) {
+  const comments = postReference.collection('comments');
+  while (true) {
+    const snapshot = await comments.limit(300).get();
+    if (!snapshot.docs.length) return;
+    await Promise.all(snapshot.docs.map(document => comments.doc(document.id).delete()));
   }
 }
 
@@ -150,18 +245,33 @@ async function razorpayRequest(endpoint, { method = 'GET', body } = {}) {
   return data;
 }
 
-function providerPlanId(planKey) {
-  return planKey === 'monthly'
-    ? process.env.RAZORPAY_PLAN_MONTHLY_ID
-    : process.env.RAZORPAY_PLAN_YEARLY_ID;
+function providerPlanId(planKey, currency = 'INR', pricing = {}) {
+  const envKey = billingPlanEnvKey(planKey, currency);
+  return pricing?.providerPlanIds?.[currency]?.[planKey]
+    || (envKey ? process.env[envKey] : null);
 }
 
-async function verifiedProviderPlan(planKey) {
-  const expected = BILLING_PLANS[planKey];
+function pricingPlanEntry(pricing, planKey, currency) {
+  return currency === 'INR' ? pricing?.[planKey] : pricing?.[currency]?.[planKey];
+}
+
+function pricedBillingPlan(planKey, currency, pricing) {
+  const plan = billingPlan(planKey, currency);
+  const currentPrice = Number(pricingPlanEntry(pricing, planKey, currency)?.currentPrice);
+  if (!plan || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
+  return { ...plan, amount: Math.round(currentPrice * 100) };
+}
+
+async function verifiedProviderPlan(planKey, currency = 'INR', pricing = {}) {
+  const expected = pricedBillingPlan(planKey, currency, pricing);
   if (!expected) return null;
-  const plan = await razorpayRequest(`/plans/${encodeURIComponent(providerPlanId(planKey))}`);
+  const planId = providerPlanId(planKey, currency, pricing);
+  if (!planId) {
+    throw new Error(`The Razorpay ${currency} ${planKey} plan is not configured.`);
+  }
+  const plan = await razorpayRequest(`/plans/${encodeURIComponent(planId)}`);
   if (!planMatchesRazorpay(plan, expected)) {
-    throw new Error(`The Razorpay ${planKey} plan does not match the configured price and billing interval.`);
+    throw new Error(`The Razorpay ${currency} ${planKey} plan does not match the configured price and billing interval.`);
   }
   return plan;
 }
@@ -223,6 +333,7 @@ function publicEntitlement(data) {
   return {
     planId: data?.planId || 'free',
     billingPlan: data?.billingPlan || null,
+    currency: data?.currency || 'INR',
     status,
     source: 'server-verified',
     validUntil,
@@ -252,6 +363,7 @@ async function recordBillingActivity(db, uid, activity) {
       title: String(activity.title || 'Billing activity'),
       detail: String(activity.detail || ''),
       planKey: activity.planKey || null,
+      currency: activity.currency || null,
       amount: activity.amount || null,
       providerSubscriptionId: activity.providerSubscriptionId || null,
       actorType: ['user', 'admin'].includes(activity.actorType) ? activity.actorType : null,
@@ -276,24 +388,48 @@ function calculateDiscount(actualPrice, currentPrice) {
 }
 
 function normalizePricingConfig(rawConfig = {}) {
-  const monthlyActual = normalizePlanPrice(rawConfig?.monthly?.actualPrice, BILLING_PLANS.monthly.amount / 100);
-  const monthlyCurrent = normalizePlanPrice(rawConfig?.monthly?.currentPrice, monthlyActual);
-  const yearlyActual = normalizePlanPrice(rawConfig?.yearly?.actualPrice, BILLING_PLANS.yearly.amount / 100);
-  const yearlyCurrent = normalizePlanPrice(rawConfig?.yearly?.currentPrice, yearlyActual);
+  const providerPlanIds = { INR: {}, USD: {} };
+  const normalizePlan = (planKey, currency) => {
+    const basePlan = billingPlan(planKey, currency);
+    const rawPlan = pricingPlanEntry(rawConfig, planKey, currency);
+    const actualPrice = normalizePlanPrice(rawPlan?.actualPrice, basePlan.amount / 100);
+    const requestedCurrentPrice = normalizePlanPrice(rawPlan?.currentPrice, basePlan.amount / 100);
+    const requestedPlanId = rawConfig?.providerPlanIds?.[currency]?.[planKey];
+    const defaultPlanId = requestedCurrentPrice * 100 === basePlan.amount
+      ? providerPlanId(planKey, currency)
+      : null;
+    const planId = typeof requestedPlanId === 'string' && requestedPlanId
+      ? requestedPlanId
+      : defaultPlanId;
+    const currentPrice = planId ? requestedCurrentPrice : basePlan.amount / 100;
+    if (planId) providerPlanIds[currency][planKey] = planId;
+    return {
+      actualPrice,
+      currentPrice,
+      discountPercent: calculateDiscount(actualPrice, currentPrice)
+    };
+  };
+  const monthly = normalizePlan('monthly', 'INR');
+  const yearly = normalizePlan('yearly', 'INR');
+  const usdMonthly = normalizePlan('monthly', 'USD');
+  const usdYearly = normalizePlan('yearly', 'USD');
   return {
     currency: 'INR',
-    monthly: {
-      actualPrice: monthlyActual,
-      currentPrice: monthlyCurrent,
-      discountPercent: calculateDiscount(monthlyActual, monthlyCurrent)
+    monthly,
+    yearly,
+    USD: {
+      currency: 'USD',
+      monthly: usdMonthly,
+      yearly: usdYearly
     },
-    yearly: {
-      actualPrice: yearlyActual,
-      currentPrice: yearlyCurrent,
-      discountPercent: calculateDiscount(yearlyActual, yearlyCurrent)
-    },
+    providerPlanIds,
     updatedAt: Date.now()
   };
+}
+
+function publicPricingConfig(pricing) {
+  const { providerPlanIds: _providerPlanIds, ...publicConfig } = pricing;
+  return publicConfig;
 }
 
 async function loadPricingConfigFromStore() {
@@ -301,20 +437,306 @@ async function loadPricingConfigFromStore() {
     const { db } = await getFirebaseAdmin();
     const snapshot = await db.doc('appConfig/pricing').get();
     return normalizePricingConfig(snapshot.exists ? snapshot.data() : {});
-  } catch {
+  } catch (error) {
+    console.error('Could not load stored pricing configuration; using the server defaults.', error);
     return normalizePricingConfig({});
   }
+}
+
+async function createVerifiedProviderPlan(planKey, currency, amount) {
+  const basePlan = billingPlan(planKey, currency);
+  const expected = { ...basePlan, amount };
+  const created = await razorpayRequest('/plans', {
+    method: 'POST',
+    body: {
+      period: basePlan.period,
+      interval: basePlan.interval,
+      item: {
+        name: `PersonaCraftPro ${basePlan.label}`,
+        amount,
+        currency,
+        description: `${basePlan.label} recurring subscription`
+      }
+    }
+  });
+  if (typeof created?.id !== 'string' || !/^plan_[A-Za-z0-9]+$/.test(created.id)) {
+    throw new Error(`Razorpay did not return a valid ${currency} ${planKey} plan ID.`);
+  }
+  const verified = await razorpayRequest(`/plans/${encodeURIComponent(created.id)}`);
+  if (!planMatchesRazorpay(verified, expected)) {
+    throw new Error(`The new Razorpay ${currency} ${planKey} plan failed amount or interval verification.`);
+  }
+  return verified.id;
 }
 
 app.get('/api/health', (_request, response) => {
   response
     .status(200)
     .set('Cache-Control', 'no-store')
-    .end();
+    .json({
+      status: 'ok',
+      service: 'PersonaCraftPro API',
+      timestamp: new Date().toISOString()
+    });
 });
 
 app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '256kb' }));
 app.use(express.json({ limit: '32kb' }));
+
+app.use('/api/forum', (_request, response, next) => {
+  response.set('Cache-Control', 'no-store');
+  next();
+});
+
+app.get('/api/forum/posts', optionalFirebaseUser, async (request, response) => {
+  const cursor = request.query.cursor;
+  if (cursor !== undefined && (typeof cursor !== 'string' || !validForumText(cursor, 1, 150))) {
+    response.status(400).json({ error: 'The post page cursor is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const collection = db.collection('forumPosts');
+    let query = collection.orderBy('createdAt', 'desc');
+    if (cursor) {
+      const cursorSnapshot = await collection.doc(cursor).get();
+      if (!forumSnapshotExists(cursorSnapshot)) {
+        response.status(400).json({ error: 'This post page cursor is no longer available. Reload the community feed.' });
+        return;
+      }
+      query = query.startAfter(cursorSnapshot);
+    }
+    const snapshot = await query.limit(50).get();
+    const posts = snapshot.docs.map(document => publicForumPost(document, request.user?.uid)).filter(Boolean);
+    const ratings = posts.filter(post => post.type === 'review' && Number.isInteger(post.rating));
+    response.json({
+      posts,
+      nextCursor: snapshot.docs.length === 50 ? snapshot.docs.at(-1).id : null,
+      ratingSummary: {
+        count: ratings.length,
+        average: ratings.length
+          ? Math.round(ratings.reduce((total, post) => total + post.rating, 0) / ratings.length * 10) / 10
+          : null
+      }
+    });
+  } catch (error) {
+    console.error('Could not load community posts.', error);
+    response.status(503).json({ error: 'Community posts are temporarily unavailable. Please try again.' });
+  }
+});
+
+app.post('/api/forum/posts', requireFirebaseUser, async (request, response) => {
+  const post = forumPostInput(request.body);
+  if (!post) {
+    response.status(400).json({ error: 'Enter a title and message. Reviews also need a rating from 1 to 5 stars.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const reference = db.collection('forumPosts').doc();
+    const record = {
+      ...post,
+      authorUid: request.user.uid,
+      authorName: forumAuthorName(request.user),
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    await reference.set(record);
+    response.status(201).json({
+      post: {
+        id: reference.id,
+        ...post,
+        authorName: record.authorName,
+        isOwner: true,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Could not create community post.', error);
+    response.status(500).json({ error: 'Your post could not be published. Please try again.' });
+  }
+});
+
+app.patch('/api/forum/posts/:postId', requireFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  if (!postId || postId.length > 150) {
+    response.status(400).json({ error: 'The post ID is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const reference = db.collection('forumPosts').doc(postId);
+    const snapshot = await reference.get();
+    if (!forumSnapshotExists(snapshot)) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const current = snapshot.data();
+    if (current.authorUid !== request.user.uid) {
+      response.status(403).json({ error: 'You can only edit your own posts.' });
+      return;
+    }
+    if (request.body?.type && request.body.type !== current.type) {
+      response.status(400).json({ error: 'A post cannot be changed between a review and a discussion.' });
+      return;
+    }
+    const post = forumPostInput(request.body, current.type);
+    if (!post) {
+      response.status(400).json({ error: 'Enter a title and message. Reviews also need a rating from 1 to 5 stars.' });
+      return;
+    }
+    const updated = { ...post, updatedAt: Date.now() };
+    await reference.set(updated, { merge: true });
+    response.json({
+      post: {
+        id: postId,
+        ...post,
+        authorName: forumAuthorName(request.user),
+        isOwner: true,
+        createdAt: current.createdAt,
+        updatedAt: updated.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Could not update community post.', error);
+    response.status(500).json({ error: 'Your post could not be updated. Please try again.' });
+  }
+});
+
+app.delete('/api/forum/posts/:postId', requireFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  if (!postId || postId.length > 150) {
+    response.status(400).json({ error: 'The post ID is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const reference = db.collection('forumPosts').doc(postId);
+    const snapshot = await reference.get();
+    if (!forumSnapshotExists(snapshot)) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    if (snapshot.data().authorUid !== request.user.uid) {
+      response.status(403).json({ error: 'You can only delete your own posts.' });
+      return;
+    }
+    await deleteForumComments(reference);
+    await reference.delete();
+    response.status(204).end();
+  } catch (error) {
+    console.error('Could not delete community post.', error);
+    response.status(500).json({ error: 'Your post could not be deleted. Please try again.' });
+  }
+});
+
+app.get('/api/forum/posts/:postId/comments', optionalFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  const cursor = request.query.cursor;
+  if (!postId || postId.length > 150) {
+    response.status(400).json({ error: 'The post ID is invalid.' });
+    return;
+  }
+  if (cursor !== undefined && (typeof cursor !== 'string' || !validForumText(cursor, 1, 150))) {
+    response.status(400).json({ error: 'The comment page cursor is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const postReference = db.collection('forumPosts').doc(postId);
+    if (!forumSnapshotExists(await postReference.get())) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const collection = postReference.collection('comments');
+    let query = collection.orderBy('createdAt', 'desc');
+    if (cursor) {
+      const cursorSnapshot = await collection.doc(cursor).get();
+      if (!forumSnapshotExists(cursorSnapshot)) {
+        response.status(400).json({ error: 'This comment page cursor is no longer available. Reload the comments.' });
+        return;
+      }
+      query = query.startAfter(cursorSnapshot);
+    }
+    const snapshot = await query.limit(100).get();
+    response.json({
+      comments: snapshot.docs.map(document => publicForumComment(document, request.user?.uid)).filter(Boolean),
+      nextCursor: snapshot.docs.length === 100 ? snapshot.docs.at(-1).id : null
+    });
+  } catch (error) {
+    console.error('Could not load community comments.', error);
+    response.status(503).json({ error: 'Comments are temporarily unavailable. Please try again.' });
+  }
+});
+
+app.post('/api/forum/posts/:postId/comments', requireFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  const content = forumCommentInput(request.body);
+  if (!postId || postId.length > 150 || !content) {
+    response.status(400).json({ error: 'Enter a comment of up to 2,000 characters.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const postReference = db.collection('forumPosts').doc(postId);
+    if (!forumSnapshotExists(await postReference.get())) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const reference = postReference.collection('comments').doc();
+    const comment = {
+      content,
+      authorUid: request.user.uid,
+      authorName: forumAuthorName(request.user),
+      createdAt: Date.now()
+    };
+    await reference.set(comment);
+    response.status(201).json({
+      comment: {
+        id: reference.id,
+        content,
+        authorName: comment.authorName,
+        isOwner: true,
+        createdAt: comment.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Could not create community comment.', error);
+    response.status(500).json({ error: 'Your comment could not be published. Please try again.' });
+  }
+});
+
+app.delete('/api/forum/posts/:postId/comments/:commentId', requireFirebaseUser, async (request, response) => {
+  const { postId, commentId } = request.params;
+  if (!postId || postId.length > 150 || !commentId || commentId.length > 150) {
+    response.status(400).json({ error: 'The comment ID is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const postReference = db.collection('forumPosts').doc(postId);
+    if (!forumSnapshotExists(await postReference.get())) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const reference = postReference.collection('comments').doc(commentId);
+    const snapshot = await reference.get();
+    if (!forumSnapshotExists(snapshot)) {
+      response.status(404).json({ error: 'This comment no longer exists.' });
+      return;
+    }
+    if (snapshot.data().authorUid !== request.user.uid) {
+      response.status(403).json({ error: 'You can only delete your own comments.' });
+      return;
+    }
+    await reference.delete();
+    response.status(204).end();
+  } catch (error) {
+    console.error('Could not delete community comment.', error);
+    response.status(500).json({ error: 'Your comment could not be deleted. Please try again.' });
+  }
+});
 
 app.use('/api/billing', (_request, response, next) => {
   response.set('Cache-Control', 'no-store');
@@ -323,7 +745,7 @@ app.use('/api/billing', (_request, response, next) => {
 
 app.get('/api/pricing/config', async (_request, response) => {
   try {
-    response.json({ pricing: await loadPricingConfigFromStore() });
+    response.json({ pricing: publicPricingConfig(await loadPricingConfigFromStore()) });
   } catch (error) {
     console.error('Could not load public pricing config.', error);
     response.status(500).json({ error: 'Pricing configuration is temporarily unavailable.' });
@@ -332,7 +754,10 @@ app.get('/api/pricing/config', async (_request, response) => {
 
 app.get('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (_request, response) => {
   try {
-    response.json({ pricing: await loadPricingConfigFromStore() });
+    const { db } = await getFirebaseAdmin();
+    const snapshot = await db.doc('appConfig/pricing').get();
+    const pricing = normalizePricingConfig(snapshot.exists ? snapshot.data() : {});
+    response.json({ pricing: publicPricingConfig(pricing) });
   } catch (error) {
     console.error('Could not load admin pricing config.', error);
     response.status(500).json({ error: 'Unable to load pricing configuration.' });
@@ -341,49 +766,128 @@ app.get('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (_request
 
 app.put('/api/admin/pricing', requireFirebaseUser, requireAdmin, async (request, response) => {
   const rawPricing = request.body?.pricing || request.body || {};
-  const monthlyActual = normalizePlanPrice(rawPricing?.monthly?.actualPrice, BILLING_PLANS.monthly.amount / 100);
-  const monthlyCurrent = normalizePlanPrice(rawPricing?.monthly?.currentPrice, monthlyActual);
-  const yearlyActual = normalizePlanPrice(rawPricing?.yearly?.actualPrice, BILLING_PLANS.yearly.amount / 100);
-  const yearlyCurrent = normalizePlanPrice(rawPricing?.yearly?.currentPrice, yearlyActual);
-
-  if (!Number.isFinite(monthlyActual) || !Number.isFinite(monthlyCurrent)
-    || !Number.isFinite(yearlyActual) || !Number.isFinite(yearlyCurrent)
-    || monthlyActual < 0 || monthlyCurrent < 0 || yearlyActual < 0 || yearlyCurrent < 0) {
-    response.status(400).json({ error: 'Price values must be non-negative numbers.' });
-    return;
+  const defaultPricing = normalizePricingConfig({});
+  const requestedPlans = {};
+  for (const currency of ['INR', 'USD']) {
+    requestedPlans[currency] = {};
+    for (const planKey of Object.keys(BILLING_PLANS)) {
+      const base = billingPlan(planKey, currency);
+      const rawPlan = pricingPlanEntry(rawPricing, planKey, currency);
+      const fallback = pricingPlanEntry(defaultPricing, planKey, currency);
+      const parsePrice = (value, defaultValue) => {
+        const numeric = value === undefined ? defaultValue : Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0
+          || Math.abs(numeric * 100 - Math.round(numeric * 100)) > 1e-7
+          || (currency === 'INR' && !Number.isInteger(numeric))
+          || !Number.isSafeInteger(Math.round(numeric * 100))) {
+          return null;
+        }
+        return Math.round(numeric * 100) / 100;
+      };
+      const actualPrice = parsePrice(rawPlan?.actualPrice, fallback.actualPrice);
+      const currentPrice = parsePrice(rawPlan?.currentPrice, fallback.currentPrice);
+      if (actualPrice === null || currentPrice === null) {
+        response.status(400).json({
+          error: `${currency} ${planKey} prices must be positive valid amounts${currency === 'INR' ? ' in whole rupees' : ' with no more than two decimal places'}.`
+        });
+        return;
+      }
+      requestedPlans[currency][planKey] = {
+        actualPrice,
+        currentPrice,
+        amount: Math.round(currentPrice * 100),
+        currency,
+        period: base.period,
+        interval: base.interval
+      };
+    }
   }
 
   try {
     const { db } = await getFirebaseAdmin();
-    const pricing = normalizePricingConfig({
-      monthly: {
-        actualPrice: monthlyActual,
-        currentPrice: monthlyCurrent
-      },
-      yearly: {
-        actualPrice: yearlyActual,
-        currentPrice: yearlyCurrent
+    const storedSnapshot = await db.doc('appConfig/pricing').get();
+    const previousPricing = normalizePricingConfig(storedSnapshot.exists ? storedSnapshot.data() : {});
+    const providerPlanIds = { INR: {}, USD: {} };
+
+    for (const currency of ['INR', 'USD']) {
+      for (const planKey of Object.keys(BILLING_PLANS)) {
+        const requested = requestedPlans[currency][planKey];
+        const basePlan = billingPlan(planKey, currency);
+        const previousPlan = pricingPlanEntry(previousPricing, planKey, currency);
+        const previousPlanId = providerPlanId(planKey, currency, previousPricing);
+        const envPlanId = providerPlanId(planKey, currency);
+        let planId;
+
+        if (previousPlanId && Math.round(previousPlan.currentPrice * 100) === requested.amount) {
+          planId = previousPlanId;
+        } else if (envPlanId && requested.amount === basePlan.amount) {
+          planId = envPlanId;
+        } else {
+          planId = await createVerifiedProviderPlan(planKey, currency, requested.amount);
+        }
+
+        const verified = await razorpayRequest(`/plans/${encodeURIComponent(planId)}`);
+        if (!planMatchesRazorpay(verified, requested)) {
+          response.status(400).json({
+            error: `The configured Razorpay ${currency} ${planKey} plan does not match the requested checkout price.`
+          });
+          return;
+        }
+        providerPlanIds[currency][planKey] = planId;
       }
+    }
+
+    const pricing = normalizePricingConfig({
+      monthly: requestedPlans.INR.monthly,
+      yearly: requestedPlans.INR.yearly,
+      USD: {
+        currency: 'USD',
+        monthly: requestedPlans.USD.monthly,
+        yearly: requestedPlans.USD.yearly
+      },
+      providerPlanIds
     });
     await db.doc('appConfig/pricing').set(pricing, { merge: true });
-    response.json({ pricing });
+    response.json({ pricing: publicPricingConfig(pricing) });
   } catch (error) {
-    console.error('Could not save pricing configuration.', error);
-    response.status(500).json({ error: 'Unable to save pricing configuration.' });
+    console.error('Could not create, verify, or save regional pricing.', error);
+    response.status(502).json({ error: 'Could not create or verify Razorpay plans. No pricing changes were published.' });
   }
 });
 
-app.get('/api/billing/config', (_request, response) => {
-  response.json({
-    checkoutEnabled: billingConfigured(),
-    entitlementEnabled: firebaseAdminConfigured(),
-    voucherEnabled: firebaseAdminConfigured(),
-    keyId: billingConfigured() ? process.env.RAZORPAY_KEY_ID : null,
-    plans: Object.fromEntries(Object.entries(BILLING_PLANS).map(([key, plan]) => [
-      key,
-      { id: plan.id, label: plan.label, amount: plan.amount, currency: plan.currency, period: plan.period }
-    ]))
-  });
+app.get('/api/billing/config', async (_request, response) => {
+  const checkoutEnabled = billingConfigured();
+  try {
+    const pricing = await loadPricingConfigFromStore();
+    const supportedCurrencies = Object.keys(BILLING_CURRENCY_PLANS)
+      .filter(currency => checkoutEnabled
+        && Object.keys(BILLING_PLANS).every(planKey => providerPlanId(planKey, currency, pricing)));
+    const currencyPlans = Object.fromEntries(Object.entries(BILLING_CURRENCY_PLANS).map(([currency, plans]) => [
+      currency,
+      Object.fromEntries(Object.entries(plans).map(([key, plan]) => {
+        const pricedPlan = pricedBillingPlan(key, currency, pricing) || plan;
+        return [key, {
+          id: plan.id,
+          label: plan.label,
+          amount: pricedPlan.amount,
+          currency: plan.currency,
+          period: plan.period
+        }];
+      }))
+    ]));
+    response.json({
+      checkoutEnabled,
+      supportedCurrencies,
+      entitlementEnabled: firebaseAdminConfigured(),
+      voucherEnabled: firebaseAdminConfigured(),
+      keyId: checkoutEnabled ? process.env.RAZORPAY_KEY_ID : null,
+      plans: currencyPlans.INR,
+      currencyPlans
+    });
+  } catch (error) {
+    console.error('Could not load billing configuration.', error);
+    response.status(500).json({ error: 'Could not load paid plan configuration.' });
+  }
 });
 
 app.post('/api/billing/webhook', async (request, response) => {
@@ -443,21 +947,33 @@ app.post('/api/billing/webhook', async (request, response) => {
           || 0;
         const isPaidThrough = validUntil > Date.now();
         const activated = ['subscription.activated', 'subscription.charged'].includes(event.event);
-        const providerPlanKey = planKeyForRazorpayPlanId(subscription?.plan_id);
+        const pendingPlanMatches = subscription?.plan_id === mapping.pendingPlanId;
+        const currentPlanMatches = subscription?.plan_id === mapping.planId;
+        const providerPlanKey = pendingPlanMatches
+          ? mapping.pendingPlanKey
+          : currentPlanMatches
+            ? mapping.planKey
+            : planKeyForRazorpayPlanId(subscription?.plan_id);
+        const providerCurrency = pendingPlanMatches
+          ? mapping.pendingCurrency
+          : currentPlanMatches
+            ? mapping.currency || 'INR'
+            : currencyForRazorpayPlanId(subscription?.plan_id);
         const planChangeApplied = event.event === 'subscription.charged'
           && providerPlanKey
-          && providerPlanKey !== mapping.planKey;
+          && (pendingPlanMatches || providerPlanKey !== mapping.planKey || providerCurrency !== (mapping.currency || 'INR'));
         const planChangeCancelled = ['subscription.cancelled', 'subscription.completed', 'subscription.expired'].includes(event.event)
           && !isPaidThrough;
-        const billingPlan = planChangeApplied ? providerPlanKey : mapping.planKey;
+        const billingPlanKey = planChangeApplied ? providerPlanKey : mapping.planKey;
+        const billingCurrency = planChangeApplied ? providerCurrency : mapping.currency || providerCurrency || 'INR';
         const scheduledPlan = planChangeApplied || planChangeCancelled ? null : mapping.pendingPlanKey || null;
         const scheduledAt = scheduledPlan ? Number(mapping.scheduledAt) || null : null;
         const entitlement = activated
-          ? entitlementFromSubscription(subscription, billingPlan)
+          ? entitlementFromSubscription(subscription, billingPlanKey)
           : isPaidThrough
             ? {
                 planId: 'pro',
-                billingPlan,
+                billingPlan: billingPlanKey,
                 status: 'active',
                 source: 'server-verified',
                 validUntil
@@ -470,7 +986,8 @@ app.post('/api/billing/webhook', async (request, response) => {
                 validUntil: 0
               };
         if (entitlement) {
-          entitlement.billingPlan = billingPlan;
+          entitlement.billingPlan = billingPlanKey;
+          entitlement.currency = billingCurrency;
           entitlement.scheduledPlan = scheduledPlan;
           entitlement.scheduledAt = scheduledAt;
           entitlement.subscriptionId = subscriptionId;
@@ -483,10 +1000,18 @@ app.post('/api/billing/webhook', async (request, response) => {
         transaction.set(subscriptionDocument(db, subscriptionId), {
           status: subscription?.status || event.event.replace('subscription.', ''),
           currentEnd: validUntil,
-          ...(planChangeApplied ? { planKey: billingPlan, planId: subscription.plan_id } : {}),
+          ...(planChangeApplied ? {
+            planKey: billingPlanKey,
+            currency: billingCurrency,
+            planId: subscription.plan_id,
+            amount: Number.isSafeInteger(mapping.pendingPlanAmount)
+              ? mapping.pendingPlanAmount
+              : billingPlan(billingPlanKey, billingCurrency)?.amount
+          } : {}),
           ...(planChangeApplied || planChangeCancelled ? {
             pendingPlanKey: null,
             pendingPlanId: null,
+            pendingPlanAmount: null,
             pendingPlanStatus: null,
             planChangeRequestId: null,
             scheduledAt: null
@@ -516,7 +1041,8 @@ app.post('/api/billing/webhook', async (request, response) => {
             transaction.set(checkoutRef, {
               status: event.event.replace('subscription.', ''),
               currentEnd: validUntil,
-              planKey: billingPlan,
+              planKey: billingPlanKey,
+              currency: billingCurrency,
               scheduledPlan,
               scheduledAt,
               planChangeStatus: scheduledPlan ? mapping.pendingPlanStatus || 'scheduled' : null,
@@ -713,6 +1239,14 @@ app.post('/api/billing/vouchers/redeem', requireEntitlementConfig, requireFireba
 app.get('/api/admin/dashboard', requireFirebaseUser, requireAdmin, async (request, response) => {
   try {
     const { auth, db } = await getFirebaseAdmin();
+    const now = Date.now();
+    const monthStart = new Date(now);
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const timestampOf = value => {
+      const timestamp = typeof value === 'number' ? value : Date.parse(value);
+      return Number.isFinite(timestamp) ? timestamp : 0;
+    };
     const users = [];
     const seen = new Set();
     if (typeof auth.listUsers === 'function') {
@@ -744,12 +1278,60 @@ app.get('/api/admin/dashboard', requireFirebaseUser, requireAdmin, async (reques
     const enriched = await Promise.all(users.map(async user => {
       const snapshot = await db.doc(`users/${user.uid}/billing/entitlement`).get();
       const entitlement = snapshot.exists ? snapshot.data() : null;
-      const active = Number(entitlement?.validUntil) > Date.now() && entitlement?.status === 'active';
-      const payments = paymentDocuments.filter(payment => payment.uid === user.uid && ['captured', 'authorized', 'success'].includes(String(payment.status)));
-      const paidAmount = payments.reduce((total, payment) => total + (Number(payment.amount) || 0), 0);
-      return { ...user, isPro: active || entitlement?.planId === 'pro', plan: active ? entitlement.billingPlan || 'pro' : 'free', activationSource: entitlement?.source || null, validUntil: entitlement?.validUntil || null, paidAmount, paymentCount: payments.length };
+      const active = entitlement?.planId === 'pro' && Number(entitlement?.validUntil) > now && entitlement?.status === 'active';
+      const payments = paymentDocuments.filter(payment => payment.uid === user.uid && ['captured', 'success'].includes(String(payment.status)));
+      const paidAmountByCurrency = payments.reduce((amounts, payment) => {
+        const currency = payment.currency || 'INR';
+        amounts[currency] = (amounts[currency] || 0) + (Number(payment.amount) || 0);
+        return amounts;
+      }, {});
+      return {
+        ...user,
+        isPro: active,
+        plan: active ? entitlement.billingPlan || 'pro' : 'free',
+        activationSource: entitlement?.source || null,
+        validUntil: entitlement?.validUntil || null,
+        paidAmount: paidAmountByCurrency.INR || 0,
+        paidAmountByCurrency,
+        paymentCount: payments.length
+      };
     }));
     const proCount = enriched.filter(user => user.isPro).length;
+    const paidPayments = paymentDocuments
+      .filter(payment => ['captured', 'success'].includes(String(payment.status)))
+      .sort((a, b) => timestampOf(b.createdAt) - timestampOf(a.createdAt));
+    const userByUid = new Map(enriched.map(user => [user.uid, user]));
+    const activePro = enriched.filter(user => user.isPro);
+    const earningsByCurrency = paidPayments.reduce((totals, payment) => {
+      const currency = payment.currency || 'INR';
+      totals[currency] = (totals[currency] || 0) + (Number(payment.amount) || 0);
+      return totals;
+    }, {});
+    const monthPayments = paidPayments.filter(payment => timestampOf(payment.createdAt) >= monthStart.getTime());
+    const earningsThisMonthByCurrency = monthPayments.reduce((totals, payment) => {
+      const currency = payment.currency || 'INR';
+      totals[currency] = (totals[currency] || 0) + (Number(payment.amount) || 0);
+      return totals;
+    }, {});
+    const earningsThisMonth = paidPayments.reduce((total, payment) => (
+      timestampOf(payment.createdAt) >= monthStart.getTime()
+        ? total + (Number(payment.amount) || 0)
+        : total
+    ), 0);
+    const recentPayments = paidPayments.slice(0, 8).map(payment => {
+      const user = userByUid.get(payment.uid);
+      return {
+        id: payment.id,
+        uid: payment.uid || '',
+        name: user?.name || '',
+        email: user?.email || '',
+        plan: payment.planKey || '',
+        status: payment.status,
+        amount: Number(payment.amount) || 0,
+        currency: payment.currency || 'INR',
+        createdAt: payment.createdAt || null
+      };
+    });
     const voucherSnapshot = typeof db.collection === 'function' && typeof db.collection('adminVouchers').get === 'function'
       ? await db.collection('adminVouchers').get() : { docs: [] };
     const vouchers = (voucherSnapshot.docs || []).map(document => {
@@ -758,8 +1340,31 @@ app.get('/api/admin/dashboard', requireFirebaseUser, requireAdmin, async (reques
       else if (!voucher.expiresAt) voucher.expiresAt = null;
       return voucher;
     });
-    const earnings = paymentDocuments.reduce((total, payment) => ['captured', 'authorized', 'success'].includes(String(payment.status)) ? total + (Number(payment.amount) || 0) : total, 0);
-    response.json({ users: enriched.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))), totals: { users: enriched.length, pro: proCount, regular: enriched.length - proCount, earnings }, vouchers, adminEmail: request.user.email || '' });
+    const totals = {
+      users: enriched.length,
+      pro: proCount,
+      regular: enriched.length - proCount,
+      newUsers30Days: enriched.filter(user => {
+        const createdAt = timestampOf(user.createdAt);
+        return createdAt > 0 && createdAt >= now - 30 * 24 * 60 * 60 * 1000;
+      }).length,
+      conversionRate: enriched.length ? Math.round((proCount / enriched.length) * 1000) / 10 : 0,
+      monthlyPro: activePro.filter(user => user.plan === 'monthly').length,
+      yearlyPro: activePro.filter(user => user.plan === 'yearly').length,
+      earnings: earningsByCurrency.INR || 0,
+      earningsThisMonth: earningsThisMonthByCurrency.INR || 0,
+      earningsByCurrency,
+      earningsThisMonthByCurrency,
+      paymentsThisMonth: monthPayments.length,
+      paymentCount: paidPayments.length
+    };
+    response.json({
+      users: enriched.sort((a, b) => timestampOf(b.createdAt) - timestampOf(a.createdAt)),
+      totals,
+      recentPayments,
+      vouchers,
+      adminEmail: request.user.email || ''
+    });
   } catch (error) {
     console.error('Admin dashboard failed.', error);
     response.status(500).json({ error: 'Unable to load admin data.' });
@@ -789,10 +1394,17 @@ app.get('/api/admin/users/:uid', requireFirebaseUser, requireAdmin, async (reque
         voucher = (vouchers.docs || []).map(document => document.data()).find(item => item.code && voucherDocumentId(item.code) === entitlement.voucherId) || null;
       }
     }
-    const paidAmount = payments.filter(payment => ['captured', 'authorized', 'success'].includes(String(payment.status))).reduce((total, payment) => total + (Number(payment.amount) || 0), 0);
+    const paidAmountByCurrency = payments
+      .filter(payment => ['captured', 'success'].includes(String(payment.status)))
+      .reduce((amounts, payment) => {
+        const currency = payment.currency || 'INR';
+        amounts[currency] = (amounts[currency] || 0) + (Number(payment.amount) || 0);
+        return amounts;
+      }, {});
+    const paidAmount = paidAmountByCurrency.INR || 0;
     response.json({
       uid, email: authRecord?.email || '', name: authRecord?.displayName || '', photoURL: authRecord?.photoURL || '', createdAt: authRecord?.metadata?.creationTime || null,
-      entitlement, voucher, payments, activity, paidAmount
+      entitlement, voucher, payments, activity, paidAmount, paidAmountByCurrency
     });
   } catch (error) {
     console.error('Admin user detail failed.', error);
@@ -913,15 +1525,32 @@ app.delete('/api/admin/vouchers/:id', requireFirebaseUser, requireAdmin, async (
 
 app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser, async (request, response) => {
   const planKey = request.body?.planKey;
-  const plan = Object.hasOwn(BILLING_PLANS, planKey) ? BILLING_PLANS[planKey] : null;
-  if (!plan) {
+  const currency = request.body?.currency || 'INR';
+  const expectedAmount = request.body?.expectedAmount;
+  const basePlan = billingPlan(planKey, currency);
+  if (!basePlan) {
     response.status(400).json({ error: 'Choose a valid monthly or yearly plan.' });
+    return;
+  }
+  if (!Number.isSafeInteger(expectedAmount) || expectedAmount <= 0) {
+    response.status(400).json({ error: 'Refresh the Plans page to confirm the current price before checkout.' });
     return;
   }
 
   try {
     const { db } = await getFirebaseAdmin();
-    const providerPlan = await verifiedProviderPlan(planKey);
+    const pricingSnapshot = await db.doc('appConfig/pricing').get();
+    const pricing = normalizePricingConfig(pricingSnapshot.exists ? pricingSnapshot.data() : {});
+    if (!providerPlanId(planKey, currency, pricing)) {
+      response.status(503).json({ error: `Razorpay ${currency} subscriptions are not configured on this server yet.` });
+      return;
+    }
+    const plan = pricedBillingPlan(planKey, currency, pricing);
+    if (expectedAmount !== plan.amount) {
+      response.status(409).json({ error: 'The price changed since this page loaded. Refresh the Plans page and review the current price before checkout.' });
+      return;
+    }
+    const providerPlan = await verifiedProviderPlan(planKey, currency, pricing);
     const checkoutRef = userCheckoutDocument(db, request.user.uid);
     const requestId = randomUUID();
     const checkout = await db.runTransaction(async transaction => {
@@ -944,6 +1573,7 @@ app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser
           transaction.set(checkoutRef, {
             requestId,
             planKey,
+            currency,
             status: 'creating',
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -953,12 +1583,13 @@ app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser
           return { requestId, reused: false };
         }
         if (current.planKey === planKey && current.subscriptionId) {
-          return { subscriptionId: current.subscriptionId, reused: true };
+          if ((current.currency || 'INR') === currency) return { subscriptionId: current.subscriptionId, reused: true };
         }
         if (current.status === 'creating' && Date.now() - Number(current.createdAt) > 5 * 60 * 1000) {
           transaction.set(checkoutRef, {
             requestId,
             planKey,
+            currency,
             status: 'creating',
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -973,6 +1604,7 @@ app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser
       transaction.create(checkoutRef, {
         requestId,
         planKey,
+        currency,
         status: 'creating',
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -980,10 +1612,16 @@ app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser
       return { requestId, reused: false };
     });
     if (checkout.reused) {
+      const reusedSubscription = await subscriptionDocument(db, checkout.subscriptionId).get();
+      const reusedRecord = reusedSubscription.data() || {};
+      const reusedAmount = Number(reusedRecord.amount);
       response.json({
         subscriptionId: checkout.subscriptionId,
         keyId: process.env.RAZORPAY_KEY_ID,
-        plan: { id: plan.id, label: plan.label, amount: plan.amount, currency: plan.currency },
+        plan: {
+          ...plan,
+          amount: Number.isSafeInteger(reusedAmount) && reusedAmount > 0 ? reusedAmount : plan.amount
+        },
         reused: true
       });
       return;
@@ -995,14 +1633,17 @@ app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser
         plan_id: providerPlan.id,
         total_count: plan.totalCount,
         quantity: 1,
-        customer_notify: 1
+        customer_notify: 1,
+        notes: { plan_key: planKey, currency }
       }
     });
     await db.runTransaction(async transaction => {
       transaction.create(subscriptionDocument(db, created.id), {
         uid: request.user.uid,
         planKey,
+        currency,
         planId: providerPlan.id,
+        amount: plan.amount,
         status: created.status || 'created',
         currentEnd: 0,
         createdAt: Date.now(),
@@ -1010,6 +1651,8 @@ app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser
       });
       transaction.set(checkoutRef, {
         subscriptionId: created.id,
+        planId: providerPlan.id,
+        amount: plan.amount,
         status: created.status || 'created',
         updatedAt: Date.now()
       }, { merge: true });
@@ -1017,13 +1660,13 @@ app.post('/api/billing/subscriptions', requireBillingConfig, requireFirebaseUser
     await recordBillingActivity(db, request.user.uid, {
       type: 'subscription', status: 'pending', title: `${plan.label} checkout started`,
       detail: 'Razorpay subscription checkout was created.', planKey,
-      providerSubscriptionId: created.id,
+      currency, providerSubscriptionId: created.id,
       amount: plan.amount
     });
     response.status(201).json({
       subscriptionId: created.id,
       keyId: process.env.RAZORPAY_KEY_ID,
-      plan: { id: plan.id, label: plan.label, amount: plan.amount, currency: plan.currency }
+      plan
     });
   } catch (error) {
     console.error('Could not create Razorpay subscription.', error);
@@ -1061,20 +1704,36 @@ app.post('/api/billing/verify', requireBillingConfig, requireFirebaseUser, async
       return;
     }
 
-    const [subscription, payment] = await Promise.all([
-      razorpayRequest(`/subscriptions/${encodeURIComponent(razorpaySubscriptionId)}`),
-      razorpayRequest(`/payments/${encodeURIComponent(razorpayPaymentId)}`)
-    ]);
     const mapping = mappingSnapshot.data();
+    const currency = mapping.currency || 'INR';
+    const basePlan = billingPlan(mapping.planKey, currency);
+    const storedAmount = Number(mapping.amount);
+    const expectedAmount = Number.isSafeInteger(storedAmount) && storedAmount > 0
+      ? storedAmount
+      : basePlan?.amount;
+    if (!basePlan || !expectedAmount || typeof mapping.planId !== 'string') {
+      response.status(400).json({ error: 'The subscription currency could not be verified against its server plan.' });
+      return;
+    }
+    const expectedPlan = { ...basePlan, amount: expectedAmount };
+    const [subscription, payment, providerPlan] = await Promise.all([
+      razorpayRequest(`/subscriptions/${encodeURIComponent(razorpaySubscriptionId)}`),
+      razorpayRequest(`/payments/${encodeURIComponent(razorpayPaymentId)}`),
+      razorpayRequest(`/plans/${encodeURIComponent(mapping.planId)}`)
+    ]);
     if (subscription.plan_id !== mapping.planId
+      || !planMatchesRazorpay(providerPlan, expectedPlan)
       || payment.subscription_id !== razorpaySubscriptionId
+      || payment.amount !== expectedAmount
+      || payment.currency !== currency
       || !['captured', 'authorized'].includes(payment.status)) {
-      response.status(400).json({ error: 'The payment is not verified as belonging to this plan.' });
+      response.status(400).json({ error: 'The payment is not verified as belonging to this plan and currency.' });
       return;
     }
 
     const entitlement = entitlementFromSubscription(subscription, mapping.planKey);
     if (subscription.status === 'active' && payment.status === 'captured' && entitlement?.status === 'active') {
+      entitlement.currency = currency;
       await db.runTransaction(async transaction => {
         transaction.set(mappingRef, {
           status: subscription.status,
@@ -1089,20 +1748,21 @@ app.post('/api/billing/verify', requireBillingConfig, requireFirebaseUser, async
         }, { merge: true });
         transaction.set(userEntitlementDocument(db, request.user.uid), {
           ...entitlement,
+          currency,
           subscriptionId: razorpaySubscriptionId,
           cancelAtCycleEnd: false
         });
       });
       await db.doc(`billingPayments/${razorpayPaymentId}`).set({
         uid: request.user.uid, providerPaymentId: razorpayPaymentId, subscriptionId: razorpaySubscriptionId,
-        planKey: mapping.planKey, status: 'captured', amount: BILLING_PLANS[mapping.planKey]?.amount || 0,
-        currency: BILLING_PLANS[mapping.planKey]?.currency || 'INR', createdAt: Date.now()
+        planKey: mapping.planKey, status: 'captured', amount: expectedAmount,
+        currency, createdAt: Date.now()
       }, { merge: true });
       await recordBillingActivity(db, request.user.uid, {
         type: 'payment', status: 'success', title: 'Subscription payment verified',
         detail: `${mapping.planKey === 'yearly' ? 'Yearly' : 'Monthly'} Pro access is active.`,
         planKey: mapping.planKey, providerSubscriptionId: razorpaySubscriptionId,
-        amount: BILLING_PLANS[mapping.planKey]?.amount || null
+        currency, amount: expectedAmount
       });
       response.json({ verified: true, entitlement });
       return;
@@ -1151,9 +1811,17 @@ app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, 
       return;
     }
 
+    const currency = mapping.currency || 'INR';
+    const pricingSnapshot = await db.doc('appConfig/pricing').get();
+    const pricing = normalizePricingConfig(pricingSnapshot.exists ? pricingSnapshot.data() : {});
+    const yearlyBillingPlan = pricedBillingPlan('yearly', currency, pricing);
+    if (!providerPlanId('yearly', currency, pricing)) {
+      response.status(503).json({ error: `Razorpay ${currency} yearly subscriptions are not configured on this server yet.` });
+      return;
+    }
     const [subscription, yearlyPlan] = await Promise.all([
       razorpayRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`),
-      verifiedProviderPlan('yearly')
+      verifiedProviderPlan('yearly', currency, pricing)
     ]);
     const currentEnd = Number(subscription.current_end) * 1000;
     if (subscription.status !== 'active' || subscription.plan_id !== mapping.planId
@@ -1188,6 +1856,8 @@ app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, 
       transaction.set(mappingRef, {
         pendingPlanKey: 'yearly',
         pendingPlanId: yearlyPlan.id,
+        pendingPlanAmount: yearlyBillingPlan.amount,
+        pendingCurrency: currency,
         pendingPlanStatus: 'scheduling',
         planChangeRequestId: requestId,
         scheduledAt: currentEnd,
@@ -1244,6 +1914,7 @@ app.post('/api/billing/change-plan', requireBillingConfig, requireFirebaseUser, 
           transaction.set(mappingRef, {
             pendingPlanKey: null,
             pendingPlanId: null,
+            pendingPlanAmount: null,
             pendingPlanStatus: null,
             planChangeRequestId: null,
             scheduledAt: null,
@@ -1368,10 +2039,6 @@ app.get('/', (_request, response) => {
 
 app.get('/home.html', (_request, response) => {
   response.sendFile(path.join(distDir, 'home.html'));
-});
-
-app.get(['/app-select.html', '/marriage-home.html'], (_request, response) => {
-  response.redirect(302, '/home.html');
 });
 
 app.use(express.static(distDir));

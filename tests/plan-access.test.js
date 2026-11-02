@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import {
   canUseFeature,
   FEATURE_IDS,
@@ -10,13 +10,71 @@ import {
   shouldPromptForJobDescriptionAtsUpgrade,
   TEMPLATE_IDS
 } from '../frontend/src/plan-access.js';
+import { formatCurrencyPrice, preferredPricingCurrency } from '../frontend/src/pricing-currency.js';
 
 test('templates are allocated without overlap and match the published plan counts', () => {
+  const templateRoot = new URL('../Templates/', import.meta.url);
+  const templateModules = readdirSync(templateRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const source = readFileSync(new URL(`${entry.name}/template.js`, templateRoot), 'utf8');
+      return {
+        id: source.match(/id:\s*'([^']+)'/)?.[1],
+        hasStyles: existsSync(new URL(`${entry.name}/style.css`, templateRoot))
+      };
+    });
+  const templates = templateModules.map(template => template.id).filter(Boolean);
+  const registry = readFileSync(new URL('../Templates/index.js', import.meta.url), 'utf8');
   assert.equal(TEMPLATE_IDS.FREE.length, 6);
-  assert.equal(TEMPLATE_IDS.PRO.length, 11);
-  assert.equal(new Set([...TEMPLATE_IDS.FREE, ...TEMPLATE_IDS.PRO]).size, 17);
+  assert.equal(TEMPLATE_IDS.PRO.length, 16);
+  assert.equal(new Set([...TEMPLATE_IDS.FREE, ...TEMPLATE_IDS.PRO]).size, 22);
+  assert.equal(templates.length, 25);
+  assert.equal(new Set(templates).size, 25);
+  assert.equal(templateModules.every(template => template.hasStyles), true);
+  assert.equal((registry.match(/^import .* from '\.\/[^']+\/template\.js';$/gm) || []).length, 25);
+  assert.match(registry, /export const templateDefs = Object\.freeze/);
+  assert.equal(PRICING_FEATURES.find(feature => feature.label === 'Resume templates')?.pro, 'All 25 templates');
   assert.equal(TEMPLATE_IDS.FREE.some(isProTemplate), false);
   assert.equal(TEMPLATE_IDS.PRO.every(isProTemplate), true);
+});
+
+test('new resume templates stay behind existing Pro entitlement controls', () => {
+  for (const templateId of [
+    'interio-designer',
+    'profile-split',
+    'peach-mint',
+    'teal-modern',
+    'brian-baxter'
+  ]) {
+    assert.equal(isProTemplate(templateId), true);
+  }
+});
+
+test('new resume templates have dedicated editor markup and styles', () => {
+  const source = readFileSync(new URL('../frontend/src/main.js', import.meta.url), 'utf8');
+  for (const [templateId, styleName, markupClass] of [
+    ['interio-designer', 'layout-interio-designer', 'interio-layout'],
+    ['profile-split', 'layout-profile-split', null],
+    ['peach-mint', 'layout-peach-mint', 'pm-sheet'],
+    ['teal-modern', 'layout-teal-modern', 'tr-sheet'],
+    ['brian-baxter', 'layout-brian-baxter', 'br-sheet']
+  ]) {
+    const templateDirectory = new URL(`../Templates/${templateId}/`, import.meta.url);
+    if (markupClass) {
+      assert.match(source, new RegExp(`tmpl\\.id==='${templateId}'`));
+      assert.match(source, new RegExp(`class="sheet-inner ${markupClass}"`));
+    }
+    assert.match(readFileSync(new URL('style.css', templateDirectory), 'utf8'), new RegExp(`\\.${styleName}`));
+  }
+});
+
+test('homepage demo uses the animated editor walkthrough on both landing pages', () => {
+  for (const page of ['home.html', 'index.html']) {
+    const html = readFileSync(new URL(`../frontend/${page}`, import.meta.url), 'utf8');
+    assert.match(html, /src="\/images\/homepage-demo\.svg"/);
+    assert.match(html, /Cursor-guided preview of the resume editor/);
+  }
+  assert.match(readFileSync(new URL('../frontend/public/images/homepage-demo.svg', import.meta.url), 'utf8'), /resume editor walkthrough/);
 });
 
 test('essential Free features are included and future Pro features remain unavailable', () => {
@@ -136,6 +194,21 @@ test('monthly and yearly prices match the displayed INR subscriptions', () => {
   assert.equal(PLAN_CONFIG.pro.currency, 'INR');
   assert.deepEqual(PLAN_CONFIG.pro.monthly, { price: 99, interval: 'month' });
   assert.deepEqual(PLAN_CONFIG.pro.yearly, { price: 399, interval: 'year' });
+  assert.equal(PLAN_CONFIG.pro.currencies.USD.monthly.price, 3.67);
+  assert.equal(PLAN_CONFIG.pro.currencies.USD.yearly.price, 49.37);
+  assert.equal(preferredPricingCurrency('en-IN'), 'INR');
+  assert.equal(preferredPricingCurrency('en-US'), 'USD');
+  assert.equal(preferredPricingCurrency('fr-FR'), 'USD');
+  assert.equal(formatCurrencyPrice(3.67, 'USD', 'en-US'), '$3.67');
+  assert.equal(formatCurrencyPrice(99, 'INR', 'en-IN'), '₹99');
+
+  const pricingPage = readFileSync(new URL('../frontend/pricing.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(pricingPage, /pricingCurrency|pricing-currency-picker/);
+  assert.match(pricingPage, /Loading price/);
+  const adminPage = readFileSync(new URL('../frontend/admin.html', import.meta.url), 'utf8');
+  assert.match(adminPage, /India · INR/);
+  assert.match(adminPage, /International · USD/);
+  assert.doesNotMatch(adminPage, /id="(?:monthly|yearly|usd-monthly|usd-yearly)-current-price"[^>]*readonly/);
 });
 
 test('Pro template preview offers PDF export without a template-application trial modal', () => {
@@ -158,6 +231,7 @@ test('Free users preview Pro templates and can render a PDF without applying the
   assert.match(source, /You have used both free Pro-template PDF downloads\. Export is disabled/);
   assert.match(source, /of 2 free Pro PDF downloads remaining/);
   assert.match(source, /exportButton\.disabled=true/);
+  assert.match(source, /sheet\.querySelectorAll\('\[contenteditable\]'\)\.forEach\(element=>\{[\s\S]*?removeAttribute\('contenteditable'\)/);
   assert.match(source, /if\(!cloudUser\)\{[\s\S]*?button\.disabled=true/);
   assert.match(source, /!cloudUser\|\|!Number\.isInteger\(proTemplateDownloadsRemaining\)\|\|proTemplateDownloadsRemaining<1/);
   assert.doesNotMatch(source, /applyPendingProTemplate|showProTemplateTrial/);

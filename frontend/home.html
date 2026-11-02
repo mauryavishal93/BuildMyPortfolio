@@ -125,7 +125,7 @@
         box-shadow: 0 26px 70px rgba(0,0,0,0.32);
         overflow: hidden;
       }
-      .home-demo-image {
+      .home-demo-video {
         display: block;
         width: 100%;
         height: auto;
@@ -226,6 +226,7 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="/src/homepage.css">
   </head>
   <body class="about-page landing-page">
     <header class="about-header">
@@ -251,22 +252,42 @@
           <button class="btn outline" type="button" data-auth-sign-out hidden>Sign out</button>
           <span class="auth-status" data-auth-status role="status" aria-live="polite"></span>
         </div>
+        <a class="btn outline" href="/community.html">Community</a>
         <a class="btn outline" href="/pricing.html">Plans</a>
+        <a class="btn outline" href="/editor.html?open=import">Import resume</a>
         <a class="btn soft about-editor" href="/editor.html">Open editor</a>
       </nav>
     </header>
 
+    <div class="landing-anchor-nav-wrap">
+      <nav class="landing-anchor-nav" aria-label="Explore PersonaCraftPro">
+        <a href="#templates">Templates</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/community.html">Community</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+    </div>
+
     <main class="landing-main">
       <section class="landing-hero">
         <div class="landing-hero-copy">
-          <h1>Build a professional resume that works as hard as you do.</h1>
+          <p class="about-eyebrow landing-hero-eyebrow">Your next opportunity starts here</p>
+          <h1>Build a professional resume <span class="landing-gradient-text">that works as hard as you do.</span></h1>
           <p>Create polished resumes with templates, ATS guidance, cover letters, PDF export, and secure cloud saves — all in one place.</p>
-          <div class="hero-actions">
-            <a class="btn primary" href="/editor.html">Open editor</a>
-            <a class="btn outline" href="/pricing.html">See plans</a>
+          <div class="hero-actions landing-hero-actions">
+            <a class="btn primary landing-create-btn" href="/editor.html">Create my free resume <span aria-hidden="true">→</span></a>
+            <a class="btn outline landing-explore-btn" href="#templates">Explore templates</a>
           </div>
+          <a class="landing-import-link" href="/editor.html?open=import">Already have a resume? Import it</a>
         </div>
       </section>
+
+      <a class="landing-scratch-cta" href="/resume-wizard.html">
+        <span class="landing-scratch-title">Build my resume from scratch <span aria-hidden="true">→</span></span>
+        <span class="landing-scratch-subtitle">Guided step-by-step resume creation</span>
+      </a>
 
       <div class="feature-strip" aria-label="Product highlights">
         <article class="feature-tile">
@@ -293,31 +314,190 @@
           <p>PersonaCraftPro helps you structure your experience, tailor your content, and keep a reliable backup while you move through the hiring process.</p>
         </div>
 
-        <div class="demo-window" aria-label="PersonaCraftPro resume editor preview">
-          <img class="home-demo-image" src="/images/homepage-demo.png" alt="PersonaCraftPro resume editor preview showing a dark editor with a resume template on the right" />
+        <div class="demo-window" aria-label="Cursor-guided PersonaCraftPro resume editor walkthrough">
+          <img class="home-demo-video" src="/images/homepage-demo.svg" alt="Cursor-guided preview of the resume editor: choose a template on the left, edit your resume in the center, adjust profile settings on the right, and sign in with Google for cloud saves." />
         </div>
       </section>
 
-      <section class="landing-showcase" aria-labelledby="features-title">
-        <div class="section-heading" style="text-align:center;">
-          <p class="about-eyebrow" id="features-title">WHY PEOPLE USE IT</p>
+      <section class="landing-content-section" id="templates" aria-labelledby="landing-templates-title">
+        <div class="landing-section-heading">
+          <p class="about-eyebrow">Find your starting point</p>
+          <h2 id="landing-templates-title">Resume templates for every next step.</h2>
+          <p>Explore clean, readable layouts and choose a style that fits your experience.</p>
         </div>
-        <div class="feature-strip" aria-label="Resume builder value">
-          <article class="feature-tile">
-            <div class="feature-icon">01</div>
-            <h3>Fast first draft</h3>
-            <p>Start with a polished template and structure your resume in minutes instead of starting from a blank page.</p>
-          </article>
-          <article class="feature-tile">
-            <div class="feature-icon">02</div>
-            <h3>Tailored for each role</h3>
-            <p>Update your resume, highlight the right skills, and keep each version focused on the job you want.</p>
-          </article>
-          <article class="feature-tile">
-            <div class="feature-icon">03</div>
-            <h3>Cloud and browser backup</h3>
-            <p>Save locally or sign in with Google to keep private cloud copies and continue editing on any device.</p>
-          </article>
+        <div class="landing-template-grid">
+          <a class="landing-template-card" href="/editor.html?template=modern" aria-label="Use the Modern resume template">
+            <div class="landing-template-preview" aria-hidden="true">
+              <div class="landing-resume-paper" data-layout="modern">
+                <header class="landing-resume-header">
+                  <div class="landing-resume-name">Jordan Taylor</div>
+                  <div class="landing-resume-role">Product Designer</div>
+                  <div class="landing-resume-contact">jordan@email.com · Bengaluru, India</div>
+                </header>
+                <div class="landing-resume-body landing-resume-two-column">
+                  <main class="landing-resume-primary">
+                    <section class="landing-resume-section"><h3>Professional Summary</h3><p>Product designer focused on clear, accessible digital experiences.</p></section>
+                    <section class="landing-resume-section"><h3>Work Experience</h3><div class="landing-resume-entry"><strong>Senior Product Designer</strong><small>Northstar Studio · 2021–Present</small><p>Led product design from research through launch.</p></div></section>
+                  </main>
+                  <aside class="landing-resume-secondary">
+                    <section class="landing-resume-section"><h3>Skills</h3><p>Product strategy<br>Prototyping<br>Design systems</p></section>
+                    <section class="landing-resume-section"><h3>Education</h3><p>B.Des. Interaction Design<br>2017–2021</p></section>
+                  </aside>
+                </div>
+              </div>
+            </div>
+            <div class="landing-template-meta"><strong>Modern</strong><span class="landing-template-tag">Free</span></div>
+            <span class="landing-template-link">Use template →</span>
+          </a>
+          <a class="landing-template-card" href="/editor.html?template=classic" aria-label="Use the Classic resume template">
+            <div class="landing-template-preview" aria-hidden="true">
+              <div class="landing-resume-paper" data-layout="classic">
+                <header class="landing-resume-header">
+                  <div class="landing-resume-name">Jordan Taylor</div>
+                  <div class="landing-resume-role">Product Designer</div>
+                  <div class="landing-resume-contact">jordan@email.com · +91 98765 43210 · Bengaluru, India</div>
+                </header>
+                <div class="landing-resume-body">
+                  <section class="landing-resume-section"><h3>Professional Summary</h3><p>Product designer focused on clear, accessible digital experiences.</p></section>
+                  <section class="landing-resume-section"><h3>Work Experience</h3><div class="landing-resume-entry"><strong>Senior Product Designer <small>2021–Present</small></strong><small>Northstar Studio</small><p>Led product design from research through launch.</p></div></section>
+                  <section class="landing-resume-section"><h3>Education</h3><div class="landing-resume-entry"><strong>B.Des. Interaction Design <small>2017–2021</small></strong><small>University of Design</small></div></section>
+                </div>
+              </div>
+            </div>
+            <div class="landing-template-meta"><strong>Classic</strong><span class="landing-template-tag">Free</span></div>
+            <span class="landing-template-link">Use template →</span>
+          </a>
+          <a class="landing-template-card" href="/editor.html?template=minimal" aria-label="Use the Minimal resume template">
+            <div class="landing-template-preview" aria-hidden="true">
+              <div class="landing-resume-paper" data-layout="minimal">
+                <header class="landing-resume-header">
+                  <div class="landing-resume-name">Jordan Taylor</div>
+                  <div class="landing-resume-role">Product Designer</div>
+                  <div class="landing-resume-contact">jordan@email.com · Bengaluru, India</div>
+                </header>
+                <div class="landing-resume-body">
+                  <section class="landing-resume-section"><h3>Professional Summary</h3><p>Product designer creating simple, thoughtful digital products.</p></section>
+                  <section class="landing-resume-section"><h3>Work Experience</h3><div class="landing-resume-entry"><strong>Senior Product Designer</strong><small>Northstar Studio · 2021–Present</small><p>Led product design from research through launch.</p></div></section>
+                  <section class="landing-resume-section"><h3>Education</h3><div class="landing-resume-entry"><strong>B.Des. Interaction Design</strong><small>University of Design · 2017–2021</small></div></section>
+                </div>
+              </div>
+            </div>
+            <div class="landing-template-meta"><strong>Minimal</strong><span class="landing-template-tag">Free</span></div>
+            <span class="landing-template-link">Use template →</span>
+          </a>
+          <a class="landing-template-card" href="/editor.html?template=tech" aria-label="Use the Tech resume template">
+            <div class="landing-template-preview" aria-hidden="true">
+              <div class="landing-resume-paper" data-layout="tech">
+                <header class="landing-resume-header">
+                  <div class="landing-resume-name">Jordan Taylor</div>
+                  <div class="landing-resume-role">Software Engineer</div>
+                  <div class="landing-resume-contact">jordan@email.com · Bengaluru, India</div>
+                </header>
+                <div class="landing-resume-body">
+                  <section class="landing-resume-section"><h3>Technical Skills</h3><p>JavaScript · TypeScript · React · Node.js · SQL</p></section>
+                  <section class="landing-resume-section"><h3>Work Experience</h3><div class="landing-resume-entry"><strong>Software Engineer</strong><small>Northstar Studio · 2021–Present</small><p>Built reliable product features and automated delivery workflows.</p></div></section>
+                  <section class="landing-resume-section"><h3>Projects</h3><div class="landing-resume-entry"><strong>Developer Platform</strong><p>Created tools that improved team delivery speed.</p></div></section>
+                  <section class="landing-resume-section"><h3>Education</h3><p>B.S. Computer Science · 2017–2021</p></section>
+                </div>
+              </div>
+            </div>
+            <div class="landing-template-meta"><strong>Tech</strong><span class="landing-template-tag">Free</span></div>
+            <span class="landing-template-link">Use template →</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="landing-content-section" id="how-it-works" aria-labelledby="landing-steps-title">
+        <div class="landing-section-heading">
+          <p class="about-eyebrow">Simple by design</p>
+          <h2 id="landing-steps-title">Your resume, in three easy steps.</h2>
+          <p>Focus on your story while PersonaCraftPro helps with the structure.</p>
+        </div>
+        <div class="landing-steps-grid">
+          <article class="landing-step-card"><div class="landing-step-number">01</div><h3>Add your experience</h3><p>Start fresh or import an existing resume. Add your work history, education, skills, and achievements.</p></article>
+          <article class="landing-step-card"><div class="landing-step-number">02</div><h3>Make it yours</h3><p>Choose a template, refine your content, and review your resume in the live editor.</p></article>
+          <article class="landing-step-card"><div class="landing-step-number">03</div><h3>Download and apply</h3><p>Export a PDF and take the next step in your job search.</p></article>
+        </div>
+      </section>
+
+      <section class="landing-content-section landing-feature-band" id="features" aria-labelledby="landing-features-title">
+        <div class="landing-feature-grid">
+          <div class="feature-copy">
+            <p class="about-eyebrow">Built for real resume work</p>
+            <h2 id="landing-features-title">Everything you need to put your best experience forward.</h2>
+            <p>Create, improve, and manage your resume without juggling multiple tools.</p>
+            <div class="landing-feature-list">
+              <div class="landing-feature-row"><span class="feature-icon" aria-hidden="true">▤</span><div><h3>Professional templates</h3><p>Choose a layout that suits your role and career stage.</p></div></div>
+              <div class="landing-feature-row"><span class="feature-icon" aria-hidden="true">✦</span><div><h3>ATS guidance</h3><p>Review structure, skills, and keyword coverage for clarity.</p></div></div>
+              <div class="landing-feature-row"><span class="feature-icon" aria-hidden="true">↗</span><div><h3>Resume and cover letter tools</h3><p>Keep your application materials consistent and focused.</p></div></div>
+              <div class="landing-feature-row"><span class="feature-icon" aria-hidden="true">☁</span><div><h3>Save and continue</h3><p>Use browser saving or sign in for cloud resume sync.</p></div></div>
+            </div>
+          </div>
+          <div class="landing-feature-visual" aria-label="Resume tools included in the editor">
+            <h3>Your tools, in one workspace</h3>
+            <p>Build and prepare your application in the resume editor.</p>
+            <div class="landing-tool-list">
+              <div class="landing-tool-row"><span>Resume editing</span><span>Included</span></div>
+              <div class="landing-tool-row"><span>Standard PDF export</span><span>Included</span></div>
+              <div class="landing-tool-row"><span>Resume-only ATS checks</span><span>Included</span></div>
+              <div class="landing-tool-row"><span>Basic cover-letter tools</span><span>Included</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="landing-content-section" aria-labelledby="landing-trust-title">
+        <div class="landing-section-heading">
+          <p class="about-eyebrow">Your information matters</p>
+          <h2 id="landing-trust-title">Your resume. Your career. Your control.</h2>
+          <p>Clear choices for saving and managing your resume information.</p>
+        </div>
+        <div class="landing-trust-grid">
+          <article class="landing-trust-card"><div class="landing-trust-icon" aria-hidden="true">◇</div><h3>Choose how to save</h3><p>Use browser saving or sign in with Google to sync resumes to your account.</p></article>
+          <article class="landing-trust-card"><div class="landing-trust-icon" aria-hidden="true">☁</div><h3>Continue when you return</h3><p>Find your work in the browser or account you used to save it.</p></article>
+          <article class="landing-trust-card"><div class="landing-trust-icon" aria-hidden="true">✓</div><h3>Know how data is handled</h3><p>Read the Privacy Policy for details about storage, access, and managing your data.</p></article>
+        </div>
+      </section>
+
+      <section class="landing-content-section" id="pricing" aria-labelledby="landing-pricing-title">
+        <div class="landing-section-heading">
+          <p class="about-eyebrow">Straightforward plans</p>
+          <h2 id="landing-pricing-title">Start free. Upgrade when you need more.</h2>
+          <p>See current features and localized prices on the Plans page.</p>
+        </div>
+        <div class="landing-pricing-card">
+          <div>
+            <p class="about-eyebrow">FREE TO START</p>
+            <h3>Build your next resume.</h3>
+            <p>Get started with the core editor and available Free templates. No payment is needed to begin.</p>
+            <div class="hero-actions landing-pricing-actions">
+              <a class="btn primary" href="/editor.html">Start free</a>
+            </div>
+          </div>
+          <div>
+            <h3>More room to grow</h3>
+            <p>Compare Free and Pro options before choosing a plan.</p>
+            <ul><li>Six Free templates</li><li>Pro template access and downloads with eligible plans</li><li>Job-description ATS comparison with Pro</li></ul>
+            <div class="hero-actions landing-pricing-actions">
+              <a class="btn outline" href="/pricing.html">Compare all plans</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="landing-content-section" id="faq" aria-labelledby="landing-faq-title">
+        <div class="landing-section-heading">
+          <p class="about-eyebrow">Good to know</p>
+          <h2 id="landing-faq-title">Frequently asked questions.</h2>
+          <p>Quick answers to help you get started with confidence.</p>
+        </div>
+        <div class="landing-faq">
+          <details><summary>Is PersonaCraftPro free to use?</summary><p>The core editor is free to use. Visit the Plans page for current feature details and paid options.</p></details>
+          <details><summary>Can I download my resume as a PDF?</summary><p>Standard PDF export is included. Some Pro-template downloads have plan limits; check the Plans page for current details.</p></details>
+          <details><summary>Are the templates ATS-friendly?</summary><p>Templates are designed with readable resume structure in mind. ATS systems vary, so no template can guarantee a particular screening outcome.</p></details>
+          <details><summary>Can I import my existing resume?</summary><p>Yes. Choose Import resume to bring a supported file into the editor and review the imported content before applying it.</p></details>
+          <details><summary>Can I save and edit my resume later?</summary><p>Use browser saving or sign in with Google for account-based cloud resume sync.</p></details>
+          <details><summary>How is my resume information handled?</summary><p>Review the <a href="/privacy.html">Privacy Policy</a> for information about data, storage, and your choices.</p></details>
         </div>
       </section>
 
@@ -326,6 +506,7 @@
         <p>Start free in the editor and create a version you can confidently apply with.</p>
         <div class="hero-actions">
           <a class="btn primary" href="/editor.html">Open editor</a>
+          <a class="btn outline" href="/editor.html?open=import">Import resume</a>
         </div>
       </section>
     </main>

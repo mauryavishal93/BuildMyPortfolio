@@ -1,0 +1,5 @@
+.layout-photobanner{--c1:1.2fr;--c2:.8fr;--col-gap:20px}
+.layout-photobanner .resume-header{margin:0;padding:var(--mt) var(--mx) 18px;background:var(--resume-accent);color:#fff}
+.layout-photobanner .name{color:#fff}
+.layout-photobanner .headline,.layout-photobanner .contact{color:#e9f1f5}
+.layout-photobanner .photo{--photo:96px;border:3px solid rgba(255,255,255,.85)}

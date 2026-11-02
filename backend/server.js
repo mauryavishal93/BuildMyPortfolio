@@ -473,7 +473,11 @@ app.get('/api/health', (_request, response) => {
   response
     .status(200)
     .set('Cache-Control', 'no-store')
-    .end();
+    .json({
+      status: 'ok',
+      service: 'PersonaCraftPro API',
+      timestamp: new Date().toISOString()
+    });
 });
 
 app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '256kb' }));

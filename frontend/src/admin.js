@@ -123,14 +123,12 @@ async function load() {
       title = 'Sign-in needs attention';
       message = error.message;
     }
-    $('#access').hidden = false;
+    $('#access').hidden = Boolean(currentUser);
     $('#access h2').textContent = title;
     $('#admin-content').hidden = !dashboard;
     $('#sign-in').hidden = !!currentUser;
-    $('#access p').textContent = currentUser
-      ? message
-      : 'Sign in with an administrator account to unlock revenue, billing, and user controls.';
-    setDashboardStatus('Unable to refresh', 'error');
+    $('#access p').textContent = 'Sign in with an administrator account to unlock revenue, billing, and user controls.';
+    setDashboardStatus(message, 'error');
   } finally {
     refresh.disabled = false;
   }
@@ -307,7 +305,12 @@ document.querySelectorAll('[data-voucher-tab]').forEach(button => button.addEven
 function escapeHtml(value) { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; }
 
 observeAuth((user, authError) => {
+  const previousUid = currentUser?.uid;
   currentUser = user;
+  if (previousUid !== user?.uid) {
+    dashboard = null;
+    $('#admin-content').hidden = true;
+  }
   updateAdminMeta();
   if (authError) {
     $('#access').hidden = false;
@@ -319,6 +322,7 @@ observeAuth((user, authError) => {
     return;
   }
   if (user) {
+    $('#access').hidden = true;
     $('#sign-in').hidden = true;
     setDashboardStatus('Connecting to admin API…', 'loading');
     void load();

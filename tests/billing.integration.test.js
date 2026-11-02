@@ -192,12 +192,18 @@ async function request(path, { method = 'GET', token, body, headers = {} } = {})
   });
 }
 
-test('health check returns an empty success response', async () => {
+test('health check returns a fast no-store JSON liveness response', async () => {
   const response = await request('/api/health');
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.equal(await response.text(), '');
+  assert.match(response.headers.get('content-type'), /application\/json/);
+  const body = await response.json();
+  assert.deepEqual(
+    { status: body.status, service: body.service },
+    { status: 'ok', service: 'PersonaCraftPro API' }
+  );
+  assert.ok(Number.isFinite(Date.parse(body.timestamp)));
 });
 
 test('admin API explains when local Firebase Admin credentials are missing', async () => {

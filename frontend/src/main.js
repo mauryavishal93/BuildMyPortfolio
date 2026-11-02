@@ -10,6 +10,7 @@ import { parseResumeText } from './resume-import-structure.js';
 import { splitContentIntoBullets } from './resume-summary.js';
 import { applySectionTypography, normalizeSectionTypography } from './section-typography.js';
 import { templateDefs as resumeTemplateDefs } from '../../Templates/index.js';
+import { createResumeDraftFromWizard, RESUME_WIZARD_DRAFT_KEY } from './resume-wizard-data.js';
 import {
  chooseAuthenticatedResume,
  createGuestResumeStorage,
@@ -32,6 +33,7 @@ const PAGE_W=794,PAGE_H=1122,DEFAULT_MARGIN=32,FONTS=['Arial','Georgia','Verdana
 const KNOWN_TYPES=['summary','experience','education','skills','projects','certifications','custom'];
 const templateDefs=resumeTemplateDefs;
 const requestedHomepageTemplateId=new URLSearchParams(location.search).get('template');
+const requestedWizardResume=new URLSearchParams(location.search).get('newResume')==='1';
 const makeSections=()=>{
   return [
     {id:uid(),type:'summary',title:'Professional Summary',visible:true,listStyle:'none',content:'Quality Engineering professional with experience in test automation, scalable test frameworks, and delivering reliable software. Skilled at collaborating across teams to improve product quality and release confidence.'},
@@ -76,7 +78,7 @@ let localPersistenceBlocked=false,recoverySnapshot=null;
 const browserStorage={getItem:(...args)=>window.localStorage.getItem(...args),setItem:(...args)=>window.localStorage.setItem(...args),removeItem:(...args)=>window.localStorage.removeItem(...args)};
 const guestResumeStorage=createGuestResumeStorage(browserStorage,normalizeState);
 let lastWorkedResumeWrite=Promise.resolve();
-let guestResumeLoaded=false,guestResumeDirty=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
+let guestResumeLoaded=false,guestResumeDirty=false,wizardResumeDraftPending=false,authGeneration=0,authStateResolved=false,cloudSessionGeneration=0,cloudReady=false,cloudDraftDirty=false;
 let verifiedEntitlement=null,pendingProTemplate=null,pendingUpgradeFeature='';
 let billingPricingConfig=null;
 let cloudUser=null,activeCloudResumeId=null,activeCloudRevision=null,cloudSaveTimer=null,cloudSaving=false,cloudSavePending=false,cloudSaveBlocked=false,cloudResumes=[],proTemplateDownloadsRemaining=null,openCloudOnAuth=new URLSearchParams(location.search).get('open')==='cloud';
@@ -351,7 +353,7 @@ async function updateCloudAccount(user,error){
  const guestLogin=transition==='guest-login';
  const loggingOut=transition==='logout';
  const accountSwitch=transition==='account-switch';
- const hasGuestDraft=guestLogin&&(guestResumeLoaded||guestResumeDirty);
+ const hasGuestDraft=guestLogin&&(guestResumeLoaded||guestResumeDirty||wizardResumeDraftPending);
  const generation=accountChanged?++authGeneration:authGeneration;
  if(accountChanged){
   clearTimeout(saveTimer);
@@ -369,6 +371,7 @@ async function updateCloudAccount(user,error){
    catch(storageError){console.error('Could not clear the guest resume after sign-in.',storageError)}
   }
   if(accountSwitch||loggingOut){
+   wizardResumeDraftPending=false;
    state=fresh();
    selectedId=null;
    history=[];redoHistory=[];
@@ -439,11 +442,13 @@ async function updateCloudAccount(user,error){
     console.error('Could not load the last-opened cloud resume preference.',error);
     toast('Could not load your last-opened resume. Opening your most recently updated resume instead.');
    }
-   const decision=chooseAuthenticatedResume({
-    hasGuestDraft:hasGuestDraft||cloudDraftDirty,
-    resumes,
-    lastWorkedResumeId
-   });
+   const decision=wizardResumeDraftPending
+    ?{type:'migrate-guest-copy'}
+    :chooseAuthenticatedResume({
+     hasGuestDraft:hasGuestDraft||cloudDraftDirty,
+     resumes,
+     lastWorkedResumeId
+    });
    if(decision.type==='open-cloud-resume'){
     const selectedResume=resumes.find(resume=>resume.id===decision.resumeId);
     state=normalizeState(selectedResume.state);
@@ -460,6 +465,7 @@ async function updateCloudAccount(user,error){
     activeCloudResumeId=result.id;
     activeCloudRevision=result.revision;
     cloudDraftDirty=false;
+    wizardResumeDraftPending=false;
     if(JSON.stringify(snapshot)!==JSON.stringify(state))cloudSavePending=true;
    }
    cloudReady=true;
@@ -548,6 +554,13 @@ function clearHomepageTemplateParam(){
  if(!requestedHomepageTemplateId)return;
  const params=new URLSearchParams(location.search);
  params.delete('template');
+ const query=params.toString();
+ window.history.replaceState(null,'',`${location.pathname}${query?`?${query}`:''}${location.hash}`);
+}
+function clearWizardResumeParam(){
+ if(!requestedWizardResume)return;
+ const params=new URLSearchParams(location.search);
+ params.delete('newResume');
  const query=params.toString();
  window.history.replaceState(null,'',`${location.pathname}${query?`?${query}`:''}${location.hash}`);
 }
@@ -2576,11 +2589,33 @@ document.addEventListener('keydown',e=>{
 const savedProject=guestResumeStorage.load();
 if(savedProject.state)state=savedProject.state;
 guestResumeLoaded=Boolean(savedProject.state);
-showRecoveryNotice(savedProject);
+let wizardDraftLoaded=false,wizardDraftError='',wizardDraftWarning='';
+if(requestedWizardResume){
+ try{
+  const serializedDraft=window.sessionStorage.getItem(RESUME_WIZARD_DRAFT_KEY);
+  if(!serializedDraft)throw new Error('The resume wizard details could not be found in this browser session.');
+  state=normalizeState(createResumeDraftFromWizard(JSON.parse(serializedDraft)));
+  wizardResumeDraftPending=true;
+  guestResumeLoaded=true;
+  guestResumeDirty=true;
+  wizardDraftLoaded=true;
+  try{window.sessionStorage.removeItem(RESUME_WIZARD_DRAFT_KEY)}
+  catch(error){
+   console.error('Could not clear the temporary resume wizard draft.',error);
+   wizardDraftWarning='Your resume is ready, but the temporary browser handoff could not be cleared.';
+  }
+ }catch(error){
+  console.error('Could not load the resume wizard draft.',error);
+  wizardDraftError=error.message||'Could not load your new resume details.';
+ }
+ clearWizardResumeParam();
+}
+showRecoveryNotice(wizardDraftLoaded?{error:null}:savedProject);
 if(requestedHomepageTemplateId){
  if(applyHomepageTemplate())saveLocal();
  clearHomepageTemplateParam();
 }
+if(wizardDraftLoaded)saveLocal();
 addEventListener('pagehide',()=>{
  const persistenceMode=resumeStorageMode(cloudUser,guestResumeStorage.enabled);
  if(persistenceMode==='cloud'){
@@ -2590,5 +2625,28 @@ addEventListener('pagehide',()=>{
  if(persistenceMode!=='browser'||localPersistenceBlocked)return;
  try{guestResumeStorage.save(state)}catch(error){console.error('Could not save the resume while closing the page.',error)}
 });
-loadPrefs();$('onboardingCard').hidden=onboardingDismissed;if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}render();{const lc=leftCollapsed;setTab(leftTab);leftCollapsed=lc;applyPanels()}fitMobileZoom();updateBrowserPersistenceUI();if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');if(!cloudConfigured){updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'))}else observeAuth(updateCloudAccount);const pageParams=new URLSearchParams(location.search);if(pageParams.get('tool')==='cover-letter')openCoverLetter();if(pageParams.get('open')==='import')openResumeImportPrompt()
+loadPrefs();
+if(wizardDraftLoaded&&!onboardingDismissed){
+ onboardingDismissed=true;
+ savePrefs();
+}
+$('onboardingCard').hidden=onboardingDismissed;
+if(window.matchMedia('(max-width:800px)').matches){leftCollapsed=true;collapsed=true}
+render();
+{
+ const lc=leftCollapsed;
+ setTab(leftTab);
+ leftCollapsed=lc;
+ applyPanels();
+}
+fitMobileZoom();
+updateBrowserPersistenceUI();
+if(guestResumeStorage.preferenceError)setSaveState('Unable to save changes');
+if(wizardDraftError)toast(`${wizardDraftError} Please return to the wizard and try again.`);
+else if(wizardDraftWarning)toast(wizardDraftWarning);
+if(!cloudConfigured)updateCloudAccount(null,new Error('Add the Firebase web-app settings to enable cloud saving.'));
+else observeAuth(updateCloudAccount);
+const pageParams=new URLSearchParams(location.search);
+if(pageParams.get('tool')==='cover-letter')openCoverLetter();
+if(pageParams.get('open')==='import')openResumeImportPrompt();
 })();

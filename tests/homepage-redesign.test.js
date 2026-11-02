@@ -11,6 +11,8 @@ test('homepage redesign sections and existing walkthrough stay consistent on bot
     assert.match(html, /href="\/src\/homepage\.css"/);
     assert.match(html, /src="\/images\/homepage-demo\.svg"/);
     assert.match(html, /<script type="module" src="\/src\/theme\.js"><\/script>/);
+    assert.match(html, /<div class="hero-actions landing-hero-actions">\s*<a class="btn primary landing-create-btn" href="\/editor\.html">Create my free resume <span aria-hidden="true">→<\/span><\/a>\s*<a class="btn outline landing-explore-btn" href="#templates">Explore templates<\/a>\s*<\/div>\s*<a class="landing-import-link" href="\/editor\.html\?open=import">Already have a resume\? Import it<\/a>/);
+    assert.match(html, /<a class="landing-scratch-cta" href="\/resume-wizard\.html">\s*<span class="landing-scratch-title">Build my resume from scratch <span aria-hidden="true">→<\/span><\/span>\s*<span class="landing-scratch-subtitle">Guided step-by-step resume creation<\/span>\s*<\/a>/);
     assert.match(html, /href="\/editor\.html\?open=import">Import resume<\/a>/);
     for (const section of ['templates', 'how-it-works', 'features', 'pricing', 'faq']) {
       assert.match(html, new RegExp(`id="${section}"`));
@@ -30,6 +32,7 @@ test('homepage redesign sections and existing walkthrough stay consistent on bot
     assert.match(modernCard, /landing-resume-secondary/);
     assert.match(html, /<div class="hero-actions landing-pricing-actions">\s*<a class="btn primary" href="\/editor\.html">Start free<\/a>\s*<\/div>/);
     assert.match(html, /<div class="hero-actions landing-pricing-actions">\s*<a class="btn outline" href="\/pricing\.html">Compare all plans<\/a>\s*<\/div>/);
+    assert.match(html, /href="\/community\.html">Community<\/a>/);
     assert.match(html, /<div class="landing-faq">[\s\S]*?<details>[\s\S]*?<summary>/);
   }
 });
@@ -46,6 +49,13 @@ test('editor applies homepage template links to the loaded resume and preserves 
 
 test('homepage redesign follows the existing theme and adapts its content to mobile', () => {
   assert.match(homepageStyles, /:root\[data-theme="light"\] \.landing-page/);
+  assert.match(homepageStyles, /\.landing-hero \.hero-actions \.landing-create-btn \{[\s\S]*min-height: 46px;[\s\S]*font-size: 15px/);
+  assert.match(homepageStyles, /:root\[data-theme="light"\] \.landing-page \.landing-hero \.hero-actions \.landing-create-btn \{[\s\S]*background: #b89456/);
+  assert.match(homepageStyles, /\.landing-hero-actions \.landing-explore-btn[\s\S]*background: transparent/);
+  assert.match(homepageStyles, /\.landing-scratch-cta \{[\s\S]*min-height: 96px/);
+  assert.match(homepageStyles, /:root\[data-theme="light"\] \.landing-page \.landing-scratch-cta \{[\s\S]*#f4f0e7/);
+  assert.match(homepageStyles, /@media \(max-width: 640px\)[\s\S]*\.landing-create-btn,[\s\S]*width: min\(100%, 260px\);[\s\S]*min-height: 44px/);
+  assert.match(homepageStyles, /@media \(max-width: 640px\)[\s\S]*\.landing-scratch-cta \{[\s\S]*min-height: 82px/);
   assert.match(homepageStyles, /\.landing-template-grid,[\s\S]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
   assert.match(homepageStyles, /@media \(max-width: 980px\)[\s\S]*\.landing-template-grid[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(homepageStyles, /@media \(max-width: 640px\)[\s\S]*\.landing-pricing-card[\s\S]*grid-template-columns: 1fr/);

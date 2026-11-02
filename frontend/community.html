@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Read community reviews and discussions about PersonaCraftPro. Sign in to share your rating, post, or comment.">
+    <title>Reviews & Community | PersonaCraftPro</title>
+    <link rel="icon" type="image/svg+xml" href="/images/personacraftpro-mark.svg">
+    <link rel="stylesheet" href="/src/about.css">
+    <link rel="stylesheet" href="/src/community.css">
+    <script type="module" src="/src/theme.js"></script>
+    <script type="module" src="/src/auth-nav.js"></script>
+    <script type="module" src="/src/community.js"></script>
+  </head>
+  <body class="about-page community-page">
+    <header class="about-header">
+      <a class="about-brand" href="/home.html" aria-label="PersonaCraftPro home">
+        <img class="about-logo" src="/images/personacraftpro-mark.svg" alt="" aria-hidden="true">
+        <span class="about-brand-name">PersonaCraft<span>Pro</span></span>
+      </a>
+      <nav class="about-nav" aria-label="Main navigation">
+        <button class="theme-switch" type="button" role="switch" data-theme-toggle aria-checked="true" aria-label="Dark theme">
+          <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
+          <span class="theme-switch-label">Dark</span>
+        </button>
+        <div class="auth-actions">
+          <button class="btn google-signin" type="button" data-auth-sign-in>
+            <svg class="google-signin-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.05 5.05 0 0 1-2.2 3.31v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.25 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.15v2.84A11 11 0 0 0 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.43.34-2.1V7.06H2.15A11 11 0 0 0 1 12c0 1.78.43 3.46 1.15 4.94l3.69-2.84z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1a11 11 0 0 0-9.85 6.06L5.84 9.9c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            <span data-auth-sign-in-label>Sign in with Google</span>
+          </button>
+          <button class="btn outline" type="button" data-auth-sign-out hidden>Sign out</button>
+          <span class="auth-status" data-auth-status role="status" aria-live="polite"></span>
+        </div>
+        <a class="btn outline" href="/pricing.html">Plans</a>
+        <a class="btn soft about-editor" href="/home.html">Home</a>
+      </nav>
+    </header>
+
+    <main class="community-main">
+      <section class="community-hero" aria-labelledby="communityTitle">
+        <div>
+          <p class="about-eyebrow">PERSONACRAFTPRO COMMUNITY</p>
+          <h1 id="communityTitle">Reviews &amp; conversations</h1>
+          <p class="community-intro">Share your experience, rate the app, and help other job seekers get more from their resumes.</p>
+          <a class="community-privacy-link" href="/privacy.html">Read how public community posts are handled</a>
+        </div>
+        <aside class="community-rating-summary" aria-label="Community application rating">
+          <span class="community-rating-label">Recent app rating</span>
+          <strong data-rating-average>—</strong>
+          <span class="community-rating-stars" data-rating-summary-stars aria-hidden="true">☆☆☆☆☆</span>
+          <span class="community-rating-count" data-rating-count>Loading ratings…</span>
+        </aside>
+      </section>
+
+      <section class="community-compose-panel" aria-label="Create a community post">
+        <div class="community-signin-prompt" data-community-signin>
+          <p>Want to share a review or join the conversation?</p>
+          <span>Sign in with Google to post and comment. Community posts and comments are visible to everyone.</span>
+        </div>
+        <div class="community-signed-in" data-community-signed-in hidden>
+          <div>
+            <h2>Share with the community</h2>
+            <p data-community-welcome></p>
+          </div>
+          <button class="community-button community-button-primary" type="button" data-open-composer>Write a post</button>
+        </div>
+        <form class="community-post-form" data-post-form hidden>
+          <div class="community-form-heading">
+            <h2 data-post-form-title>Write a post</h2>
+            <button class="community-icon-button" type="button" data-close-composer aria-label="Close post form">×</button>
+          </div>
+          <label class="community-field">
+            <span>Post type</span>
+            <select name="type" data-post-type>
+              <option value="review">App review</option>
+              <option value="discussion">Discussion</option>
+            </select>
+          </label>
+          <fieldset class="community-rating-field" data-rating-field>
+            <legend>Rate the application <span aria-hidden="true">*</span></legend>
+            <div class="community-star-picker" role="radiogroup" aria-label="Application rating from 1 to 5 stars">
+              <button type="button" role="radio" aria-checked="false" aria-label="1 star" data-rating-choice="1">☆</button>
+              <button type="button" role="radio" aria-checked="false" aria-label="2 stars" data-rating-choice="2">☆</button>
+              <button type="button" role="radio" aria-checked="false" aria-label="3 stars" data-rating-choice="3">☆</button>
+              <button type="button" role="radio" aria-checked="false" aria-label="4 stars" data-rating-choice="4">☆</button>
+              <button type="button" role="radio" aria-checked="false" aria-label="5 stars" data-rating-choice="5">☆</button>
+            </div>
+            <span class="community-rating-help" data-rating-help>Select a rating from 1 to 5 stars.</span>
+          </fieldset>
+          <label class="community-field">
+            <span>Title</span>
+            <input name="title" maxlength="120" minlength="4" required placeholder="What would you like to share?">
+          </label>
+          <label class="community-field">
+            <span>Message</span>
+            <textarea name="content" maxlength="4000" minlength="10" required rows="5" placeholder="Share useful details and keep the conversation respectful."></textarea>
+          </label>
+          <div class="community-form-actions">
+            <span class="community-status" data-post-status role="status" aria-live="polite"></span>
+            <button class="community-button community-button-primary" type="submit" data-submit-post>Publish review</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="community-feed-section" aria-labelledby="communityFeedTitle">
+        <div class="community-feed-heading">
+          <div>
+            <p class="about-eyebrow">COMMUNITY FEED</p>
+            <h2 id="communityFeedTitle">What people are saying</h2>
+          </div>
+          <div class="community-filters" role="group" aria-label="Filter community posts">
+            <button type="button" class="is-active" aria-pressed="true" data-filter="all">All posts</button>
+            <button type="button" aria-pressed="false" data-filter="review">Reviews</button>
+            <button type="button" aria-pressed="false" data-filter="discussion">Discussions</button>
+          </div>
+        </div>
+        <p class="community-status community-feed-status" data-feed-status role="status" aria-live="polite">Loading community posts…</p>
+        <div class="community-post-list" data-post-list></div>
+        <button type="button" class="community-button community-button-secondary community-load-more" data-load-more hidden>Load older posts</button>
+        <button type="button" class="community-button community-button-secondary community-load-more" data-retry-feed hidden>Try again</button>
+      </section>
+    </main>
+  </body>
+</html>

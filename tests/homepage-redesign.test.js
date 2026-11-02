@@ -32,6 +32,7 @@ test('homepage redesign sections and existing walkthrough stay consistent on bot
     assert.match(modernCard, /landing-resume-secondary/);
     assert.match(html, /<div class="hero-actions landing-pricing-actions">\s*<a class="btn primary" href="\/editor\.html">Start free<\/a>\s*<\/div>/);
     assert.match(html, /<div class="hero-actions landing-pricing-actions">\s*<a class="btn outline" href="\/pricing\.html">Compare all plans<\/a>\s*<\/div>/);
+    assert.match(html, /href="\/community\.html">Community<\/a>/);
     assert.match(html, /<div class="landing-faq">[\s\S]*?<details>[\s\S]*?<summary>/);
   }
 });

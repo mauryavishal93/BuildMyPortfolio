@@ -91,7 +91,7 @@ async function getFirebaseAdmin() {
 async function requireFirebaseUser(request, response, next) {
   const match = /^Bearer\s+(.+)$/i.exec(request.get('authorization') || '');
   if (!match) {
-    response.status(401).json({ error: 'Sign in before accessing paid plans.' });
+    response.status(401).json({ error: 'Sign in before accessing this feature.' });
     return;
   }
 
@@ -105,8 +105,94 @@ async function requireFirebaseUser(request, response, next) {
     request.user = await admin.auth.verifyIdToken(match[1], true);
     next();
   } catch (error) {
-    console.error('Billing authentication failed.', error);
+    console.error('Firebase authentication failed.', error);
     response.status(401).json({ error: 'Your sign-in could not be verified. Sign in again and retry.' });
+  }
+}
+
+async function optionalFirebaseUser(request, response, next) {
+  const match = /^Bearer\s+(.+)$/i.exec(request.get('authorization') || '');
+  if (!match) {
+    next();
+    return;
+  }
+  if (!app.locals.firebaseAdmin && !firebaseAdmin && !firebaseAdminConfigured()) {
+    response.status(503).json({ error: 'Firebase Admin credentials are not configured on this server.' });
+    return;
+  }
+  try {
+    const admin = await getFirebaseAdmin();
+    request.user = await admin.auth.verifyIdToken(match[1], true);
+    next();
+  } catch (error) {
+    console.error('Optional Firebase authentication failed.', error);
+    response.status(401).json({ error: 'Your sign-in could not be verified. Sign in again and retry.' });
+  }
+}
+
+function validForumText(value, minimum, maximum) {
+  return typeof value === 'string' && value.trim().length >= minimum && value.trim().length <= maximum
+    ? value.trim()
+    : null;
+}
+
+function forumPostInput(body, type = body?.type) {
+  if (!['review', 'discussion'].includes(type)) return null;
+  const title = validForumText(body?.title, 4, 120);
+  const content = validForumText(body?.content, 10, 4000);
+  const rating = body?.rating;
+  if (!title || !content) return null;
+  if (type === 'review' && (!Number.isInteger(rating) || rating < 1 || rating > 5)) return null;
+  return { type, title, content, ...(type === 'review' ? { rating } : {}) };
+}
+
+function forumCommentInput(body) {
+  return validForumText(body?.content, 1, 2000);
+}
+
+function forumAuthorName(user) {
+  return validForumText(user?.name, 1, 80)
+    || validForumText(user?.email?.split('@')[0], 1, 80)
+    || 'Google user';
+}
+
+function forumSnapshotExists(snapshot) {
+  return Boolean(snapshot?.exists);
+}
+
+function publicForumPost(document, viewerUid = null) {
+  const data = document.data();
+  const post = forumPostInput(data);
+  if (!post) return null;
+  return {
+    id: document.id,
+    ...post,
+    authorName: forumAuthorName({ name: data.authorName }),
+    isOwner: Boolean(viewerUid && viewerUid === data.authorUid),
+    createdAt: Number.isFinite(data.createdAt) ? data.createdAt : 0,
+    updatedAt: Number.isFinite(data.updatedAt) ? data.updatedAt : 0
+  };
+}
+
+function publicForumComment(document, viewerUid = null) {
+  const data = document.data();
+  const content = forumCommentInput(data);
+  if (!content) return null;
+  return {
+    id: document.id,
+    content,
+    authorName: forumAuthorName({ name: data.authorName }),
+    isOwner: Boolean(viewerUid && viewerUid === data.authorUid),
+    createdAt: Number.isFinite(data.createdAt) ? data.createdAt : 0
+  };
+}
+
+async function deleteForumComments(postReference) {
+  const comments = postReference.collection('comments');
+  while (true) {
+    const snapshot = await comments.limit(300).get();
+    if (!snapshot.docs.length) return;
+    await Promise.all(snapshot.docs.map(document => comments.doc(document.id).delete()));
   }
 }
 
@@ -392,6 +478,261 @@ app.get('/api/health', (_request, response) => {
 
 app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '256kb' }));
 app.use(express.json({ limit: '32kb' }));
+
+app.use('/api/forum', (_request, response, next) => {
+  response.set('Cache-Control', 'no-store');
+  next();
+});
+
+app.get('/api/forum/posts', optionalFirebaseUser, async (request, response) => {
+  const cursor = request.query.cursor;
+  if (cursor !== undefined && (typeof cursor !== 'string' || !validForumText(cursor, 1, 150))) {
+    response.status(400).json({ error: 'The post page cursor is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const collection = db.collection('forumPosts');
+    let query = collection.orderBy('createdAt', 'desc');
+    if (cursor) {
+      const cursorSnapshot = await collection.doc(cursor).get();
+      if (!forumSnapshotExists(cursorSnapshot)) {
+        response.status(400).json({ error: 'This post page cursor is no longer available. Reload the community feed.' });
+        return;
+      }
+      query = query.startAfter(cursorSnapshot);
+    }
+    const snapshot = await query.limit(50).get();
+    const posts = snapshot.docs.map(document => publicForumPost(document, request.user?.uid)).filter(Boolean);
+    const ratings = posts.filter(post => post.type === 'review' && Number.isInteger(post.rating));
+    response.json({
+      posts,
+      nextCursor: snapshot.docs.length === 50 ? snapshot.docs.at(-1).id : null,
+      ratingSummary: {
+        count: ratings.length,
+        average: ratings.length
+          ? Math.round(ratings.reduce((total, post) => total + post.rating, 0) / ratings.length * 10) / 10
+          : null
+      }
+    });
+  } catch (error) {
+    console.error('Could not load community posts.', error);
+    response.status(503).json({ error: 'Community posts are temporarily unavailable. Please try again.' });
+  }
+});
+
+app.post('/api/forum/posts', requireFirebaseUser, async (request, response) => {
+  const post = forumPostInput(request.body);
+  if (!post) {
+    response.status(400).json({ error: 'Enter a title and message. Reviews also need a rating from 1 to 5 stars.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const reference = db.collection('forumPosts').doc();
+    const record = {
+      ...post,
+      authorUid: request.user.uid,
+      authorName: forumAuthorName(request.user),
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    await reference.set(record);
+    response.status(201).json({
+      post: {
+        id: reference.id,
+        ...post,
+        authorName: record.authorName,
+        isOwner: true,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Could not create community post.', error);
+    response.status(500).json({ error: 'Your post could not be published. Please try again.' });
+  }
+});
+
+app.patch('/api/forum/posts/:postId', requireFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  if (!postId || postId.length > 150) {
+    response.status(400).json({ error: 'The post ID is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const reference = db.collection('forumPosts').doc(postId);
+    const snapshot = await reference.get();
+    if (!forumSnapshotExists(snapshot)) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const current = snapshot.data();
+    if (current.authorUid !== request.user.uid) {
+      response.status(403).json({ error: 'You can only edit your own posts.' });
+      return;
+    }
+    if (request.body?.type && request.body.type !== current.type) {
+      response.status(400).json({ error: 'A post cannot be changed between a review and a discussion.' });
+      return;
+    }
+    const post = forumPostInput(request.body, current.type);
+    if (!post) {
+      response.status(400).json({ error: 'Enter a title and message. Reviews also need a rating from 1 to 5 stars.' });
+      return;
+    }
+    const updated = { ...post, updatedAt: Date.now() };
+    await reference.set(updated, { merge: true });
+    response.json({
+      post: {
+        id: postId,
+        ...post,
+        authorName: forumAuthorName(request.user),
+        isOwner: true,
+        createdAt: current.createdAt,
+        updatedAt: updated.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Could not update community post.', error);
+    response.status(500).json({ error: 'Your post could not be updated. Please try again.' });
+  }
+});
+
+app.delete('/api/forum/posts/:postId', requireFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  if (!postId || postId.length > 150) {
+    response.status(400).json({ error: 'The post ID is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const reference = db.collection('forumPosts').doc(postId);
+    const snapshot = await reference.get();
+    if (!forumSnapshotExists(snapshot)) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    if (snapshot.data().authorUid !== request.user.uid) {
+      response.status(403).json({ error: 'You can only delete your own posts.' });
+      return;
+    }
+    await deleteForumComments(reference);
+    await reference.delete();
+    response.status(204).end();
+  } catch (error) {
+    console.error('Could not delete community post.', error);
+    response.status(500).json({ error: 'Your post could not be deleted. Please try again.' });
+  }
+});
+
+app.get('/api/forum/posts/:postId/comments', optionalFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  const cursor = request.query.cursor;
+  if (!postId || postId.length > 150) {
+    response.status(400).json({ error: 'The post ID is invalid.' });
+    return;
+  }
+  if (cursor !== undefined && (typeof cursor !== 'string' || !validForumText(cursor, 1, 150))) {
+    response.status(400).json({ error: 'The comment page cursor is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const postReference = db.collection('forumPosts').doc(postId);
+    if (!forumSnapshotExists(await postReference.get())) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const collection = postReference.collection('comments');
+    let query = collection.orderBy('createdAt', 'desc');
+    if (cursor) {
+      const cursorSnapshot = await collection.doc(cursor).get();
+      if (!forumSnapshotExists(cursorSnapshot)) {
+        response.status(400).json({ error: 'This comment page cursor is no longer available. Reload the comments.' });
+        return;
+      }
+      query = query.startAfter(cursorSnapshot);
+    }
+    const snapshot = await query.limit(100).get();
+    response.json({
+      comments: snapshot.docs.map(document => publicForumComment(document, request.user?.uid)).filter(Boolean),
+      nextCursor: snapshot.docs.length === 100 ? snapshot.docs.at(-1).id : null
+    });
+  } catch (error) {
+    console.error('Could not load community comments.', error);
+    response.status(503).json({ error: 'Comments are temporarily unavailable. Please try again.' });
+  }
+});
+
+app.post('/api/forum/posts/:postId/comments', requireFirebaseUser, async (request, response) => {
+  const postId = request.params.postId;
+  const content = forumCommentInput(request.body);
+  if (!postId || postId.length > 150 || !content) {
+    response.status(400).json({ error: 'Enter a comment of up to 2,000 characters.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const postReference = db.collection('forumPosts').doc(postId);
+    if (!forumSnapshotExists(await postReference.get())) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const reference = postReference.collection('comments').doc();
+    const comment = {
+      content,
+      authorUid: request.user.uid,
+      authorName: forumAuthorName(request.user),
+      createdAt: Date.now()
+    };
+    await reference.set(comment);
+    response.status(201).json({
+      comment: {
+        id: reference.id,
+        content,
+        authorName: comment.authorName,
+        isOwner: true,
+        createdAt: comment.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Could not create community comment.', error);
+    response.status(500).json({ error: 'Your comment could not be published. Please try again.' });
+  }
+});
+
+app.delete('/api/forum/posts/:postId/comments/:commentId', requireFirebaseUser, async (request, response) => {
+  const { postId, commentId } = request.params;
+  if (!postId || postId.length > 150 || !commentId || commentId.length > 150) {
+    response.status(400).json({ error: 'The comment ID is invalid.' });
+    return;
+  }
+  try {
+    const { db } = await getFirebaseAdmin();
+    const postReference = db.collection('forumPosts').doc(postId);
+    if (!forumSnapshotExists(await postReference.get())) {
+      response.status(404).json({ error: 'This post no longer exists.' });
+      return;
+    }
+    const reference = postReference.collection('comments').doc(commentId);
+    const snapshot = await reference.get();
+    if (!forumSnapshotExists(snapshot)) {
+      response.status(404).json({ error: 'This comment no longer exists.' });
+      return;
+    }
+    if (snapshot.data().authorUid !== request.user.uid) {
+      response.status(403).json({ error: 'You can only delete your own comments.' });
+      return;
+    }
+    await reference.delete();
+    response.status(204).end();
+  } catch (error) {
+    console.error('Could not delete community comment.', error);
+    response.status(500).json({ error: 'Your comment could not be deleted. Please try again.' });
+  }
+});
 
 app.use('/api/billing', (_request, response, next) => {
   response.set('Cache-Control', 'no-store');
